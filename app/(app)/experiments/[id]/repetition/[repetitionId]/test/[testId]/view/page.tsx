@@ -18,9 +18,6 @@ type PhotoRow = {
   created_at: string
 }
 
-const BUCKET = "test-photos"
-const SIGNED_URL_TTL_SECONDS = 60 * 60 // 1 hora
-
 export default function TestViewPage() {
   const params = useParams()
   const router = useRouter()
@@ -39,7 +36,6 @@ export default function TestViewPage() {
   const [experiment, setExperiment] = useState<any>(null)
   const [loading, setLoading] = useState(true)
 
-  // Calcular o número da semana a partir da data atual
   const getWeekNumber = (date: Date) => {
     const firstDayOfYear = new Date(date.getFullYear(), 0, 1)
     const pastDaysOfYear = (date.getTime() - firstDayOfYear.getTime()) / 86400000
@@ -47,20 +43,13 @@ export default function TestViewPage() {
   }
 
   async function storagePathToUrl(path: string) {
-    if (!path) return ""
-    const normalized = String(path).replace(/^\/+/, "")
+    const { data: pub } = supabase.storage.from("test-photos").getPublicUrl(path)
+    if (pub?.publicUrl) return pub.publicUrl
 
-    // Bucket privado -> SEMPRE usar signed url
-    const { data, error } = await supabase.storage
-      .from(BUCKET)
-      .createSignedUrl(normalized, SIGNED_URL_TTL_SECONDS)
+    const { data, error } = await supabase.storage.from("test-photos").createSignedUrl(path, 60 * 60)
+    if (!error && data?.signedUrl) return data.signedUrl
 
-    if (error) {
-      console.error("Erro ao gerar signed URL:", error, normalized)
-      return ""
-    }
-
-    return data?.signedUrl || ""
+    return ""
   }
 
   useEffect(() => {
@@ -70,15 +59,6 @@ export default function TestViewPage() {
       try {
         setLoading(true)
 
-        // Garantir que existe usuário logado (importante para Storage privado + RLS)
-        const { data: userRes, error: userErr } = await supabase.auth.getUser()
-        if (userErr) throw userErr
-        if (!userRes?.user) {
-          router.push("/auth/login")
-          return
-        }
-
-        // Experiment (uuid)
         const { data: exp, error: expErr } = await supabase
           .from("experiments")
           .select("id, number, strain, start_date, test_count, repetition_count")
@@ -89,7 +69,6 @@ export default function TestViewPage() {
         if (cancelled) return
         setExperiment(exp)
 
-        // Test row
         const { data: t, error: tErr } = await supabase
           .from("tests")
           .select("*")
@@ -100,7 +79,6 @@ export default function TestViewPage() {
 
         if (tErr) throw tErr
 
-        // Photos
         const { data: photos, error: pErr } = await supabase
           .from("test_photos")
           .select("id, test_id, day, storage_path, created_at")
@@ -136,8 +114,11 @@ export default function TestViewPage() {
           wetWeight: t.wet_weight,
           dryWeight: t.dry_weight,
           extractedConidiumWeight: t.extracted_conidium_weight,
+
+          // ✅ ANOTAÇÕES VINDAS DO BANCO
           annotations7Day: t.annotations_7_day,
           annotations14Day: t.annotations_14_day,
+
           photos7Day: urls7.filter(Boolean),
           photos14Day: urls14.filter(Boolean),
         }
@@ -155,7 +136,7 @@ export default function TestViewPage() {
     return () => {
       cancelled = true
     }
-  }, [supabase, experimentId, repetitionNumber, testNumber, router])
+  }, [supabase, experimentId, repetitionNumber, testNumber])
 
   const currentDate = new Date()
   const weekNumber = getWeekNumber(currentDate)
@@ -292,10 +273,10 @@ export default function TestViewPage() {
             </div>
           </div>
 
-          {testData.photos7Day && Array.isArray(testData.photos7Day) && testData.photos7Day.length > 0 ? (
+          {testData.photos7Day?.length > 0 ? (
             <PhotoGridDisplay
               photos={testData.photos7Day}
-              annotations={testData.annotations7Day as any}
+              annotations={testData.annotations7Day} // ✅ AQUI
               testInfo={{
                 experimentNumber: experiment?.number || "",
                 repetitionNumber: String(repetitionId),
@@ -306,7 +287,10 @@ export default function TestViewPage() {
                 testLot: testData.testLot,
                 matrixLot: testData.matrixLot,
                 date: testData.date7Day ? new Date(testData.date7Day).toLocaleDateString("pt-BR") : undefined,
-                temperature: { chamber: testData.temp7Chamber, rice: testData.temp7Rice },
+                temperature: {
+                  chamber: testData.temp7Chamber,
+                  rice: testData.temp7Rice,
+                },
               }}
             />
           ) : (
@@ -343,10 +327,10 @@ export default function TestViewPage() {
             </div>
           </div>
 
-          {testData.photos14Day && Array.isArray(testData.photos14Day) && testData.photos14Day.length > 0 ? (
+          {testData.photos14Day?.length > 0 ? (
             <PhotoGridDisplay
               photos={testData.photos14Day}
-              annotations={testData.annotations14Day as any}
+              annotations={testData.annotations14Day} // ✅ AQUI
               testInfo={{
                 experimentNumber: experiment?.number || "",
                 repetitionNumber: String(repetitionId),
@@ -357,7 +341,10 @@ export default function TestViewPage() {
                 testLot: testData.testLot,
                 matrixLot: testData.matrixLot,
                 date: testData.date14Day ? new Date(testData.date14Day).toLocaleDateString("pt-BR") : undefined,
-                temperature: { chamber: testData.temp14Chamber, rice: testData.temp14Rice },
+                temperature: {
+                  chamber: testData.temp14Chamber,
+                  rice: testData.temp14Rice,
+                },
               }}
             />
           ) : (

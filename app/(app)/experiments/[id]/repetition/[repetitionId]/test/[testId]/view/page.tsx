@@ -18,16 +18,15 @@ type PhotoRow = {
   created_at: string
 }
 
+const BUCKET = "test-photos"
+const SIGNED_URL_TTL_SECONDS = 60 * 60 // 1 hora
+
 export default function TestViewPage() {
   const params = useParams()
   const router = useRouter()
   const supabase = useMemo(() => createClient(), [])
 
-  const {
-    id: experimentId,
-    repetitionId,
-    testId,
-  } = params as {
+  const { id: experimentId, repetitionId, testId } = params as {
     id: string
     repetitionId: string
     testId: string
@@ -48,22 +47,36 @@ export default function TestViewPage() {
   }
 
   async function storagePathToUrl(path: string) {
-    // Se o bucket estiver público, isso já resolve:
-    const { data: pub } = supabase.storage.from("test-photos").getPublicUrl(path)
-    if (pub?.publicUrl) return pub.publicUrl
+    if (!path) return ""
+    const normalized = String(path).replace(/^\/+/, "")
 
-    // Se o bucket for privado, tenta signed url:
-    const { data, error } = await supabase.storage.from("test-photos").createSignedUrl(path, 60 * 60)
-    if (!error && data?.signedUrl) return data.signedUrl
+    // Bucket privado -> SEMPRE usar signed url
+    const { data, error } = await supabase.storage
+      .from(BUCKET)
+      .createSignedUrl(normalized, SIGNED_URL_TTL_SECONDS)
 
-    return ""
+    if (error) {
+      console.error("Erro ao gerar signed URL:", error, normalized)
+      return ""
+    }
+
+    return data?.signedUrl || ""
   }
 
   useEffect(() => {
     let cancelled = false
+
     ;(async () => {
       try {
         setLoading(true)
+
+        // Garantir que existe usuário logado (importante para Storage privado + RLS)
+        const { data: userRes, error: userErr } = await supabase.auth.getUser()
+        if (userErr) throw userErr
+        if (!userRes?.user) {
+          router.push("/auth/login")
+          return
+        }
 
         // Experiment (uuid)
         const { data: exp, error: expErr } = await supabase
@@ -133,9 +146,7 @@ export default function TestViewPage() {
         setTestData(mapped)
       } catch (e) {
         console.error(e)
-        if (!cancelled) {
-          setTestData(null)
-        }
+        if (!cancelled) setTestData(null)
       } finally {
         if (!cancelled) setLoading(false)
       }
@@ -144,7 +155,7 @@ export default function TestViewPage() {
     return () => {
       cancelled = true
     }
-  }, [supabase, experimentId, repetitionNumber, testNumber])
+  }, [supabase, experimentId, repetitionNumber, testNumber, router])
 
   const currentDate = new Date()
   const weekNumber = getWeekNumber(currentDate)
@@ -295,10 +306,7 @@ export default function TestViewPage() {
                 testLot: testData.testLot,
                 matrixLot: testData.matrixLot,
                 date: testData.date7Day ? new Date(testData.date7Day).toLocaleDateString("pt-BR") : undefined,
-                temperature: {
-                  chamber: testData.temp7Chamber,
-                  rice: testData.temp7Rice,
-                },
+                temperature: { chamber: testData.temp7Chamber, rice: testData.temp7Rice },
               }}
             />
           ) : (
@@ -349,10 +357,7 @@ export default function TestViewPage() {
                 testLot: testData.testLot,
                 matrixLot: testData.matrixLot,
                 date: testData.date14Day ? new Date(testData.date14Day).toLocaleDateString("pt-BR") : undefined,
-                temperature: {
-                  chamber: testData.temp14Chamber,
-                  rice: testData.temp14Rice,
-                },
+                temperature: { chamber: testData.temp14Chamber, rice: testData.temp14Rice },
               }}
             />
           ) : (

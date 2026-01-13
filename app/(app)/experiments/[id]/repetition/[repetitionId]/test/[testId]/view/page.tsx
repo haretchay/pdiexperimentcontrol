@@ -43,13 +43,13 @@ export default function TestViewPage() {
   }
 
   async function storagePathToUrl(path: string) {
-    const { data: pub } = supabase.storage.from("test-photos").getPublicUrl(path)
-    if (pub?.publicUrl) return pub.publicUrl
-
+    // Preferir signed URL (funciona em bucket privado/público)
     const { data, error } = await supabase.storage.from("test-photos").createSignedUrl(path, 60 * 60)
     if (!error && data?.signedUrl) return data.signedUrl
 
-    return ""
+    // Fallback para bucket público
+    const { data: pub } = supabase.storage.from("test-photos").getPublicUrl(path)
+    return pub?.publicUrl || ""
   }
 
   useEffect(() => {
@@ -114,11 +114,8 @@ export default function TestViewPage() {
           wetWeight: t.wet_weight,
           dryWeight: t.dry_weight,
           extractedConidiumWeight: t.extracted_conidium_weight,
-
-          // ✅ ANOTAÇÕES VINDAS DO BANCO
           annotations7Day: t.annotations_7_day,
           annotations14Day: t.annotations_14_day,
-
           photos7Day: urls7.filter(Boolean),
           photos14Day: urls14.filter(Boolean),
         }
@@ -141,13 +138,8 @@ export default function TestViewPage() {
   const currentDate = new Date()
   const weekNumber = getWeekNumber(currentDate)
 
-  if (loading) {
-    return <div className="container mx-auto p-4">Carregando detalhes do teste...</div>
-  }
-
-  if (!testData) {
-    return <div className="container mx-auto p-4">Teste não encontrado</div>
-  }
+  if (loading) return <div className="container mx-auto p-4">Carregando detalhes do teste...</div>
+  if (!testData) return <div className="container mx-auto p-4">Teste não encontrado</div>
 
   return (
     <div className="container mx-auto p-4 max-w-3xl overflow-x-hidden">
@@ -221,32 +213,6 @@ export default function TestViewPage() {
               <p className="font-medium">{testData.mpLot}</p>
             </div>
           </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div>
-              <h3 className="text-sm font-medium text-muted-foreground">Média umidade</h3>
-              <p className="font-medium">{testData.averageHumidity ?? "-"}%</p>
-            </div>
-            <div>
-              <h3 className="text-sm font-medium text-muted-foreground">Bozo</h3>
-              <p className="font-medium">{testData.bozo ?? "-"} min</p>
-            </div>
-            <div>
-              <h3 className="text-sm font-medium text-muted-foreground">Sensorial</h3>
-              <p className="font-medium">{testData.sensorial ?? "-"}</p>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <h3 className="text-sm font-medium text-muted-foreground">Quantidade</h3>
-              <p className="font-medium">{testData.quantity ?? "-"} kg</p>
-            </div>
-            <div>
-              <h3 className="text-sm font-medium text-muted-foreground">Tipo de Teste</h3>
-              <p className="font-medium">{testData.testType ?? "-"}</p>
-            </div>
-          </div>
         </CardContent>
       </Card>
 
@@ -276,7 +242,7 @@ export default function TestViewPage() {
           {testData.photos7Day?.length > 0 ? (
             <PhotoGridDisplay
               photos={testData.photos7Day}
-              annotations={testData.annotations7Day} // ✅ AQUI
+              annotations={testData.annotations7Day}
               testInfo={{
                 experimentNumber: experiment?.number || "",
                 repetitionNumber: String(repetitionId),
@@ -287,10 +253,7 @@ export default function TestViewPage() {
                 testLot: testData.testLot,
                 matrixLot: testData.matrixLot,
                 date: testData.date7Day ? new Date(testData.date7Day).toLocaleDateString("pt-BR") : undefined,
-                temperature: {
-                  chamber: testData.temp7Chamber,
-                  rice: testData.temp7Rice,
-                },
+                temperature: { chamber: testData.temp7Chamber, rice: testData.temp7Rice },
               }}
             />
           ) : (
@@ -330,7 +293,7 @@ export default function TestViewPage() {
           {testData.photos14Day?.length > 0 ? (
             <PhotoGridDisplay
               photos={testData.photos14Day}
-              annotations={testData.annotations14Day} // ✅ AQUI
+              annotations={testData.annotations14Day}
               testInfo={{
                 experimentNumber: experiment?.number || "",
                 repetitionNumber: String(repetitionId),
@@ -341,10 +304,7 @@ export default function TestViewPage() {
                 testLot: testData.testLot,
                 matrixLot: testData.matrixLot,
                 date: testData.date14Day ? new Date(testData.date14Day).toLocaleDateString("pt-BR") : undefined,
-                temperature: {
-                  chamber: testData.temp14Chamber,
-                  rice: testData.temp14Rice,
-                },
+                temperature: { chamber: testData.temp14Chamber, rice: testData.temp14Rice },
               }}
             />
           ) : (
@@ -355,30 +315,6 @@ export default function TestViewPage() {
               </div>
             </div>
           )}
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>Secagem e Extração</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div>
-              <h3 className="text-sm font-medium text-muted-foreground">Peso Úmido</h3>
-              <p className="font-medium">{testData.wetWeight ? `${testData.wetWeight} kg` : "Não informado"}</p>
-            </div>
-            <div>
-              <h3 className="text-sm font-medium text-muted-foreground">Peso Após Secagem</h3>
-              <p className="font-medium">{testData.dryWeight ? `${testData.dryWeight} kg` : "Não informado"}</p>
-            </div>
-            <div>
-              <h3 className="text-sm font-medium text-muted-foreground">Peso conídio extraído</h3>
-              <p className="font-medium">
-                {testData.extractedConidiumWeight ? `${testData.extractedConidiumWeight} kg` : "Não informado"}
-              </p>
-            </div>
-          </div>
         </CardContent>
       </Card>
     </div>

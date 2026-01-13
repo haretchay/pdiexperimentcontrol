@@ -16,8 +16,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { PhotoCaptureWorkflow } from "@/components/camera/photo-capture-workflow"
 import { Camera, Check } from "lucide-react"
 
-const BUCKET = "test-photos"
-const SIGNED_URL_TTL_SECONDS = 60 * 60 // 1h
+type Annotation = { x: number; y: number; size: string; caption: string; color?: string }
+type AnnotationsByPhotoIndex = Record<number, Annotation[]>
 
 const toNumberOrUndefined = (v: unknown) => {
   if (v === "" || v === null || v === undefined) return undefined
@@ -30,6 +30,9 @@ const toNumberOrUndefined = (v: unknown) => {
   }
   return undefined
 }
+
+const isDataUrlImage = (s?: string) => typeof s === "string" && s.startsWith("data:image/")
+const hasNewCapturedPhotos = (photos: string[]) => Array.isArray(photos) && photos.some((p) => isDataUrlImage(p))
 
 const formSchema = z.object({
   unit: z.enum(["americana", "salto"]).optional(),
@@ -78,17 +81,18 @@ export default function TestEditPage() {
 
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
-
   const [isCapturing7Day, setIsCapturing7Day] = useState(false)
   const [isCapturing14Day, setIsCapturing14Day] = useState(false)
 
-  // Pode conter dataURL (captura nova) OU signedURL (carregada do storage)
+  // OBS: aqui podem existir 2 tipos de strings:
+  // - data:image/... (capturado agora)
+  // - URL http(s) (foto já existente no storage)
   const [photos7Day, setPhotos7Day] = useState<string[]>([])
   const [photos14Day, setPhotos14Day] = useState<string[]>([])
 
-  // Flags para upload: só true quando capturou novas
-  const [hasNew7DayPhotos, setHasNew7DayPhotos] = useState(false)
-  const [hasNew14DayPhotos, setHasNew14DayPhotos] = useState(false)
+  // Anotações (legendas) por índice de foto (0..n-1)
+  const [annotations7Day, setAnnotations7Day] = useState<AnnotationsByPhotoIndex>({})
+  const [annotations14Day, setAnnotations14Day] = useState<AnnotationsByPhotoIndex>({})
 
   const [testDbId, setTestDbId] = useState<string | null>(null)
   const [experiment, setExperiment] = useState<any>(null)
@@ -119,20 +123,18 @@ export default function TestEditPage() {
     },
   })
 
-  async function toSignedUrl(storagePath: string) {
-    if (!storagePath) return ""
-    const normalized = String(storagePath).replace(/^\/+/, "")
-    const { data, error } = await supabase.storage.from(BUCKET).createSignedUrl(normalized, SIGNED_URL_TTL_SECONDS)
-    if (error) {
-      console.error("Erro ao gerar signed URL:", error, normalized)
-      return ""
-    }
-    return data?.signedUrl || ""
+  async function storagePathToUrl(path: string) {
+    // Preferir signed URL (funciona em bucket privado e público)
+    const { data, error } = await supabase.storage.from("test-photos").createSignedUrl(path, 60 * 60)
+    if (!error && data?.signedUrl) return data.signedUrl
+
+    // Fallback (bucket público)
+    const { data: pub } = supabase.storage.from("test-photos").getPublicUrl(path)
+    return pub?.publicUrl || ""
   }
 
   useEffect(() => {
     let cancelled = false
-
     ;(async () => {
       try {
         setLoading(true)
@@ -159,6 +161,10 @@ export default function TestEditPage() {
         if (cancelled) return
 
         setTestDbId(data.id)
+
+        // Carregar anotações que já existiam
+        setAnnotations7Day((data.annotations_7_day as any) ?? {})
+        setAnnotations14Day((data.annotations_14_day as any) ?? {})
 
         form.reset({
           unit: (data.unit as any) ?? "americana",
@@ -187,36 +193,26 @@ export default function TestEditPage() {
           extractedConidiumWeight: data.extracted_conidium_weight ?? undefined,
         })
 
-        // Carregar fotos existentes (signedURL)
-        const { data: existingPhotos, error: photoErr } = await supabase
+        const { data: existingPhotos } = await supabase
           .from("test_photos")
-          .select("day, storage_path")
+          .select("day, storage_path, created_at")
           .eq("test_id", data.id)
-
-        if (photoErr) throw photoErr
+          .order("created_at", { ascending: true })
 
         if (existingPhotos) {
           const photos7 = existingPhotos.filter((p: any) => p.day === 7)
           const photos14 = existingPhotos.filter((p: any) => p.day === 14)
 
           if (photos7.length > 0) {
-            const urls7 = await Promise.all(photos7.map(async (p: any) => toSignedUrl(p.storage_path)))
+            const urls7 = await Promise.all(photos7.map((p: any) => storagePathToUrl(p.storage_path)))
             setPhotos7Day(urls7.filter(Boolean))
-          } else {
-            setPhotos7Day([])
           }
 
           if (photos14.length > 0) {
-            const urls14 = await Promise.all(photos14.map(async (p: any) => toSignedUrl(p.storage_path)))
+            const urls14 = await Promise.all(photos14.map((p: any) => storagePathToUrl(p.storage_path)))
             setPhotos14Day(urls14.filter(Boolean))
-          } else {
-            setPhotos14Day([])
           }
         }
-
-        // IMPORTANTE: fotos vindas do banco NÃO são “novas”
-        setHasNew7DayPhotos(false)
-        setHasNew14DayPhotos(false)
       } catch (e) {
         console.error(e)
       } finally {
@@ -229,78 +225,55 @@ export default function TestEditPage() {
     }
   }, [supabase, experimentId, repetitionNumber, testNumber, form])
 
-  /**
-   * Upload somente quando as fotos forem dataURL (captura nova).
-   * Paths estáveis:
-   * {userId}/{testDbId}/{day}/photo_1.jpg
-   */
-  async function savePhotosToStorage(userId: string, photos: string[], day: 7 | 14) {
+  async function savePhotosToStorage(photos: string[], day: 7 | 14) {
     if (!testDbId) return
 
-    // Somente dataURL
-    const allAreDataUrls = photos.every((p) => typeof p === "string" && p.startsWith("data:image"))
-    if (!allAreDataUrls) {
-      console.warn("Ignorando upload: fotos não são dataURL (provavelmente já existentes).")
-      return
-    }
+    // Segurança: só faz upload se forem fotos NOVAS (dataURL).
+    // Se forem URLs antigas, NÃO re-upar / NÃO deletar nada.
+    if (!hasNewCapturedPhotos(photos)) return
 
-    // Buscar registros antigos do dia
-    const { data: oldPhotos, error: oldErr } = await supabase
-      .from("test_photos")
-      .select("storage_path")
-      .eq("test_id", testDbId)
-      .eq("day", day)
+    try {
+      // Deletar fotos antigas do dia específico (somente porque vamos substituir)
+      const { data: oldPhotos } = await supabase
+        .from("test_photos")
+        .select("storage_path")
+        .eq("test_id", testDbId)
+        .eq("day", day)
 
-    if (oldErr) throw oldErr
-
-    // Remover arquivos antigos + apagar registros
-    if (oldPhotos && oldPhotos.length > 0) {
-      const pathsToDelete = oldPhotos.map((p: any) => p.storage_path).filter(Boolean)
-      if (pathsToDelete.length > 0) {
-        const { error: removeErr } = await supabase.storage.from(BUCKET).remove(pathsToDelete)
-        if (removeErr) console.error("Falha ao remover fotos antigas:", removeErr)
+      if (oldPhotos && oldPhotos.length > 0) {
+        const pathsToDelete = oldPhotos.map((p: any) => p.storage_path)
+        await supabase.storage.from("test-photos").remove(pathsToDelete)
+        await supabase.from("test_photos").delete().eq("test_id", testDbId).eq("day", day)
       }
 
-      const { error: delDbErr } = await supabase.from("test_photos").delete().eq("test_id", testDbId).eq("day", day)
-      if (delDbErr) throw delDbErr
+      // Fazer upload das novas fotos (dataURL)
+      for (let i = 0; i < photos.length; i++) {
+        const photo = photos[i]
+        if (!isDataUrlImage(photo)) continue
+
+        const response = await fetch(photo)
+        const blob = await response.blob()
+
+        const fileName = `${experimentId}_rep${repetitionNumber}_test${testNumber}_day${day}_photo${i + 1}_${Date.now()}.jpg`
+        const filePath = `${experimentId}/${fileName}`
+
+        const { error: uploadError } = await supabase.storage.from("test-photos").upload(filePath, blob, {
+          contentType: "image/jpeg",
+          upsert: true,
+        })
+        if (uploadError) throw uploadError
+
+        const { error: dbError } = await supabase.from("test_photos").insert({
+          test_id: testDbId,
+          day: day,
+          storage_path: filePath,
+        })
+        if (dbError) throw dbError
+      }
+    } catch (error) {
+      console.error(`Erro ao salvar fotos do ${day}º dia:`, error)
+      throw error
     }
-
-    // Upload + insert
-    const insertedPaths: string[] = []
-
-    for (let i = 0; i < photos.length; i++) {
-      const photo = photos[i]
-
-      const response = await fetch(photo)
-      const blob = await response.blob()
-
-      const filename = `photo_${i + 1}.jpg`
-      const filePath = `${userId}/${testDbId}/${day}/${filename}`
-
-      const { error: uploadError } = await supabase.storage.from(BUCKET).upload(filePath, blob, {
-        contentType: "image/jpeg",
-        upsert: true,
-      })
-
-      if (uploadError) throw uploadError
-
-      const { error: dbError } = await supabase.from("test_photos").insert({
-        test_id: testDbId,
-        day,
-        storage_path: filePath,
-      })
-
-      if (dbError) throw dbError
-
-      insertedPaths.push(filePath)
-    }
-
-    // Atualizar preview com signedURL recém-criada
-    const signedUrls = await Promise.all(insertedPaths.map((p) => toSignedUrl(p)))
-    const finalUrls = signedUrls.filter(Boolean)
-
-    if (day === 7) setPhotos7Day(finalUrls)
-    if (day === 14) setPhotos14Day(finalUrls)
   }
 
   async function onSubmit(values: FormValues) {
@@ -344,6 +317,10 @@ export default function TestEditPage() {
         dry_weight: values.dryWeight ?? null,
         extracted_conidium_weight: values.extractedConidiumWeight ?? null,
 
+        // ✅ AGORA SALVA AS ANOTAÇÕES NO TESTE (jsonb)
+        annotations_7_day: annotations7Day && Object.keys(annotations7Day).length ? annotations7Day : null,
+        annotations_14_day: annotations14Day && Object.keys(annotations14Day).length ? annotations14Day : null,
+
         updated_at: new Date().toISOString(),
       }
 
@@ -356,15 +333,12 @@ export default function TestEditPage() {
 
       if (error) throw error
 
-      // ✅ Só faz upload se capturou novas fotos
-      if (hasNew7DayPhotos && photos7Day.length > 0) {
-        await savePhotosToStorage(user.id, photos7Day, 7)
-        setHasNew7DayPhotos(false)
+      // ✅ Só mexe no storage se tiver foto NOVA (dataURL)
+      if (photos7Day.length > 0 && hasNewCapturedPhotos(photos7Day)) {
+        await savePhotosToStorage(photos7Day, 7)
       }
-
-      if (hasNew14DayPhotos && photos14Day.length > 0) {
-        await savePhotosToStorage(user.id, photos14Day, 14)
-        setHasNew14DayPhotos(false)
+      if (photos14Day.length > 0 && hasNewCapturedPhotos(photos14Day)) {
+        await savePhotosToStorage(photos14Day, 14)
       }
 
       router.push(`/experiments/${experimentId}/repetition/${repetitionId}/test/${testId}/view`)
@@ -376,15 +350,15 @@ export default function TestEditPage() {
     }
   }
 
-  const handleCapture7DayComplete = (photos: string[]) => {
-    setPhotos7Day(photos) // dataURL
-    setHasNew7DayPhotos(true)
+  const handleCapture7DayComplete = (photos: string[], annotations?: AnnotationsByPhotoIndex) => {
+    setPhotos7Day(photos)
+    setAnnotations7Day(annotations ?? {})
     setIsCapturing7Day(false)
   }
 
-  const handleCapture14DayComplete = (photos: string[]) => {
-    setPhotos14Day(photos) // dataURL
-    setHasNew14DayPhotos(true)
+  const handleCapture14DayComplete = (photos: string[], annotations?: AnnotationsByPhotoIndex) => {
+    setPhotos14Day(photos)
+    setAnnotations14Day(annotations ?? {})
     setIsCapturing14Day(false)
   }
 

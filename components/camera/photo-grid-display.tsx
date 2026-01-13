@@ -1,30 +1,16 @@
 "use client"
 
-import { useMemo } from "react"
+import { useMemo, useState } from "react"
 import Image from "next/image"
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogTitle,
-  DialogTrigger,
-} from "@/components/ui/dialog"
-import { ZoomIn, Circle } from "lucide-react"
+import { Dialog, DialogContent, DialogDescription, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
+import { ZoomIn } from "lucide-react"
 
-type Annotation = {
-  x: number
-  y: number
-  size: string
-  caption: string
-  color?: string
-}
-
-// Pode vir como Record<number, Annotation[]> (por foto) OU como Annotation[] (legado)
-type AnnotationsInput = Record<number, Annotation[]> | Annotation[] | null | undefined
+type Annotation = { x: number; y: number; size: string; caption: string; color?: string }
+type AnnotationsByPhotoIndex = Record<string, Annotation[]>
 
 interface PhotoGridDisplayProps {
   photos: string[]
-  annotations?: AnnotationsInput
+  annotations?: AnnotationsByPhotoIndex | null
   testInfo: {
     experimentNumber: string
     repetitionNumber: string
@@ -43,107 +29,91 @@ interface PhotoGridDisplayProps {
   showCaption?: boolean
 }
 
-const FLUORESCENT_COLORS = [
-  "#FF0033",
-  "#00FF33",
-  "#3300FF",
-  "#FF33FF",
-  "#FFFF00",
-  "#00FFFF",
-  "#FF6600",
-  "#CC00FF",
-  "#FF0099",
-  "#66FF00",
-]
-
-function isRecordOfArrays(v: any): v is Record<number, Annotation[]> {
-  return !!v && typeof v === "object" && !Array.isArray(v)
-}
-
-function normalizeAnnotationsByPhoto(input: AnnotationsInput): Record<number, Annotation[]> {
-  if (!input) return {}
-  if (Array.isArray(input)) {
-    // Legado: todas as anotações sem vínculo por foto -> assume Foto 1
-    return { 0: input as Annotation[] }
-  }
-  if (isRecordOfArrays(input)) return input
-  return {}
+function getAnnotationsForIndex(annotations: PhotoGridDisplayProps["annotations"], index: number): Annotation[] {
+  if (!annotations) return []
+  return annotations[String(index)] || (annotations as any)[index] || []
 }
 
 export function PhotoGridDisplay({ photos, annotations, testInfo, showCaption = true }: PhotoGridDisplayProps) {
+  const [selectedIndex, setSelectedIndex] = useState<number | null>(null)
+
+  const annotationsSummary = useMemo(() => {
+    const rows: { photoIndex: number; items: Annotation[] }[] = []
+    if (!photos?.length) return rows
+    for (let i = 0; i < photos.length; i++) {
+      const items = getAnnotationsForIndex(annotations, i).filter((a) => (a.caption ?? "").trim().length > 0)
+      if (items.length) rows.push({ photoIndex: i, items })
+    }
+    return rows
+  }, [photos, annotations])
+
   if (!photos || photos.length === 0) return null
-
-  const annotationsByPhoto = useMemo(() => normalizeAnnotationsByPhoto(annotations), [annotations])
-
-  const captionsByPhoto = useMemo(() => {
-    const out: Record<number, Annotation[]> = {}
-    Object.entries(annotationsByPhoto).forEach(([k, arr]) => {
-      const idx = Number(k)
-      const filtered = (arr || []).filter((a) => a?.caption && String(a.caption).trim() !== "")
-      if (filtered.length > 0) out[idx] = filtered
-    })
-    return out
-  }, [annotationsByPhoto])
-
-  const totalCaptions = useMemo(() => {
-    return Object.values(captionsByPhoto).reduce((acc, arr) => acc + (arr?.length || 0), 0)
-  }, [captionsByPhoto])
-
-  const orderedPhotoIndexesWithCaptions = useMemo(() => {
-    return Object.keys(captionsByPhoto)
-      .map((n) => Number(n))
-      .sort((a, b) => a - b)
-  }, [captionsByPhoto])
 
   return (
     <div className="border rounded-md overflow-hidden">
       {/* Grid */}
       <div className="grid grid-cols-3 gap-1 bg-gray-800">
         {photos.map((photo, index) => {
-          const photoCaptions = captionsByPhoto[index] || []
-          const count = photoCaptions.length
+          const ann = getAnnotationsForIndex(annotations, index)
+          const hasAnn = ann.some((a) => (a.caption ?? "").trim().length > 0)
 
           return (
-            <Dialog key={index}>
+            <Dialog key={index} onOpenChange={(open) => setSelectedIndex(open ? index : null)}>
               <DialogTrigger asChild>
                 <div className="relative aspect-square cursor-pointer group">
                   <Image src={photo || "/placeholder.svg"} alt={`Foto ${index + 1}`} fill className="object-cover" />
-
                   <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 bg-black/50 transition-opacity">
                     <ZoomIn className="h-6 w-6 text-white" />
                   </div>
-
                   <div className="absolute top-2 left-2 bg-black/50 text-white px-2 py-1 text-xs rounded">
                     Foto {index + 1}
                   </div>
 
-                  {/* Indicador por foto */}
-                  {count > 0 && (
-                    <div className="absolute bottom-2 right-2 bg-red-600/80 text-white px-2 py-1 text-xs rounded-full flex items-center">
-                      <Circle className="h-3 w-3 mr-1" />
-                      {count} anotaç{count === 1 ? "ão" : "ões"}
+                  {hasAnn && (
+                    <div className="absolute bottom-2 right-2 bg-black/60 text-white px-2 py-1 text-[11px] rounded-full">
+                      {ann.filter((a) => (a.caption ?? "").trim().length > 0).length} legenda(s)
                     </div>
                   )}
                 </div>
               </DialogTrigger>
 
-              <DialogContent className="max-w-3xl p-0 bg-black">
-                {/* A11y (remove os warnings do Radix) */}
-                <DialogTitle className="sr-only">{`Foto ${index + 1}`}</DialogTitle>
+              <DialogContent className="max-w-4xl p-0 bg-black">
+                {/* A11y: Radix exige Title/Description */}
+                <DialogTitle className="sr-only">{`Foto ${index + 1} - ${testInfo.day}º dia`}</DialogTitle>
                 <DialogDescription className="sr-only">
-                  Visualização ampliada da foto do teste.
+                  Visualização ampliada da foto e lista de legendas de contaminantes (se houver).
                 </DialogDescription>
 
-                <div className="relative h-[80vh]">
+                <div className="relative h-[78vh] w-full">
                   <Image src={photo || "/placeholder.svg"} alt={`Foto ${index + 1}`} fill className="object-contain" />
                 </div>
+
+                {/* Legendas desta foto no modal */}
+                {hasAnn && (
+                  <div className="bg-gray-950 text-white px-4 py-3 text-sm border-t border-white/10">
+                    <div className="font-medium mb-2">Legendas da Foto {index + 1}</div>
+                    <ul className="space-y-1">
+                      {ann
+                        .filter((a) => (a.caption ?? "").trim().length > 0)
+                        .map((a, i) => (
+                          <li key={i} className="flex items-start gap-2">
+                            <span
+                              className="mt-1 h-2.5 w-2.5 rounded-full shrink-0"
+                              style={{ backgroundColor: a.color || "#FF0033" }}
+                            />
+                            <span className="leading-snug">{a.caption}</span>
+                          </li>
+                        ))}
+                    </ul>
+                  </div>
+                )}
               </DialogContent>
             </Dialog>
           )
         })}
       </div>
 
-      {/* Área de caption */}
+      {/* Área de informações + legendas (abaixo do grid) */}
       {showCaption && (
         <div className="bg-gray-900 text-white p-3 text-sm">
           <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
@@ -183,7 +153,6 @@ export function PhotoGridDisplay({ photos, annotations, testInfo, showCaption = 
               <span className="text-gray-400 block">Lote Matriz:</span>
               <span>{testInfo.matrixLot}</span>
             </div>
-
             {testInfo.temperature && (
               <>
                 <div>
@@ -198,49 +167,27 @@ export function PhotoGridDisplay({ photos, annotations, testInfo, showCaption = 
             )}
           </div>
 
-          {/* Legendas reais */}
-          {totalCaptions > 0 && (
+          {/* ✅ Legendas gerais abaixo do grid (por foto) */}
+          {annotationsSummary.length > 0 && (
             <div className="mt-3 border-t border-gray-700 pt-3">
-              <span className="text-gray-400 block mb-2 font-semibold">
-                Legendas dos Contaminantes ({totalCaptions})
-              </span>
-
+              <div className="text-gray-300 font-medium mb-2">Legendas (marcações)</div>
               <div className="space-y-3">
-                {orderedPhotoIndexesWithCaptions.map((photoIndex) => {
-                  const list = captionsByPhoto[photoIndex] || []
-                  if (list.length === 0) return null
-
-                  return (
-                    <div key={photoIndex} className="space-y-1">
-                      <div className="text-xs text-gray-300 font-semibold">
-                        Foto {photoIndex + 1}
-                      </div>
-
-                      <div className="space-y-1">
-                        {list.map((ann, idx) => {
-                          const color = ann.color || FLUORESCENT_COLORS[idx % FLUORESCENT_COLORS.length]
-                          return (
-                            <div key={`${photoIndex}-${idx}`} className="flex items-center gap-2 text-sm">
-                              <div
-                                className="flex items-center justify-center rounded-full text-white font-bold"
-                                style={{
-                                  backgroundColor: color,
-                                  width: "24px",
-                                  height: "24px",
-                                  fontSize: "12px",
-                                  flexShrink: 0,
-                                }}
-                              >
-                                {idx + 1}
-                              </div>
-                              <span className="text-white">{ann.caption}</span>
-                            </div>
-                          )
-                        })}
-                      </div>
-                    </div>
-                  )
-                })}
+                {annotationsSummary.map((row) => (
+                  <div key={row.photoIndex}>
+                    <div className="text-gray-400 mb-1">Foto {row.photoIndex + 1}</div>
+                    <ul className="space-y-1">
+                      {row.items.map((a, idx) => (
+                        <li key={idx} className="flex items-start gap-2">
+                          <span
+                            className="mt-1 h-2.5 w-2.5 rounded-full shrink-0"
+                            style={{ backgroundColor: a.color || "#FF0033" }}
+                          />
+                          <span className="leading-snug">{a.caption}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                ))}
               </div>
             </div>
           )}

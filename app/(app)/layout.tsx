@@ -1,44 +1,26 @@
 import type React from "react"
-import { redirect } from "next/navigation"
 
 import { AppSidebar } from "@/components/app-sidebar"
 import { AuthProvider } from "@/components/auth-provider"
 import { DatabaseActions } from "@/components/database-actions"
 import { ThemeSelector } from "@/components/theme-selector"
 import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar"
-import { createClient } from "@/lib/supabase/server"
+import { requireActiveUser } from "@/lib/supabase/auth"
 
 export const runtime = "nodejs"
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
-  const supabase = createClient()
+  const res = await requireActiveUser()
 
-  // 1) Autenticação
-  const { data: authData, error: authError } = await supabase.auth.getUser()
-  const user = authData.user
-
-  if (authError) {
-    console.error("[app layout] getUser error:", authError)
-  }
-
-  if (!user) {
-    redirect("/auth/login")
-  }
-
-  // 2) Perfil (status/role)
-  const { data: profile, error: profileError } = await supabase
-    .from("profiles")
-    .select("status, role")
-    .eq("user_id", user.id)
-    .maybeSingle()
-
-  if (profileError) {
-    console.error("[app layout] profile error:", profileError)
-  }
-
-  // Se não tiver perfil ou não estiver ativo → bloqueia
-  if (!profile || profile.status !== "active") {
-    redirect("/auth/blocked")
+  if (!res.ok && res.reason === "rate_limit") {
+    return (
+      <div className="p-6">
+        <h1 className="text-xl font-semibold">Muitas requisições ao Supabase</h1>
+        <p className="mt-2 text-sm text-muted-foreground">
+          Você atingiu temporariamente o limite de requisições (429). Aguarde alguns segundos e recarregue.
+        </p>
+      </div>
+    )
   }
 
   return (

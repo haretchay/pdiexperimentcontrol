@@ -1,35 +1,21 @@
 import "server-only"
+
 import { cookies } from "next/headers"
 import { createServerClient } from "@supabase/ssr"
+import { cache } from "react"
 
-export function createClient() {
+export const createClient = cache(() => {
   const cookieStore = cookies()
 
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL
   const anon = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
 
   if (!url || !anon) {
-    console.error("[v0] Missing Supabase environment variables")
-    console.error("[v0] NEXT_PUBLIC_SUPABASE_URL:", url ? "SET" : "MISSING")
-    console.error("[v0] NEXT_PUBLIC_SUPABASE_ANON_KEY:", anon ? "SET" : "MISSING")
-
-    // Fornecer valores default para preview funcionar (não seguro para produção)
-    return createServerClient(url || "https://placeholder.supabase.co", anon || "placeholder-anon-key", {
-      cookies: {
-        getAll() {
-          return cookieStore.getAll()
-        },
-        setAll(cookiesToSet) {
-          try {
-            cookiesToSet.forEach(({ name, value, options }) => {
-              cookieStore.set(name, value, options)
-            })
-          } catch {
-            // pode falhar em Server Components (ok)
-          }
-        },
-      },
-    })
+    // Em produção isso deve estar sempre setado.
+    // Se faltar, vamos falhar de forma explícita (evita comportamento estranho).
+    throw new Error(
+      "[Supabase] Missing env: NEXT_PUBLIC_SUPABASE_URL or NEXT_PUBLIC_SUPABASE_ANON_KEY",
+    )
   }
 
   return createServerClient(url, anon, {
@@ -43,9 +29,9 @@ export function createClient() {
             cookieStore.set(name, value, options)
           })
         } catch {
-          // pode falhar em Server Components (ok)
+          // Em Server Components, set cookie pode falhar — ok.
         }
       },
     },
   })
-}
+})

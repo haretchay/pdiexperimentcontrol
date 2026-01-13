@@ -1,8 +1,9 @@
 "use client"
 
-import { useState } from "react"
+import { useMemo } from "react"
 import Image from "next/image"
-import { Dialog, DialogContent, DialogTrigger } from "@/components/ui/dialog"
+import * as VisuallyHidden from "@radix-ui/react-visually-hidden"
+import { Dialog, DialogContent, DialogDescription, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { ZoomIn, Circle } from "lucide-react"
 
 interface Annotation {
@@ -35,46 +36,77 @@ interface PhotoGridDisplayProps {
 }
 
 export function PhotoGridDisplay({ photos, annotations, testInfo, showCaption = true }: PhotoGridDisplayProps) {
-  const [selectedPhoto, setSelectedPhoto] = useState<string | null>(null)
-
   if (!photos || photos.length === 0) {
     return null
   }
 
   // Filtrar apenas anotações com legendas
-  const annotationsWithCaptions = annotations?.filter((ann) => ann.caption && ann.caption.trim() !== "") || []
+  const annotationsWithCaptions = useMemo(
+    () => annotations?.filter((ann) => ann.caption && ann.caption.trim() !== "") || [],
+    [annotations],
+  )
 
   return (
     <div className="border rounded-md overflow-hidden">
       {/* Photo grid */}
       <div className="grid grid-cols-3 gap-1 bg-gray-800">
-        {photos.map((photo, index) => (
-          <Dialog key={index}>
-            <DialogTrigger asChild>
-              <div className="relative aspect-square cursor-pointer group">
-                <Image src={photo || "/placeholder.svg"} alt={`Foto ${index + 1}`} fill className="object-cover" />
-                <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 bg-black/50 transition-opacity">
-                  <ZoomIn className="h-6 w-6 text-white" />
-                </div>
-                <div className="absolute top-2 left-2 bg-black/50 text-white px-2 py-1 text-xs rounded">
-                  Foto {index + 1}
-                </div>
-                {/* Indicador de anotações */}
-                {annotationsWithCaptions.length > 0 && (
-                  <div className="absolute bottom-2 right-2 bg-red-600/80 text-white px-2 py-1 text-xs rounded-full flex items-center">
-                    <Circle className="h-3 w-3 mr-1" />
-                    {annotationsWithCaptions.length} anotaç{annotationsWithCaptions.length === 1 ? "ão" : "ões"}
+        {photos.map((photo, index) => {
+          const photoLabel = `Foto ${index + 1}`
+          const dialogTitle = `Visualização - ${photoLabel}`
+          const dialogDesc = `Imagem ampliada do ${testInfo.day}º dia do teste #${testInfo.testNumber} (repetição #${testInfo.repetitionNumber}) do experimento #${testInfo.experimentNumber}.`
+
+          return (
+            <Dialog key={index}>
+              <DialogTrigger asChild>
+                <div className="relative aspect-square cursor-pointer group">
+                  <Image
+                    src={photo || "/placeholder.svg"}
+                    alt={photoLabel}
+                    fill
+                    className="object-cover"
+                    sizes="(max-width: 768px) 33vw, 200px"
+                  />
+
+                  <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 bg-black/50 transition-opacity">
+                    <ZoomIn className="h-6 w-6 text-white" />
                   </div>
-                )}
-              </div>
-            </DialogTrigger>
-            <DialogContent className="max-w-3xl p-0 bg-black">
-              <div className="relative h-[80vh]">
-                <Image src={photo || "/placeholder.svg"} alt={`Foto ${index + 1}`} fill className="object-contain" />
-              </div>
-            </DialogContent>
-          </Dialog>
-        ))}
+
+                  <div className="absolute top-2 left-2 bg-black/50 text-white px-2 py-1 text-xs rounded">
+                    {photoLabel}
+                  </div>
+
+                  {/* Indicador de anotações (geral, pois não há vínculo por foto no schema atual) */}
+                  {annotationsWithCaptions.length > 0 && (
+                    <div className="absolute bottom-2 right-2 bg-red-600/80 text-white px-2 py-1 text-xs rounded-full flex items-center">
+                      <Circle className="h-3 w-3 mr-1" />
+                      {annotationsWithCaptions.length} anotaç{annotationsWithCaptions.length === 1 ? "ão" : "ões"}
+                    </div>
+                  )}
+                </div>
+              </DialogTrigger>
+
+              <DialogContent className="max-w-3xl p-0 bg-black">
+                {/* A11y obrigatório: Title + Description */}
+                <VisuallyHidden.Root>
+                  <DialogTitle>{dialogTitle}</DialogTitle>
+                </VisuallyHidden.Root>
+                <VisuallyHidden.Root>
+                  <DialogDescription>{dialogDesc}</DialogDescription>
+                </VisuallyHidden.Root>
+
+                <div className="relative h-[80vh]">
+                  <Image
+                    src={photo || "/placeholder.svg"}
+                    alt={photoLabel}
+                    fill
+                    className="object-contain"
+                    sizes="(max-width: 1200px) 100vw, 1200px"
+                  />
+                </div>
+              </DialogContent>
+            </Dialog>
+          )
+        })}
       </div>
 
       {/* Caption area - só exibir se showCaption for true */}
@@ -117,6 +149,7 @@ export function PhotoGridDisplay({ photos, annotations, testInfo, showCaption = 
               <span className="text-gray-400 block">Lote Matriz:</span>
               <span>{testInfo.matrixLot}</span>
             </div>
+
             {testInfo.temperature && (
               <>
                 <div>
@@ -135,8 +168,8 @@ export function PhotoGridDisplay({ photos, annotations, testInfo, showCaption = 
             <div className="mt-3 border-t border-gray-700 pt-3">
               <span className="text-gray-400 block mb-2 font-semibold">Legendas dos Contaminantes:</span>
               <div className="space-y-1">
-                {annotationsWithCaptions.map((annotation, index) => (
-                  <div key={index} className="flex items-center gap-2 text-sm">
+                {annotationsWithCaptions.map((annotation, idx) => (
+                  <div key={idx} className="flex items-center gap-2 text-sm">
                     <div
                       className="flex items-center justify-center rounded-full text-white font-bold"
                       style={{
@@ -147,7 +180,7 @@ export function PhotoGridDisplay({ photos, annotations, testInfo, showCaption = 
                         flexShrink: 0,
                       }}
                     >
-                      {index + 1}
+                      {idx + 1}
                     </div>
                     <span className="text-white">{annotation.caption}</span>
                   </div>

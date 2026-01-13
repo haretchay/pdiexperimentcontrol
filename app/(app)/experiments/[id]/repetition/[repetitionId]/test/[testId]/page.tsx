@@ -16,6 +16,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { PhotoCaptureWorkflow } from "@/components/camera/photo-capture-workflow"
 import { Camera, Check } from "lucide-react"
 
+const BUCKET = "test-photos"
+const SIGNED_URL_TTL_SECONDS = 60 * 60 // 1 hora
+
 const toNumberOrUndefined = (v: unknown) => {
   if (v === "" || v === null || v === undefined) return undefined
   if (typeof v === "number") return Number.isNaN(v) ? undefined : v
@@ -62,11 +65,7 @@ export default function TestEditPage() {
   const router = useRouter()
   const params = useParams()
 
-  const {
-    id: experimentId,
-    repetitionId,
-    testId,
-  } = params as {
+  const { id: experimentId, repetitionId, testId } = params as {
     id: string
     repetitionId: string
     testId: string
@@ -81,8 +80,12 @@ export default function TestEditPage() {
   const [saving, setSaving] = useState(false)
   const [isCapturing7Day, setIsCapturing7Day] = useState(false)
   const [isCapturing14Day, setIsCapturing14Day] = useState(false)
+
+  // Aqui guardamos URLs assinadas (para preview)
   const [photos7Day, setPhotos7Day] = useState<string[]>([])
   const [photos14Day, setPhotos14Day] = useState<string[]>([])
+
+  // Id real do registro em tests
   const [testDbId, setTestDbId] = useState<string | null>(null)
   const [experiment, setExperiment] = useState<any>(null)
 
@@ -112,8 +115,19 @@ export default function TestEditPage() {
     },
   })
 
+  // Converte um storage_path (privado) em URL assinada (para exibir no browser)
+  async function toSignedUrl(storagePath: string) {
+    const { data, error } = await supabase.storage.from(BUCKET).createSignedUrl(storagePath, SIGNED_URL_TTL_SECONDS)
+    if (error) {
+      console.error("Erro ao gerar signed URL:", error, storagePath)
+      return ""
+    }
+    return data?.signedUrl || ""
+  }
+
   useEffect(() => {
     let cancelled = false
+
     ;(async () => {
       try {
         setLoading(true)
@@ -168,35 +182,28 @@ export default function TestEditPage() {
           extractedConidiumWeight: data.extracted_conidium_weight ?? undefined,
         })
 
-        const { data: existingPhotos } = await supabase
+        // Carregar fotos existentes (gerando URLs assinadas)
+        const { data: existingPhotos, error: photosErr } = await supabase
           .from("test_photos")
           .select("day, storage_path")
           .eq("test_id", data.id)
 
-        if (existingPhotos) {
+        if (photosErr) {
+          console.error("Erro ao buscar test_photos:", photosErr)
+        }
+
+        if (existingPhotos && existingPhotos.length > 0) {
           const photos7 = existingPhotos.filter((p: any) => p.day === 7)
           const photos14 = existingPhotos.filter((p: any) => p.day === 14)
 
           if (photos7.length > 0) {
-            // Carregar URLs das fotos do 7º dia
-            const urls7 = await Promise.all(
-              photos7.map(async (p: any) => {
-                const { data } = supabase.storage.from("test-photos").getPublicUrl(p.storage_path)
-                return data?.publicUrl || ""
-              }),
-            )
-            setPhotos7Day(urls7.filter(Boolean))
+            const urls7 = await Promise.all(photos7.map((p: any) => toSignedUrl(p.storage_path)))
+            if (!cancelled) setPhotos7Day(urls7.filter(Boolean))
           }
 
           if (photos14.length > 0) {
-            // Carregar URLs das fotos do 14º dia
-            const urls14 = await Promise.all(
-              photos14.map(async (p: any) => {
-                const { data } = supabase.storage.from("test-photos").getPublicUrl(p.storage_path)
-                return data?.publicUrl || ""
-              }),
-            )
-            setPhotos14Day(urls14.filter(Boolean))
+            const urls14 = await Promise.all(photos14.map((p: any) => toSignedUrl(p.storage_path)))
+            if (!cancelled) setPhotos14Day(urls14.filter(Boolean))
           }
         }
       } catch (e) {
@@ -211,49 +218,84 @@ export default function TestEditPage() {
     }
   }, [supabase, experimentId, repetitionNumber, testNumber, form])
 
-  async function savePhotosToStorage(photos: string[], day: 7 | 14) {
+  /**
+   * Salva fotos no Storage com caminho no padrão Caminho A:
+   * {userId}/{testDbId}/{day}/{filename}
+   *
+   * OBS: "photos" aqui são dataURL (base64) vindos do workflow da câmera.
+   */
+  async function savePhotosToStorage(userId: string, photos: string[], day: 7 | 14) {
     if (!testDbId) return
 
     try {
-      // Deletar fotos antigas do dia específico
-      const { data: oldPhotos } = await supabase
+      // 1) Buscar fotos antigas do dia e deletar do storage + tabela
+      const { data: oldPhotos, error: oldErr } = await supabase
         .from("test_photos")
         .select("storage_path")
         .eq("test_id", testDbId)
         .eq("day", day)
 
+      if (oldErr) throw oldErr
+
       if (oldPhotos && oldPhotos.length > 0) {
-        const pathsToDelete = oldPhotos.map((p: any) => p.storage_path)
-        await supabase.storage.from("test-photos").remove(pathsToDelete)
-        await supabase.from("test_photos").delete().eq("test_id", testDbId).eq("day", day)
+        const pathsToDelete = oldPhotos.map((p: any) => p.storage_path).filter(Boolean)
+        if (pathsToDelete.length > 0) {
+          const { error: removeErr } = await supabase.storage.from(BUCKET).remove(pathsToDelete)
+          if (removeErr) {
+            // Não travar tudo se falhar delete do storage, mas logar.
+            console.error("Falha ao remover arquivos antigos do storage:", removeErr)
+          }
+        }
+
+        const { error: delDbErr } = await supabase
+          .from("test_photos")
+          .delete()
+          .eq("test_id", testDbId)
+          .eq("day", day)
+
+        if (delDbErr) throw delDbErr
       }
 
-      // Fazer upload das novas fotos
+      // 2) Upload das novas fotos
+      const uploadedPaths: string[] = []
+
       for (let i = 0; i < photos.length; i++) {
         const photo = photos[i]
-        // Converter data URL para blob
+
+        // dataURL -> blob
         const response = await fetch(photo)
         const blob = await response.blob()
 
-        const fileName = `${experimentId}_rep${repetitionNumber}_test${testNumber}_day${day}_photo${i + 1}_${Date.now()}.jpg`
-        const filePath = `${experimentId}/${fileName}`
+        // Caminho A:
+        // userId/testDbId/day/filename.jpg
+        const filename = `photo_${i + 1}_${Date.now()}.jpg`
+        const filePath = `${userId}/${testDbId}/${day}/${filename}`
 
-        const { error: uploadError } = await supabase.storage.from("test-photos").upload(filePath, blob, {
+        const { error: uploadError } = await supabase.storage.from(BUCKET).upload(filePath, blob, {
           contentType: "image/jpeg",
           upsert: true,
         })
 
         if (uploadError) throw uploadError
 
-        // Salvar referência no banco de dados
+        // registrar no banco
         const { error: dbError } = await supabase.from("test_photos").insert({
           test_id: testDbId,
-          day: day,
+          day,
           storage_path: filePath,
         })
 
         if (dbError) throw dbError
+
+        uploadedPaths.push(filePath)
       }
+
+      // 3) Atualizar preview com URLs assinadas novas
+      const signedUrls = await Promise.all(uploadedPaths.map((p) => toSignedUrl(p)))
+      const finalUrls = signedUrls.filter(Boolean)
+
+      if (day === 7) setPhotos7Day(finalUrls)
+      if (day === 14) setPhotos14Day(finalUrls)
     } catch (error) {
       console.error(`Erro ao salvar fotos do ${day}º dia:`, error)
       throw error
@@ -302,23 +344,32 @@ export default function TestEditPage() {
         extracted_conidium_weight: values.extractedConidiumWeight ?? null,
 
         updated_at: new Date().toISOString(),
-        created_by: user.id,
+        // IMPORTANTE: não force created_by em update se RLS não exigir isso.
+        // created_by deve ser definido no INSERT via trigger/policy. Em update, manteremos como está no banco.
       }
 
-      const { error } = await supabase
+      // Atualiza pelo registro específico (mais seguro)
+      const { data: updatedRow, error } = await supabase
         .from("tests")
         .update(payload)
         .eq("experiment_id", experimentId)
         .eq("repetition_number", repetitionNumber)
         .eq("test_number", testNumber)
+        .select("id")
+        .single()
 
       if (error) throw error
 
+      // garante testDbId para salvar fotos
+      const idToUse = updatedRow?.id || testDbId
+      if (!idToUse) throw new Error("Não foi possível identificar o id do teste no banco.")
+
+      // Salvar fotos (Caminho A)
       if (photos7Day.length > 0) {
-        await savePhotosToStorage(photos7Day, 7)
+        await savePhotosToStorage(user.id, photos7Day, 7)
       }
       if (photos14Day.length > 0) {
-        await savePhotosToStorage(photos14Day, 14)
+        await savePhotosToStorage(user.id, photos14Day, 14)
       }
 
       router.push(`/experiments/${experimentId}/repetition/${repetitionId}/test/${testId}/view`)

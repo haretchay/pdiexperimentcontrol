@@ -30,8 +30,15 @@ function mapDbToUI(exp: DbExperiment): UIExperiment {
 }
 
 export default async function ExperimentsPage() {
-  const supabase = createClient()
-  const experiments = await getExperiments(supabase)
+  let experiments: DbExperiment[] = []
+
+  try {
+    const supabase = await createClient()
+    experiments = await getExperiments(supabase)
+  } catch (error) {
+    console.error("[v0] Error loading experiments:", error)
+    // Return empty array on error to allow UI to render
+  }
 
   const uiExperiments = (experiments ?? []).map(mapDbToUI)
 

@@ -167,7 +167,11 @@ function mapTest(row: DbTestRow): Test {
  * Retorna o próximo número de experimento (MAX(number)+1)
  */
 export async function getNextExperimentNumber(supabase: SupabaseClient): Promise<number> {
-  const { data, error } = await supabase.from("experiments").select("number").order("number", { ascending: false }).limit(1)
+  const { data, error } = await supabase
+    .from("experiments")
+    .select("number")
+    .order("number", { ascending: false })
+    .limit(1)
 
   if (error) throw error
   const last = data?.[0]?.number ?? 0
@@ -178,37 +182,61 @@ export async function getNextExperimentNumber(supabase: SupabaseClient): Promise
  * Lista de experimentos
  */
 export async function getExperiments(supabase: SupabaseClient): Promise<Experiment[]> {
-  const { data, error } = await supabase.from("experiments").select("*").order("number", { ascending: false })
+  try {
+    const { data, error } = await supabase.from("experiments").select("*").order("number", { ascending: false })
 
-  if (error) throw error
-  const rows = (data ?? []) as unknown as DbExperimentRow[]
-  return rows.map(mapExperiment)
+    if (error) {
+      console.error("[Experiments] Error fetching experiments:", error)
+      return []
+    }
+    const rows = (data ?? []) as unknown as DbExperimentRow[]
+    return rows.map(mapExperiment)
+  } catch (err) {
+    console.error("[Experiments] Exception fetching experiments:", err)
+    return []
+  }
 }
 
 /**
  * Busca um experimento pelo UUID (id)
  */
-export async function getExperimentById(supabase: SupabaseClient, id: string): Promise<Experiment> {
-  const { data, error } = await supabase.from("experiments").select("*").eq("id", id).single()
+export async function getExperimentById(supabase: SupabaseClient, id: string): Promise<Experiment | null> {
+  try {
+    const { data, error } = await supabase.from("experiments").select("*").eq("id", id).single()
 
-  if (error) throw error
-  return mapExperiment(data as unknown as DbExperimentRow)
+    if (error) {
+      console.error("[Experiments] Error fetching experiment by id:", error)
+      return null
+    }
+    return mapExperiment(data as unknown as DbExperimentRow)
+  } catch (err) {
+    console.error("[Experiments] Exception fetching experiment by id:", err)
+    return null
+  }
 }
 
 /**
  * Lista testes de um experimento
  */
 export async function getTestsByExperiment(supabase: SupabaseClient, experimentId: string): Promise<Test[]> {
-  const { data, error } = await supabase
-    .from("tests")
-    .select("*")
-    .eq("experiment_id", experimentId)
-    .order("repetition_number", { ascending: true })
-    .order("test_number", { ascending: true })
+  try {
+    const { data, error } = await supabase
+      .from("tests")
+      .select("*")
+      .eq("experiment_id", experimentId)
+      .order("repetition_number", { ascending: true })
+      .order("test_number", { ascending: true })
 
-  if (error) throw error
-  const rows = (data ?? []) as unknown as DbTestRow[]
-  return rows.map(mapTest)
+    if (error) {
+      console.error("[Experiments] Error fetching tests:", error)
+      return []
+    }
+    const rows = (data ?? []) as unknown as DbTestRow[]
+    return rows.map(mapTest)
+  } catch (err) {
+    console.error("[Experiments] Exception fetching tests:", err)
+    return []
+  }
 }
 
 /**
@@ -217,7 +245,14 @@ export async function getTestsByExperiment(supabase: SupabaseClient, experimentI
  */
 export async function createExperiment(
   supabase: SupabaseClient,
-  input: { number: number; strain: string; startDate: string; testCount: number; repetitionCount: number; createdBy?: string | null },
+  input: {
+    number: number
+    strain: string
+    startDate: string
+    testCount: number
+    repetitionCount: number
+    createdBy?: string | null
+  },
 ): Promise<Experiment> {
   const payload = {
     number: input.number,

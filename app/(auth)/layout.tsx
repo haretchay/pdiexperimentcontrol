@@ -5,7 +5,7 @@ import { createClient } from "@/lib/supabase/server"
 export const runtime = "nodejs"
 
 export default async function AuthLayout({ children }: { children: React.ReactNode }) {
-  const supabase = createClient()
+  const supabase = await createClient()
 
   const {
     data: { user },
@@ -18,11 +18,7 @@ export default async function AuthLayout({ children }: { children: React.ReactNo
 
   // Se está logado, checa perfil.
   // Se estiver bloqueado/inativo, NÃO redireciona (para permitir /auth/blocked abrir sem loop).
-  const { data: profile } = await supabase
-    .from("profiles")
-    .select("status")
-    .eq("user_id", user.id)
-    .maybeSingle()
+  const { data: profile } = await supabase.from("profiles").select("status").eq("user_id", user.id).maybeSingle()
 
   if (!profile || profile.status !== "active") {
     return <main className="min-h-svh w-full">{children}</main>

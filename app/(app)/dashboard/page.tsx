@@ -19,7 +19,7 @@ function isRateLimitError(err: unknown) {
 }
 
 export default async function DashboardPage() {
-  const supabase = createClient()
+  const supabase = await createClient()
 
   // 1) Autenticação (não entrar em loop por causa de 429)
   try {
@@ -32,12 +32,12 @@ export default async function DashboardPage() {
           <div className="p-6">
             <h1 className="text-xl font-semibold">Muitas requisições ao Supabase</h1>
             <p className="mt-2 text-sm text-muted-foreground">
-              Você atingiu temporariamente o limite de requisições do Supabase (429).
-              Aguarde alguns segundos e recarregue a página.
+              Você atingiu temporariamente o limite de requisições do Supabase (429). Aguarde alguns segundos e
+              recarregue a página.
             </p>
             <p className="mt-4 text-sm">
-              Se isso continuar acontecendo, é sinal de que algum componente está chamando
-              getUser/getSession em loop (vamos corrigir isso em seguida).
+              Se isso continuar acontecendo, é sinal de que algum componente está chamando getUser/getSession em loop
+              (vamos corrigir isso em seguida).
             </p>
           </div>
         )
@@ -58,12 +58,11 @@ export default async function DashboardPage() {
         <div className="p-6">
           <h1 className="text-xl font-semibold">Muitas requisições ao Supabase</h1>
           <p className="mt-2 text-sm text-muted-foreground">
-            O Supabase respondeu com rate-limit (429) e a requisição foi interrompida.
-            Aguarde alguns segundos e recarregue a página.
+            O Supabase respondeu com rate-limit (429) e a requisição foi interrompida. Aguarde alguns segundos e
+            recarregue a página.
           </p>
           <p className="mt-4 text-sm">
-            Próximo passo: vamos identificar onde o app está disparando chamadas repetidas
-            de autenticação no client.
+            Próximo passo: vamos identificar onde o app está disparando chamadas repetidas de autenticação no client.
           </p>
         </div>
       )

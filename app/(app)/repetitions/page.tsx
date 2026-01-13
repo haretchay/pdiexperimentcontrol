@@ -16,8 +16,15 @@ function pad3(n: number) {
 }
 
 export default async function RepetitionsPage() {
-  const supabase = createClient()
-  const experiments = await getExperiments(supabase)
+  let experiments: DbExperiment[] = []
+
+  try {
+    const supabase = await createClient()
+    experiments = await getExperiments(supabase)
+  } catch (error) {
+    console.error("[v0] Error loading experiments:", error)
+    // Return empty array on error to allow UI to render
+  }
 
   const reps: UIRepetition[] = []
   ;(experiments ?? []).forEach((exp: DbExperiment) => {

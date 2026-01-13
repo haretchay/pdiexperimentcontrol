@@ -10,7 +10,21 @@ import { requireActiveUser } from "@/lib/supabase/auth"
 export const runtime = "nodejs"
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
-  const res = await requireActiveUser()
+  let res
+  try {
+    res = await requireActiveUser()
+  } catch (err) {
+    console.error("[layout] Unexpected error in requireActiveUser:", err)
+    return (
+      <div className="p-6">
+        <h1 className="text-xl font-semibold">Erro de Configuração</h1>
+        <p className="mt-2 text-sm text-muted-foreground">
+          As variáveis de ambiente do Supabase não estão configuradas corretamente. Configure NEXT_PUBLIC_SUPABASE_URL e
+          NEXT_PUBLIC_SUPABASE_ANON_KEY na seção "Vars" da barra lateral.
+        </p>
+      </div>
+    )
+  }
 
   if (!res.ok && res.reason === "rate_limit") {
     return (

@@ -40,9 +40,15 @@ function mapRow(row: TestRow): UITestRow {
 }
 
 export default async function TestsPage() {
-  const supabase = createClient()
-  const rows = await getAllTests(supabase)
-  const items = rows.map(mapRow)
+  try {
+    const supabase = await createClient()
+    const rows = await getAllTests(supabase)
+    const items = rows.map(mapRow)
 
-  return <TestsPageClient initialTests={items} />
+    return <TestsPageClient initialTests={items} />
+  } catch (error) {
+    console.error("[v0] Error loading tests:", error)
+    // Return empty state when Supabase is not configured or fails
+    return <TestsPageClient initialTests={[]} />
+  }
 }

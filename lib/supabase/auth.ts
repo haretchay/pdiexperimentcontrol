@@ -7,28 +7,40 @@ import { createClient } from "@/lib/supabase/server"
 function isRateLimitError(err: unknown) {
   const status = (err as any)?.status
   const msg = String((err as any)?.message ?? err ?? "")
+  const name = (err as any)?.name ?? ""
 
   return (
     status === 429 ||
+    name === "AbortError" ||
     msg.includes("Too Many") ||
     msg.includes("Too many") ||
     msg.includes("rate limit") ||
-    msg.includes("Unexpected token 'T'")
+    msg.includes("Unexpected token 'T'") ||
+    msg.includes("signal is aborted")
   )
 }
 
 export const getServerUser = cache(async () => {
-  const supabase = createClient()
+  const supabase = await createClient()
 
   try {
     const { data, error } = await supabase.auth.getUser()
+    if (error && isRateLimitError(error)) {
+      return {
+        supabase,
+        user: null,
+        error,
+        rateLimited: true,
+      }
+    }
     return {
       supabase,
       user: data.user ?? null,
       error: error ?? null,
-      rateLimited: error ? isRateLimitError(error) : false,
+      rateLimited: false,
     }
   } catch (err) {
+    console.error("[auth] Exception in getServerUser:", err)
     return {
       supabase,
       user: null,
@@ -39,19 +51,20 @@ export const getServerUser = cache(async () => {
 })
 
 export const getServerProfile = cache(async (userId: string) => {
-  const supabase = createClient()
+  const supabase = await createClient()
 
-  const { data, error } = await supabase
-    .from("profiles")
-    .select("status, role")
-    .eq("user_id", userId)
-    .maybeSingle()
+  try {
+    const { data, error } = await supabase.from("profiles").select("status, role").eq("user_id", userId).maybeSingle()
 
-  return { supabase, profile: data ?? null, error: error ?? null }
+    return { supabase, profile: data ?? null, error: error ?? null }
+  } catch (err) {
+    console.error("[auth] Exception in getServerProfile:", err)
+    return { supabase, profile: null, error: err as any }
+  }
 })
 
 /**
- * Proteção “definitiva” para o grupo (app):
+ * Proteção "definitiva" para o grupo (app):
  * - garante usuário logado
  * - garante profile.status === "active"
  * - evita loops em caso de 429 (rate limit)

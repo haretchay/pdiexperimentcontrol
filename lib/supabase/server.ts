@@ -1,37 +1,27 @@
-import "server-only"
-
-import { cookies } from "next/headers"
 import { createServerClient } from "@supabase/ssr"
-import { cache } from "react"
+import { cookies } from "next/headers"
 
-export const createClient = cache(() => {
-  const cookieStore = cookies()
+/**
+ * IMPORTANTE: Com Fluid Compute, não coloque este cliente em uma variável global.
+ * Sempre crie um novo cliente dentro de cada função ao usá-lo.
+ */
+export async function createClient() {
+  const cookieStore = await cookies()
 
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL
-  const anon = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
-
-  if (!url || !anon) {
-    // Em produção isso deve estar sempre setado.
-    // Se faltar, vamos falhar de forma explícita (evita comportamento estranho).
-    throw new Error(
-      "[Supabase] Missing env: NEXT_PUBLIC_SUPABASE_URL or NEXT_PUBLIC_SUPABASE_ANON_KEY",
-    )
-  }
-
-  return createServerClient(url, anon, {
+  return createServerClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!, {
     cookies: {
       getAll() {
         return cookieStore.getAll()
       },
       setAll(cookiesToSet) {
         try {
-          cookiesToSet.forEach(({ name, value, options }) => {
-            cookieStore.set(name, value, options)
-          })
+          cookiesToSet.forEach(({ name, value, options }) => cookieStore.set(name, value, options))
         } catch {
-          // Em Server Components, set cookie pode falhar — ok.
+          // O método "setAll" foi chamado de um Server Component.
+          // Isso pode ser ignorado se você tiver middleware atualizando
+          // as sessões do usuário.
         }
       },
     },
   })
-})
+}

@@ -3,8 +3,15 @@ import { getExperiments } from "@/lib/supabase/experiments"
 import { MediaPageClient } from "@/components/media/media-page-client"
 
 export default async function MediaPage() {
-  const supabase = createClient()
-  const experiments = await getExperiments(supabase)
+  let experiments = []
+
+  try {
+    const supabase = await createClient()
+    experiments = await getExperiments(supabase)
+  } catch (error) {
+    console.error("[v0] Error loading experiments:", error)
+    // Return empty array on error to allow UI to render
+  }
 
   const items =
     (experiments ?? []).map((exp) => ({

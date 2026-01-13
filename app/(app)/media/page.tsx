@@ -3,10 +3,9 @@ import { getExperiments } from "@/lib/supabase/experiments"
 import { MediaPageClient } from "@/components/media/media-page-client"
 
 export default async function MediaPage() {
-  const supabase = await createClient()
+  const supabase = createClient()
   const experiments = await getExperiments(supabase)
 
-  // Envia só o necessário pro client
   const items =
     (experiments ?? []).map((exp) => ({
       id: exp.id,

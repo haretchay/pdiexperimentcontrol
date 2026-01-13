@@ -1,30 +1,16 @@
-import { createServerClient } from "@supabase/ssr"
 import { NextResponse, type NextRequest } from "next/server"
 
-export function createMiddlewareClient(req: NextRequest) {
-  const res = NextResponse.next()
+// Middleware desabilitado intencionalmente.
+// Motivo: o middleware anterior chamava Supabase Auth em toda requisição,
+// o que gerava 429 (Too Many Requests), AbortError e falhas de JSON parse.
+//
+// A proteção de rotas e verificação de perfil agora ficam no layout server (app/(app)/layout.tsx).
 
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL
-  const anon = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+export function middleware(_req: NextRequest) {
+  return NextResponse.next()
+}
 
-  if (!url || !anon) {
-    // Em build/preview sem envs, não quebra o middleware
-    return { supabase: null as any, res }
-  }
-
-  const supabase = createServerClient(url, anon, {
-    cookies: {
-      get(name: string) {
-        return req.cookies.get(name)?.value
-      },
-      set(name: string, value: string, options: any) {
-        res.cookies.set({ name, value, ...options })
-      },
-      remove(name: string, options: any) {
-        res.cookies.set({ name, value: "", ...options })
-      },
-    },
-  })
-
-  return { supabase, res }
+export const config = {
+  // Nunca bate em nenhuma rota (desativa na prática)
+  matcher: ["/__middleware_disabled__"],
 }

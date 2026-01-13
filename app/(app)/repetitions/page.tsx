@@ -16,11 +16,10 @@ function pad3(n: number) {
 }
 
 export default async function RepetitionsPage() {
-  const supabase = await createClient()
+  const supabase = createClient()
   const experiments = await getExperiments(supabase)
 
   const reps: UIRepetition[] = []
-
   ;(experiments ?? []).forEach((exp: DbExperiment) => {
     for (let rep = 1; rep <= (exp.repetitionCount ?? 0); rep++) {
       reps.push({
@@ -34,7 +33,6 @@ export default async function RepetitionsPage() {
     }
   })
 
-  // Ordenar por data mais recente (opcional)
   reps.sort((a, b) => (a.startDate < b.startDate ? 1 : -1))
 
   return <RepetitionsPageClient initialRepetitions={reps} />

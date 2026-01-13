@@ -25,12 +25,12 @@ function mapDbToUI(exp: DbExperiment): UIExperiment {
     testCount,
     repetitionCount,
     totalTests: testCount * repetitionCount,
-    testTypes: [], // ainda não vem do banco; depois a gente calcula via tabela tests
+    testTypes: [],
   }
 }
 
 export default async function ExperimentsPage() {
-  const supabase = await createClient()
+  const supabase = createClient()
   const experiments = await getExperiments(supabase)
 
   const uiExperiments = (experiments ?? []).map(mapDbToUI)

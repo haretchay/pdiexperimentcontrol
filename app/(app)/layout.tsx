@@ -8,14 +8,37 @@ import { ThemeSelector } from "@/components/theme-selector"
 import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar"
 import { createClient } from "@/lib/supabase/server"
 
+export const runtime = "nodejs"
+
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
-  const supabase = await createClient()
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
+  const supabase = createClient()
+
+  // 1) Autenticação
+  const { data: authData, error: authError } = await supabase.auth.getUser()
+  const user = authData.user
+
+  if (authError) {
+    console.error("[app layout] getUser error:", authError)
+  }
 
   if (!user) {
     redirect("/auth/login")
+  }
+
+  // 2) Perfil (status/role)
+  const { data: profile, error: profileError } = await supabase
+    .from("profiles")
+    .select("status, role")
+    .eq("user_id", user.id)
+    .maybeSingle()
+
+  if (profileError) {
+    console.error("[app layout] profile error:", profileError)
+  }
+
+  // Se não tiver perfil ou não estiver ativo → bloqueia
+  if (!profile || profile.status !== "active") {
+    redirect("/auth/blocked")
   }
 
   return (

@@ -23,7 +23,11 @@ export default function TestViewPage() {
   const router = useRouter()
   const supabase = useMemo(() => createClient(), [])
 
-  const { id: experimentId, repetitionId, testId } = params as {
+  const {
+    id: experimentId,
+    repetitionId,
+    testId,
+  } = params as {
     id: string
     repetitionId: string
     testId: string
@@ -57,7 +61,6 @@ export default function TestViewPage() {
 
   useEffect(() => {
     let cancelled = false
-
     ;(async () => {
       try {
         setLoading(true)
@@ -281,6 +284,7 @@ export default function TestViewPage() {
           {testData.photos7Day && Array.isArray(testData.photos7Day) && testData.photos7Day.length > 0 ? (
             <PhotoGridDisplay
               photos={testData.photos7Day}
+              annotations={testData.annotations7Day as any}
               testInfo={{
                 experimentNumber: experiment?.number || "",
                 repetitionNumber: String(repetitionId),
@@ -334,6 +338,7 @@ export default function TestViewPage() {
           {testData.photos14Day && Array.isArray(testData.photos14Day) && testData.photos14Day.length > 0 ? (
             <PhotoGridDisplay
               photos={testData.photos14Day}
+              annotations={testData.annotations14Day as any}
               testInfo={{
                 experimentNumber: experiment?.number || "",
                 repetitionNumber: String(repetitionId),

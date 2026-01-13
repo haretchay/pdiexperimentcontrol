@@ -5,8 +5,17 @@ import Image from "next/image"
 import { Dialog, DialogContent, DialogTrigger } from "@/components/ui/dialog"
 import { ZoomIn, Circle } from "lucide-react"
 
+interface Annotation {
+  x: number
+  y: number
+  size: string
+  caption: string
+  color: string
+}
+
 interface PhotoGridDisplayProps {
   photos: string[]
+  annotations?: Annotation[]
   testInfo: {
     experimentNumber: string
     repetitionNumber: string
@@ -25,12 +34,15 @@ interface PhotoGridDisplayProps {
   showCaption?: boolean
 }
 
-export function PhotoGridDisplay({ photos, testInfo, showCaption = true }: PhotoGridDisplayProps) {
+export function PhotoGridDisplay({ photos, annotations, testInfo, showCaption = true }: PhotoGridDisplayProps) {
   const [selectedPhoto, setSelectedPhoto] = useState<string | null>(null)
 
   if (!photos || photos.length === 0) {
     return null
   }
+
+  // Filtrar apenas anotações com legendas
+  const annotationsWithCaptions = annotations?.filter((ann) => ann.caption && ann.caption.trim() !== "") || []
 
   return (
     <div className="border rounded-md overflow-hidden">
@@ -48,10 +60,10 @@ export function PhotoGridDisplay({ photos, testInfo, showCaption = true }: Photo
                   Foto {index + 1}
                 </div>
                 {/* Indicador de anotações */}
-                {photo.includes("data:image/jpeg;base64") && photo.length > 100000 && (
+                {annotationsWithCaptions.length > 0 && (
                   <div className="absolute bottom-2 right-2 bg-red-600/80 text-white px-2 py-1 text-xs rounded-full flex items-center">
                     <Circle className="h-3 w-3 mr-1" />
-                    Com anotações
+                    {annotationsWithCaptions.length} anotaç{annotationsWithCaptions.length === 1 ? "ão" : "ões"}
                   </div>
                 )}
               </div>
@@ -119,13 +131,27 @@ export function PhotoGridDisplay({ photos, testInfo, showCaption = true }: Photo
             )}
           </div>
 
-          {/* Adicionar legendas das anotações se existirem */}
-          {photos[0] && photos[0].includes("data:image/jpeg;base64") && photos[0].length > 100000 && (
-            <div className="mt-3 border-t border-gray-700 pt-2">
-              <span className="text-gray-400 block mb-1">Anotações:</span>
-              <div className="text-xs text-white">
-                {/* As anotações já estão incluídas na imagem, esta é apenas uma indicação visual */}
-                <span className="italic">As anotações estão incluídas na imagem.</span>
+          {annotationsWithCaptions.length > 0 && (
+            <div className="mt-3 border-t border-gray-700 pt-3">
+              <span className="text-gray-400 block mb-2 font-semibold">Legendas dos Contaminantes:</span>
+              <div className="space-y-1">
+                {annotationsWithCaptions.map((annotation, index) => (
+                  <div key={index} className="flex items-center gap-2 text-sm">
+                    <div
+                      className="flex items-center justify-center rounded-full text-white font-bold"
+                      style={{
+                        backgroundColor: annotation.color,
+                        width: "24px",
+                        height: "24px",
+                        fontSize: "12px",
+                        flexShrink: 0,
+                      }}
+                    >
+                      {index + 1}
+                    </div>
+                    <span className="text-white">{annotation.caption}</span>
+                  </div>
+                ))}
               </div>
             </div>
           )}

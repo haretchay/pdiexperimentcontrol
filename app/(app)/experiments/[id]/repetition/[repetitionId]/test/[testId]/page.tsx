@@ -299,7 +299,7 @@ export default function TestEditPage() {
 
         wet_weight: values.wetWeight ?? null,
         dry_weight: values.dryWeight ?? null,
-        extractedConidiumWeight: values.extractedConidiumWeight ?? null,
+        extracted_conidium_weight: values.extractedConidiumWeight ?? null,
 
         updated_at: new Date().toISOString(),
         created_by: user.id,

@@ -38,6 +38,32 @@ export async function updateSession(request: NextRequest) {
   } = await supabase.auth.getUser()
 
   const path = request.nextUrl.pathname
+
+  if (path.startsWith("/(app)") || path.startsWith("/(auth)")) {
+    let cleanPath = path
+
+    // Remove /(app) ou /(auth) do início
+    if (path.startsWith("/(app)/")) {
+      cleanPath = path.replace(/^\/(app)\//, "/")
+    } else if (path === "/(app)") {
+      cleanPath = "/"
+    } else if (path.startsWith("/(auth)/")) {
+      cleanPath = path.replace(/^\/(auth)\//, "/")
+    } else if (path === "/(auth)") {
+      cleanPath = "/"
+    }
+
+    // Cria redirect para URL limpa
+    const url = request.nextUrl.clone()
+    url.pathname = cleanPath
+    const redirectResponse = NextResponse.redirect(url)
+
+    // IMPORTANTE: Copia cookies do supabaseResponse para não quebrar refresh de sessão
+    redirectResponse.cookies.setAll(supabaseResponse.cookies.getAll())
+
+    return redirectResponse
+  }
+
   const isAuthRoute = path.startsWith("/auth")
   const isProtected =
     path === "/" ||

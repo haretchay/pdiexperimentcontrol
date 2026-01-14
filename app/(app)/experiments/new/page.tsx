@@ -157,7 +157,13 @@ export default function NewExperimentPage() {
                     <FormItem>
                       <FormLabel>Qtd. de testes</FormLabel>
                       <FormControl>
-                        <Input type="number" min={1} value={String(field.value ?? "")} onChange={field.onChange} />
+                        <Input
+                          type="number"
+                          min={1}
+                          {...field}
+                          value={String(field.value ?? "")}
+                          onChange={(e) => field.onChange(e.target.value)}
+                        />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -171,7 +177,13 @@ export default function NewExperimentPage() {
                     <FormItem>
                       <FormLabel>Qtd. de repetições</FormLabel>
                       <FormControl>
-                        <Input type="number" min={1} value={String(field.value ?? "")} onChange={field.onChange} />
+                        <Input
+                          type="number"
+                          min={1}
+                          {...field}
+                          value={String(field.value ?? "")}
+                          onChange={(e) => field.onChange(e.target.value)}
+                        />
                       </FormControl>
                       <FormMessage />
                     </FormItem>

@@ -23,7 +23,11 @@ export default function TestViewPage() {
   const router = useRouter()
   const supabase = useMemo(() => createClient(), [])
 
-  const { id: experimentId, repetitionId, testId } = params as {
+  const {
+    id: experimentId,
+    repetitionId,
+    testId,
+  } = params as {
     id: string
     repetitionId: string
     testId: string
@@ -43,18 +47,16 @@ export default function TestViewPage() {
   }
 
   async function storagePathToUrl(path: string) {
-    // Preferir signed URL (funciona em bucket privado/público)
     const { data, error } = await supabase.storage.from("test-photos").createSignedUrl(path, 60 * 60)
-    if (!error && data?.signedUrl) return data.signedUrl
-
-    // Fallback para bucket público
-    const { data: pub } = supabase.storage.from("test-photos").getPublicUrl(path)
-    return pub?.publicUrl || ""
+    if (error || !data?.signedUrl) {
+      console.error("[v0] Erro ao criar signed URL:", error)
+      return ""
+    }
+    return data.signedUrl
   }
 
   useEffect(() => {
     let cancelled = false
-
     ;(async () => {
       try {
         setLoading(true)

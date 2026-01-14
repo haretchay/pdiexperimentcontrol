@@ -68,7 +68,11 @@ export default function TestEditPage() {
   const router = useRouter()
   const params = useParams()
 
-  const { id: experimentId, repetitionId, testId } = params as {
+  const {
+    id: experimentId,
+    repetitionId,
+    testId,
+  } = params as {
     id: string
     repetitionId: string
     testId: string
@@ -126,11 +130,11 @@ export default function TestEditPage() {
   async function storagePathToUrl(path: string) {
     // Preferir signed URL (funciona em bucket privado e público)
     const { data, error } = await supabase.storage.from("test-photos").createSignedUrl(path, 60 * 60)
-    if (!error && data?.signedUrl) return data.signedUrl
-
-    // Fallback (bucket público)
-    const { data: pub } = supabase.storage.from("test-photos").getPublicUrl(path)
-    return pub?.publicUrl || ""
+    if (error || !data?.signedUrl) {
+      console.error("[v0] Erro ao criar signed URL:", error)
+      return ""
+    }
+    return data.signedUrl
   }
 
   useEffect(() => {

@@ -1,61 +1,44 @@
 import type React from "react"
 
 import { AppSidebar } from "@/components/app-sidebar"
+import ClientAuthGate from "@/components/auth/client-auth-gate"
 import { AuthProvider } from "@/components/auth-provider"
 import { DatabaseActions } from "@/components/database-actions"
 import { ThemeSelector } from "@/components/theme-selector"
 import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar"
-import { requireActiveUser } from "@/lib/supabase/auth"
 
 export const runtime = "nodejs"
 
-export default async function AppLayout({ children }: { children: React.ReactNode }) {
-  let res
-  try {
-    res = await requireActiveUser()
-  } catch (err) {
-    console.error("[layout] Unexpected error in requireActiveUser:", err)
-    return (
-      <div className="p-6">
-        <h1 className="text-xl font-semibold">Erro de Configuração</h1>
-        <p className="mt-2 text-sm text-muted-foreground">
-          As variáveis de ambiente do Supabase não estão configuradas corretamente. Configure NEXT_PUBLIC_SUPABASE_URL e
-          NEXT_PUBLIC_SUPABASE_ANON_KEY na seção "Vars" da barra lateral.
-        </p>
-      </div>
-    )
-  }
-
-  if (!res.ok && res.reason === "rate_limit") {
-    return (
-      <div className="p-6">
-        <h1 className="text-xl font-semibold">Muitas requisições ao Supabase</h1>
-        <p className="mt-2 text-sm text-muted-foreground">
-          Você atingiu temporariamente o limite de requisições (429). Aguarde alguns segundos e recarregue.
-        </p>
-      </div>
-    )
-  }
-
+// ✅ IMPORTANTe:
+// Não fazemos mais redirect server-side com requireActiveUser aqui.
+// No preview do v0, o SSR pode não enxergar os cookies de sessão,
+// enquanto o client enxerga a sessão no localStorage, criando loop
+// /auth/login -> /dashboard. O ClientAuthGate resolve isso no client.
+export default function AppLayout({ children }: { children: React.ReactNode }) {
   return (
     <AuthProvider>
       <SidebarProvider>
         <div className="flex h-full">
           <AppSidebar />
+
           <div className="flex-1 flex flex-col min-h-screen w-full max-w-full overflow-hidden">
             <header className="border-b bg-background sticky top-0 z-10">
-              <div className="flex h-16 items-center px-4 justify-between">
-                <div className="flex items-center">
+              <div className="flex h-16 items-center justify-between px-4">
+                <div className="flex items-center gap-2">
                   <SidebarTrigger />
-                  <div id="page-title" className="ml-4 text-xl font-bold"></div>
+                  <div className="font-semibold">Dashboard</div>
                 </div>
+
                 <div className="flex items-center gap-2">
                   <DatabaseActions />
                   <ThemeSelector />
                 </div>
               </div>
             </header>
-            <main className="flex-1 w-full max-w-full overflow-hidden">{children}</main>
+
+            <main className="flex-1 w-full max-w-full overflow-hidden">
+              <ClientAuthGate>{children}</ClientAuthGate>
+            </main>
           </div>
         </div>
       </SidebarProvider>

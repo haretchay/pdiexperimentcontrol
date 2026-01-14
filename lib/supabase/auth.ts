@@ -16,7 +16,12 @@ function isRateLimitError(err: unknown) {
     msg.includes("Too many") ||
     msg.includes("rate limit") ||
     msg.includes("Unexpected token 'T'") ||
-    msg.includes("signal is aborted")
+    msg.includes("signal is aborted") ||
+
+    // ✅ v0 preview / instabilidade de rede:
+    msg.includes("Failed to fetch") ||
+    msg.includes("fetch failed") ||
+    msg.includes("NetworkError")
   )
 }
 
@@ -39,15 +44,26 @@ export const getServerUser = cache(async () => {
       error: error ?? null,
       rateLimited: false,
     }
-  } catch (err) {
-    console.error("[auth] Exception in getServerUser:", err)
+    } catch (err) {
+    // ✅ Se for erro transitório/limite, trate como "rateLimited"
+    // para NÃO redirecionar para /auth/login e evitar “voltar pro dashboard”
+    if (isRateLimitError(err)) {
+      return {
+        supabase,
+        user: null,
+        error: err as any,
+        rateLimited: true,
+      }
+    }
+
     return {
       supabase,
       user: null,
       error: err as any,
-      rateLimited: isRateLimitError(err),
+      rateLimited: false,
     }
   }
+
 })
 
 export const getServerProfile = cache(async (userId: string) => {

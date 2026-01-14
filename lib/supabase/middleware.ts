@@ -2,12 +2,8 @@ import { createServerClient } from "@supabase/ssr"
 import { NextResponse, type NextRequest } from "next/server"
 
 export async function updateSession(request: NextRequest) {
-  let supabaseResponse = NextResponse.next({
-    request,
-  })
+  let supabaseResponse = NextResponse.next({ request })
 
-  // Com Fluid compute, não coloque este cliente em uma variável de ambiente global.
-  // Sempre crie um novo em cada requisição.
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
@@ -18,48 +14,49 @@ export async function updateSession(request: NextRequest) {
         },
         setAll(cookiesToSet) {
           cookiesToSet.forEach(({ name, value }) => request.cookies.set(name, value))
-          supabaseResponse = NextResponse.next({
-            request,
-          })
-          cookiesToSet.forEach(({ name, value, options }) => supabaseResponse.cookies.set(name, value, options))
+          supabaseResponse = NextResponse.next({ request })
+          cookiesToSet.forEach(({ name, value, options }) =>
+            supabaseResponse.cookies.set(name, value, options),
+          )
         },
       },
     },
   )
 
-  // Não execute código entre createServerClient e supabase.auth.getUser().
-  // Um erro simples pode tornar muito difícil debugar problemas com usuários
-  // sendo deslogados aleatoriamente.
-
-  // IMPORTANTE: Se você remover getUser() e usar renderização server-side
-  // com o cliente Supabase, seus usuários podem ser deslogados aleatoriamente.
   const {
     data: { user },
   } = await supabase.auth.getUser()
 
   const path = request.nextUrl.pathname
 
-  if (path.startsWith("/(app)") || path.startsWith("/(auth)")) {
-    let cleanPath = path
+  // =========================================================
+  // ✅ PRIORIDADE 1: NORMALIZAÇÃO DE ENTRADA (v0 preview)
+  // Remove route groups literais que às vezes aparecem no preview:
+  // "/(app)/..." -> "/..."
+  // "/(auth)/..." -> "/auth/..."
+  // "/(app)" ou "/(auth)" -> "/"
+  // =========================================================
+  const groupMatch = path.match(/^\/\((app|auth)\)(\/.*)?$/)
 
-    // Remove /(app) ou /(auth) do início
-    if (path.startsWith("/(app)/")) {
-      cleanPath = path.replace(/^\/(app)\//, "/")
-    } else if (path === "/(app)") {
-      cleanPath = "/"
-    } else if (path.startsWith("/(auth)/")) {
-      cleanPath = path.replace(/^\/(auth)\//, "/")
-    } else if (path === "/(auth)") {
-      cleanPath = "/"
-    }
+  if (groupMatch) {
+    const group = groupMatch[1] // "app" | "auth"
+    const rest = groupMatch[2] ?? "/" // inclui a barra inicial, ex: "/dashboard"
 
-    // Cria redirect para URL limpa
+    // (auth) deve virar "/auth/..." ; (app) vira "/..."
+    const normalizedPath =
+      group === "auth"
+        ? rest === "/" ? "/auth" : `/auth${rest}`
+        : rest === "/" ? "/" : rest
+
     const url = request.nextUrl.clone()
-    url.pathname = cleanPath
+    url.pathname = normalizedPath
+
     const redirectResponse = NextResponse.redirect(url)
 
-    // IMPORTANTE: Copia cookies do supabaseResponse para não quebrar refresh de sessão
-    redirectResponse.cookies.setAll(supabaseResponse.cookies.getAll())
+    // Copia cookies já acumulados pelo Supabase (evita desync da sessão)
+    for (const c of supabaseResponse.cookies.getAll()) {
+      redirectResponse.cookies.set(c.name, c.value)
+    }
 
     return redirectResponse
   }
@@ -74,21 +71,18 @@ export async function updateSession(request: NextRequest) {
     path.startsWith("/media") ||
     path.startsWith("/registers")
 
-  // Redireciona para login se tentar acessar rotas protegidas sem autenticação
   if (!user && isProtected) {
     const url = request.nextUrl.clone()
     url.pathname = "/auth/login"
     return NextResponse.redirect(url)
   }
 
-  // Redireciona para dashboard se já estiver autenticado e tentar acessar rotas de auth
   if (user && isAuthRoute && path !== "/auth/blocked") {
     const url = request.nextUrl.clone()
     url.pathname = "/dashboard"
     return NextResponse.redirect(url)
   }
 
-  // Verifica status do perfil do usuário
   if (user && isProtected) {
     const { data: profile } = await supabase
       .from("profiles")
@@ -96,7 +90,6 @@ export async function updateSession(request: NextRequest) {
       .eq("user_id", user.id)
       .maybeSingle()
 
-    // Redireciona para página de bloqueio se o usuário não estiver ativo
     if (!profile || profile.status !== "active") {
       if (path !== "/auth/blocked") {
         const url = request.nextUrl.clone()
@@ -105,7 +98,6 @@ export async function updateSession(request: NextRequest) {
       }
     }
 
-    // Proteção de rotas admin
     const isAdminRoute = path.startsWith("/admin")
     if (isAdminRoute && profile?.role !== "admin") {
       const url = request.nextUrl.clone()
@@ -113,19 +105,6 @@ export async function updateSession(request: NextRequest) {
       return NextResponse.redirect(url)
     }
   }
-
-  // IMPORTANTE: Você *deve* retornar o objeto supabaseResponse como está.
-  // Se você está criando um novo objeto de resposta com NextResponse.next(), certifique-se de:
-  // 1. Passar a request nele, assim:
-  //    const myNewResponse = NextResponse.next({ request })
-  // 2. Copiar os cookies, assim:
-  //    myNewResponse.cookies.setAll(supabaseResponse.cookies.getAll())
-  // 3. Modificar o objeto myNewResponse para suas necessidades, mas evite modificar
-  //    os cookies!
-  // 4. Finalmente:
-  //    return myNewResponse
-  // Se isso não for feito, você pode estar fazendo o navegador e o servidor
-  // ficarem fora de sincronia e terminar a sessão do usuário prematuramente!
 
   return supabaseResponse
 }

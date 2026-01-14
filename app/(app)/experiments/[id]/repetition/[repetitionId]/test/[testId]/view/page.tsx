@@ -319,6 +319,30 @@ export default function TestViewPage() {
           )}
         </CardContent>
       </Card>
+
+      <Card className="mb-6">
+        <CardHeader>
+          <CardTitle>Medições de Peso</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div>
+              <h3 className="text-sm font-medium text-muted-foreground">Peso Úmido</h3>
+              <p className="font-medium">{testData.wetWeight ? `${testData.wetWeight} g` : "Não informado"}</p>
+            </div>
+            <div>
+              <h3 className="text-sm font-medium text-muted-foreground">Peso Seco</h3>
+              <p className="font-medium">{testData.dryWeight ? `${testData.dryWeight} g` : "Não informado"}</p>
+            </div>
+            <div>
+              <h3 className="text-sm font-medium text-muted-foreground">Peso Conídio Extraído</h3>
+              <p className="font-medium">
+                {testData.extractedConidiumWeight ? `${testData.extractedConidiumWeight} g` : "Não informado"}
+              </p>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
     </div>
   )
 }

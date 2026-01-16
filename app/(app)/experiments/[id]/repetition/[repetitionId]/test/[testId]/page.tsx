@@ -8,7 +8,6 @@ import { useForm } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
 
 import { createClient } from "@/lib/supabase/client"
-import { assertValidTestPhotoPath, buildTestPhotoPath } from "@/lib/pdi/storage-path"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form"
@@ -230,7 +229,7 @@ export default function TestEditPage() {
     }
   }, [supabase, experimentId, repetitionNumber, testNumber, form])
 
-  async function savePhotosToStorage(photos: string[], day: 7 | 14, userId: string) {
+    async function savePhotosToStorage(photos: string[], day: 7 | 14, userId: string) {
     if (!testDbId) return
 
     // Segurança: só faz upload se forem fotos NOVAS (dataURL).
@@ -259,26 +258,15 @@ export default function TestEditPage() {
         const response = await fetch(photo)
         const blob = await response.blob()
 
-        // ✅ Gera path PADRONIZADO e validado (mesmo valor vai pro Storage e pro DB)
-        const filePath = buildTestPhotoPath({
-          userId,
-          testId: testDbId,
-          day,
-          index: i + 1,
-          ext: "jpg",
-        })
+        const fileName = `day${day}_photo${i + 1}_${Date.now()}.jpg`
+        const filePath = `${userId}/${testDbId}/${fileName}`
 
-        // Valida defensivamente antes de qualquer operacao
-        assertValidTestPhotoPath(filePath, { userId, testId: testDbId })
 
         const { error: uploadError } = await supabase.storage.from("test-photos").upload(filePath, blob, {
           contentType: "image/jpeg",
           upsert: true,
         })
         if (uploadError) throw uploadError
-
-        // Valida de novo antes de gravar no banco (defensivo)
-        assertValidTestPhotoPath(filePath, { userId, testId: testDbId })
 
         const { error: dbError } = await supabase.from("test_photos").insert({
           test_id: testDbId,
@@ -352,10 +340,10 @@ export default function TestEditPage() {
 
       // ✅ Só mexe no storage se tiver foto NOVA (dataURL)
       if (photos7Day.length > 0 && hasNewCapturedPhotos(photos7Day)) {
-        await savePhotosToStorage(photos7Day, 7, user.id)
+        await savePhotosToStorage(photos7Day, 7, user.Id)
       }
       if (photos14Day.length > 0 && hasNewCapturedPhotos(photos14Day)) {
-        await savePhotosToStorage(photos14Day, 14, user.id)
+        await savePhotosToStorage(photos14Day, 14, user.Id)
       }
 
       router.push(`/experiments/${experimentId}/repetition/${repetitionId}/test/${testId}/view`)
@@ -551,52 +539,35 @@ export default function TestEditPage() {
                   <FormItem>
                     <FormLabel>Tipo de Teste</FormLabel>
                     <FormControl>
-                      <Input {...field} value={field.value ?? ""} />
+                      <Input {...field} value={field.value ?? ""} placeholder="Ex: Teste A" />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
                 )}
               />
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                 <FormField
                   control={form.control}
                   name="averageHumidity"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Umidade Média</FormLabel>
+                      <FormLabel>Média umidade</FormLabel>
                       <FormControl>
-                        <Input type="number" step="0.01" {...field} value={field.value ?? ""} />
+                        <Input type="number" step="0.1" value={field.value ?? ""} onChange={field.onChange} />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
                   )}
                 />
-
-                <FormField
-                  control={form.control}
-                  name="quantity"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Quantidade</FormLabel>
-                      <FormControl>
-                        <Input type="number" step="0.01" {...field} value={field.value ?? ""} />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <FormField
                   control={form.control}
                   name="bozo"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>BOZO</FormLabel>
+                      <FormLabel>Bozo</FormLabel>
                       <FormControl>
-                        <Input type="number" step="0.01" {...field} value={field.value ?? ""} />
+                        <Input type="number" step="0.1" value={field.value ?? ""} onChange={field.onChange} />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -609,7 +580,20 @@ export default function TestEditPage() {
                     <FormItem>
                       <FormLabel>Sensorial</FormLabel>
                       <FormControl>
-                        <Input type="number" step="0.01" {...field} value={field.value ?? ""} />
+                        <Input type="number" step="0.1" value={field.value ?? ""} onChange={field.onChange} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="quantity"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Quantidade</FormLabel>
+                      <FormControl>
+                        <Input type="number" step="0.1" value={field.value ?? ""} onChange={field.onChange} />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -617,94 +601,135 @@ export default function TestEditPage() {
                 />
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <FormField
-                  control={form.control}
-                  name="date7Day"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Data 7º Dia</FormLabel>
-                      <FormControl>
-                        <Input type="date" {...field} value={field.value ?? ""} />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
+              <div className="border rounded-lg p-4 space-y-3">
+                <h3 className="font-semibold">Dados do 7º dia</h3>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <FormField
+                    control={form.control}
+                    name="date7Day"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Data 7º dia</FormLabel>
+                        <FormControl>
+                          <Input type="date" {...field} value={field.value ?? ""} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <FormField
+                    control={form.control}
+                    name="temp7Chamber"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Temp 7 Câmara</FormLabel>
+                        <FormControl>
+                          <Input type="number" step="0.1" value={field.value ?? ""} onChange={field.onChange} />
+                        </FormControl>
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
+                    name="temp7Rice"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Temp 7 Arroz</FormLabel>
+                        <FormControl>
+                          <Input type="number" step="0.1" value={field.value ?? ""} onChange={field.onChange} />
+                        </FormControl>
+                      </FormItem>
+                    )}
+                  />
+                </div>
+
+                <Button
+                  type="button"
+                  variant={photos7Day.length > 0 ? "default" : "outline"}
+                  onClick={() => setIsCapturing7Day(true)}
+                  className="w-full"
+                >
+                  <Camera className="h-4 w-4 mr-2" />
+                  {photos7Day.length > 0 ? (
+                    <>
+                      <Check className="h-4 w-4 mr-2" />
+                      Fotos do 7º dia capturadas ({photos7Day.length})
+                    </>
+                  ) : (
+                    "Capturar Fotos do 7º dia"
                   )}
-                />
-                <FormField
-                  control={form.control}
-                  name="date14Day"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Data 14º Dia</FormLabel>
-                      <FormControl>
-                        <Input type="date" {...field} value={field.value ?? ""} />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
+                </Button>
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <FormField
-                  control={form.control}
-                  name="temp7Chamber"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Temp 7 Câmara</FormLabel>
-                      <FormControl>
-                        <Input type="number" step="0.01" {...field} value={field.value ?? ""} />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
+              <div className="border rounded-lg p-4 space-y-3">
+                <h3 className="font-semibold">Dados do 14º dia</h3>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <FormField
+                    control={form.control}
+                    name="date14Day"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Data 14º dia</FormLabel>
+                        <FormControl>
+                          <Input type="date" {...field} value={field.value ?? ""} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <FormField
+                    control={form.control}
+                    name="temp14Chamber"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Temp 14 Câmara</FormLabel>
+                        <FormControl>
+                          <Input type="number" step="0.1" value={field.value ?? ""} onChange={field.onChange} />
+                        </FormControl>
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
+                    name="temp14Rice"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Temp 14 Arroz</FormLabel>
+                        <FormControl>
+                          <Input type="number" step="0.1" value={field.value ?? ""} onChange={field.onChange} />
+                        </FormControl>
+                      </FormItem>
+                    )}
+                  />
+                </div>
+
+                <Button
+                  type="button"
+                  variant={photos14Day.length > 0 ? "default" : "outline"}
+                  onClick={() => setIsCapturing14Day(true)}
+                  className="w-full"
+                >
+                  <Camera className="h-4 w-4 mr-2" />
+                  {photos14Day.length > 0 ? (
+                    <>
+                      <Check className="h-4 w-4 mr-2" />
+                      Fotos do 14º dia capturadas ({photos14Day.length})
+                    </>
+                  ) : (
+                    "Capturar Fotos do 14º dia"
                   )}
-                />
-                <FormField
-                  control={form.control}
-                  name="temp14Chamber"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Temp 14 Câmara</FormLabel>
-                      <FormControl>
-                        <Input type="number" step="0.01" {...field} value={field.value ?? ""} />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
+                </Button>
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <FormField
-                  control={form.control}
-                  name="temp7Rice"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Temp 7 Arroz</FormLabel>
-                      <FormControl>
-                        <Input type="number" step="0.01" {...field} value={field.value ?? ""} />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                <FormField
-                  control={form.control}
-                  name="temp14Rice"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Temp 14 Arroz</FormLabel>
-                      <FormControl>
-                        <Input type="number" step="0.01" {...field} value={field.value ?? ""} />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <FormField
                   control={form.control}
                   name="wetWeight"
@@ -712,9 +737,8 @@ export default function TestEditPage() {
                     <FormItem>
                       <FormLabel>Peso Úmido</FormLabel>
                       <FormControl>
-                        <Input type="number" step="0.01" {...field} value={field.value ?? ""} />
+                        <Input type="number" step="0.01" value={field.value ?? ""} onChange={field.onChange} />
                       </FormControl>
-                      <FormMessage />
                     </FormItem>
                   )}
                 />
@@ -725,67 +749,35 @@ export default function TestEditPage() {
                     <FormItem>
                       <FormLabel>Peso Seco</FormLabel>
                       <FormControl>
-                        <Input type="number" step="0.01" {...field} value={field.value ?? ""} />
+                        <Input type="number" step="0.01" value={field.value ?? ""} onChange={field.onChange} />
                       </FormControl>
-                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="extractedConidiumWeight"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Peso conídio extraído</FormLabel>
+                      <FormControl>
+                        <Input type="number" step="0.01" value={field.value ?? ""} onChange={field.onChange} />
+                      </FormControl>
                     </FormItem>
                   )}
                 />
               </div>
 
-              <FormField
-                control={form.control}
-                name="extractedConidiumWeight"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Peso de Conídios Extraídos</FormLabel>
-                    <FormControl>
-                      <Input type="number" step="0.01" {...field} value={field.value ?? ""} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-
-              <div className="space-y-3">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <div className="font-medium">Fotos – 7º Dia</div>
-                    <div className="text-sm text-muted-foreground">Capturar e salvar fotos do 7º dia.</div>
-                  </div>
-                  <Button type="button" variant="outline" onClick={() => setIsCapturing7Day(true)}>
-                    <Camera className="h-4 w-4 mr-2" /> Capturar
-                  </Button>
-                </div>
-
-                <div className="flex flex-wrap gap-2">
-                  {photos7Day.map((p, idx) => (
-                    <img key={idx} src={p} alt={`Foto 7 dia ${idx + 1}`} className="h-20 w-20 object-cover rounded" />
-                  ))}
-                </div>
-              </div>
-
-              <div className="space-y-3">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <div className="font-medium">Fotos – 14º Dia</div>
-                    <div className="text-sm text-muted-foreground">Capturar e salvar fotos do 14º dia.</div>
-                  </div>
-                  <Button type="button" variant="outline" onClick={() => setIsCapturing14Day(true)}>
-                    <Camera className="h-4 w-4 mr-2" /> Capturar
-                  </Button>
-                </div>
-
-                <div className="flex flex-wrap gap-2">
-                  {photos14Day.map((p, idx) => (
-                    <img key={idx} src={p} alt={`Foto 14 dia ${idx + 1}`} className="h-20 w-20 object-cover rounded" />
-                  ))}
-                </div>
-              </div>
-
-              <div className="pt-2 flex justify-end">
+              <div className="flex justify-end gap-2 pt-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => router.push(`/experiments/${experimentId}`)}
+                  disabled={saving}
+                >
+                  Cancelar
+                </Button>
                 <Button type="submit" disabled={saving}>
-                  <Check className="h-4 w-4 mr-2" />
                   {saving ? "Salvando..." : "Salvar"}
                 </Button>
               </div>

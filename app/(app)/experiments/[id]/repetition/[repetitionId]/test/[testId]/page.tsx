@@ -8,6 +8,8 @@ import { useForm } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
 
 import { createClient } from "@/lib/supabase/client"
+import { assertValidTestPhotoPath, buildTestPhotoPath } from "@/lib/pdi/storage-path"
+import { assertValidTestPhotoPath, buildTestPhotoPath } from "@/lib/pdi/storage-path"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form"
@@ -259,7 +261,15 @@ export default function TestEditPage() {
         const blob = await response.blob()
 
         const fileName = `day${day}_photo${i + 1}_${Date.now()}.jpg`
-        const filePath = `${userId}/${testDbId}/${fileName}`
+        const filePath = buildTestPhotoPath({
+        userId,
+        testId: testDbId,
+        day,
+        index: i + 1,
+        ext: "jpg",
+      })
+
+assertValidTestPhotoPath(filePath, { userId, testId: testDbId })
 
 
         const { error: uploadError } = await supabase.storage.from("test-photos").upload(filePath, blob, {

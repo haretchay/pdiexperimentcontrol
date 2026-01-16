@@ -13,16 +13,16 @@ export async function updateSession(request: NextRequest) {
           return request.cookies.getAll()
         },
         setAll(cookiesToSet) {
+          // Mantém compatibilidade com o snippet SSR do Supabase
           cookiesToSet.forEach(({ name, value }) => request.cookies.set(name, value))
           supabaseResponse = NextResponse.next({ request })
-          cookiesToSet.forEach(({ name, value, options }) =>
-            supabaseResponse.cookies.set(name, value, options),
-          )
+          cookiesToSet.forEach(({ name, value, options }) => supabaseResponse.cookies.set(name, value, options))
         },
       },
     },
   )
 
+  // Importante: manter este getUser para atualizar/validar sessão (SSR cookies)
   const {
     data: { user },
   } = await supabase.auth.getUser()
@@ -40,9 +40,8 @@ export async function updateSession(request: NextRequest) {
 
   if (groupMatch) {
     const group = groupMatch[1] // "app" | "auth"
-    const rest = groupMatch[2] ?? "/" // inclui a barra inicial, ex: "/dashboard"
+    const rest = groupMatch[2] ?? "/"
 
-    // (auth) deve virar "/auth/..." ; (app) vira "/..."
     const normalizedPath =
       group === "auth"
         ? rest === "/" ? "/auth" : `/auth${rest}`
@@ -61,6 +60,11 @@ export async function updateSession(request: NextRequest) {
     return redirectResponse
   }
 
+  // =========================================================
+  // ✅ PRIORIDADE 2: REDIRECTS BÁSICOS (SEM CONSULTAR profiles AQUI)
+  // - Não logado em rota protegida => /auth/login
+  // - Logado em /auth/* (exceto blocked) => /dashboard
+  // =========================================================
   const isAuthRoute = path.startsWith("/auth")
   const isProtected =
     path === "/" ||
@@ -83,28 +87,9 @@ export async function updateSession(request: NextRequest) {
     return NextResponse.redirect(url)
   }
 
-  if (user && isProtected) {
-    const { data: profile } = await supabase
-      .from("profiles")
-      .select("status, role")
-      .eq("user_id", user.id)
-      .maybeSingle()
-
-    if (!profile || profile.status !== "active") {
-      if (path !== "/auth/blocked") {
-        const url = request.nextUrl.clone()
-        url.pathname = "/auth/blocked"
-        return NextResponse.redirect(url)
-      }
-    }
-
-    const isAdminRoute = path.startsWith("/admin")
-    if (isAdminRoute && profile?.role !== "admin") {
-      const url = request.nextUrl.clone()
-      url.pathname = "/dashboard"
-      return NextResponse.redirect(url)
-    }
-  }
+  // Observação:
+  // - Checagem de status/role (profiles) fica no SERVER LAYOUT do grupo (app)
+  //   via requireActiveUser() para evitar duplicação de chamadas e 429.
 
   return supabaseResponse
 }

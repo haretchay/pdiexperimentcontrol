@@ -229,7 +229,7 @@ export default function TestEditPage() {
     }
   }, [supabase, experimentId, repetitionNumber, testNumber, form])
 
-  async function savePhotosToStorage(photos: string[], day: 7 | 14) {
+    async function savePhotosToStorage(photos: string[], day: 7 | 14, userId: string) {
     if (!testDbId) return
 
     // Segurança: só faz upload se forem fotos NOVAS (dataURL).
@@ -258,8 +258,9 @@ export default function TestEditPage() {
         const response = await fetch(photo)
         const blob = await response.blob()
 
-        const fileName = `${experimentId}_rep${repetitionNumber}_test${testNumber}_day${day}_photo${i + 1}_${Date.now()}.jpg`
-        const filePath = `${experimentId}/${fileName}`
+        const fileName = `day${day}_photo${i + 1}_${Date.now()}.jpg`
+        const filePath = `${userId}/${testDbId}/${fileName}`
+
 
         const { error: uploadError } = await supabase.storage.from("test-photos").upload(filePath, blob, {
           contentType: "image/jpeg",
@@ -339,10 +340,10 @@ export default function TestEditPage() {
 
       // ✅ Só mexe no storage se tiver foto NOVA (dataURL)
       if (photos7Day.length > 0 && hasNewCapturedPhotos(photos7Day)) {
-        await savePhotosToStorage(photos7Day, 7)
+        await savePhotosToStorage(photos7Day, 7, user.Id)
       }
       if (photos14Day.length > 0 && hasNewCapturedPhotos(photos14Day)) {
-        await savePhotosToStorage(photos14Day, 14)
+        await savePhotosToStorage(photos14Day, 14, user.Id)
       }
 
       router.push(`/experiments/${experimentId}/repetition/${repetitionId}/test/${testId}/view`)

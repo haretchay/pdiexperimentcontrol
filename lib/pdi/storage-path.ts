@@ -2,11 +2,8 @@ export type BuildTestPhotoPathArgs = {
   userId: string
   testId: string
   day: 7 | 14
-  /** indice 1-based: 1,2,3... */
   index: number
-  /** sem ponto. padrao: jpg */
   ext?: "jpg" | "jpeg" | "png" | "webp"
-  /** ms. padrao: Date.now() */
   timestamp?: number
 }
 
@@ -22,12 +19,19 @@ function normalize(s: unknown) {
   return String(s ?? "").trim()
 }
 
+function assertLooksLikeUuid(value: string, label: string) {
+  if (!UUID_RE.test(value)) {
+    // Erro mais informativo pra você debugar rápido
+    throw new Error(`${label} invalido (esperado UUID). Recebido: "${value}"`)
+  }
+}
+
 export function buildTestPhotoPath(args: BuildTestPhotoPathArgs): string {
   const userId = normalize(args.userId)
   const testId = normalize(args.testId)
 
-  if (!UUID_RE.test(userId)) throw new Error("buildTestPhotoPath: userId invalido")
-  if (!UUID_RE.test(testId)) throw new Error("buildTestPhotoPath: testId invalido")
+  assertLooksLikeUuid(userId, "buildTestPhotoPath: userId")
+  assertLooksLikeUuid(testId, "buildTestPhotoPath: testId")
 
   const day = args.day
   if (day !== 7 && day !== 14) throw new Error("buildTestPhotoPath: day deve ser 7 ou 14")
@@ -44,7 +48,6 @@ export function buildTestPhotoPath(args: BuildTestPhotoPathArgs): string {
   const fileName = `day${day}_photo${index}_${timestamp}.${ext}`
   const path = `${userId}/${testId}/${fileName}`
 
-  // Validacao final (garante que o que geramos realmente bate com o padrao)
   assertValidTestPhotoPath(path, { userId, testId })
 
   return path
@@ -64,16 +67,13 @@ export function assertValidTestPhotoPath(path: string, args: AssertArgs): void {
 
   const [uid, tid, file] = parts
 
-  if (!UUID_RE.test(uid)) throw new Error("storage_path: userId (segmento 1) nao parece UUID")
-  if (!UUID_RE.test(tid)) throw new Error("storage_path: testId (segmento 2) nao parece UUID")
+  assertLooksLikeUuid(uid, "storage_path: userId (segmento 1)")
+  assertLooksLikeUuid(tid, "storage_path: testId (segmento 2)")
+  assertLooksLikeUuid(userId, "assert: userId")
+  if (testId) assertLooksLikeUuid(testId, "assert: testId")
 
-  if (!UUID_RE.test(userId)) throw new Error("assert: userId informado nao parece UUID")
   if (uid.toLowerCase() !== userId.toLowerCase()) throw new Error("storage_path nao pertence ao userId atual")
-
-  if (testId) {
-    if (!UUID_RE.test(testId)) throw new Error("assert: testId informado nao parece UUID")
-    if (tid.toLowerCase() !== testId.toLowerCase()) throw new Error("storage_path nao pertence ao testId atual")
-  }
+  if (testId && tid.toLowerCase() !== testId.toLowerCase()) throw new Error("storage_path nao pertence ao testId atual")
 
   if (!FILE_RE.test(file)) throw new Error("storage_path filename fora do padrao day7/14_photoX_timestamp.ext")
 }

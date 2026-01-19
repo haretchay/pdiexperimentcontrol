@@ -349,10 +349,10 @@ export default function TestEditPage() {
 
       // ✅ Só mexe no storage se tiver foto NOVA (dataURL)
       if (photos7Day.length > 0 && hasNewCapturedPhotos(photos7Day)) {
-        await savePhotosToStorage(photos7Day, 7, user.Id)
+        await savePhotosToStorage(photos7Day, 7, user.id)
       }
       if (photos14Day.length > 0 && hasNewCapturedPhotos(photos14Day)) {
-        await savePhotosToStorage(photos14Day, 14, user.Id)
+        await savePhotosToStorage(photos14Day, 14, user.id)
       }
 
       router.push(`/experiments/${experimentId}/repetition/${repetitionId}/test/${testId}/view`)

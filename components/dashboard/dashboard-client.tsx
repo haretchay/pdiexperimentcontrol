@@ -154,11 +154,16 @@ function generateRecentActivities(data: any[]) {
 
   data.forEach((experiment) => {
     if (experiment.testsData && experiment.testsData.length > 0) {
-      experiment.testsData.slice(0, 2).forEach((test: any) => {
+      experiment.testsData.slice(0, 2).forEach((test: any, testIndex: number) => {
+        // Use test.id if available, otherwise create unique key with index
+        const testId = test.id || `${experiment.id}-idx-${testIndex}`
+        const repNum = test.repetition_number ?? testIndex
+        const testNum = test.test_number ?? testIndex
+        
         activities.push({
-          id: `test-${experiment.id}-${test.repetition_number}-${test.test_number}`,
+          id: `test-${testId}`,
           type: "test",
-          description: `Teste #${test.test_number} da Repetição #${test.repetition_number} do Experimento #${experiment.number} foi concluído`,
+          description: `Teste #${testNum} da Repetição #${repNum} do Experimento #${experiment.number} foi concluído`,
           date: new Date(experiment.start_date).toLocaleDateString("pt-BR"),
           status: "completed",
         })

@@ -9,7 +9,6 @@ import { zodResolver } from "@hookform/resolvers/zod"
 
 import { createClient } from "@/lib/supabase/client"
 import { assertValidTestPhotoPath, buildTestPhotoPath } from "@/lib/pdi/storage-path"
-import { assertValidTestPhotoPath, buildTestPhotoPath } from "@/lib/pdi/storage-path"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form"
@@ -269,7 +268,7 @@ export default function TestEditPage() {
         ext: "jpg",
       })
 
-assertValidTestPhotoPath(filePath, { userId, testId: testDbId })
+      assertValidTestPhotoPath(filePath, { userId, testId: testDbId })
 
 
         const { error: uploadError } = await supabase.storage.from("test-photos").upload(filePath, blob, {

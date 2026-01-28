@@ -8,6 +8,8 @@ export type TestPhotoRow = {
   day: 7 | 14
   storage_path: string
   created_at: string
+  kind?: "single" | "merged"
+  photo_index?: number | null
 }
 
 const isDataUrlImage = (s?: string) => typeof s === "string" && s.startsWith("data:image/")
@@ -22,7 +24,7 @@ export async function getTestPhotos(
 ): Promise<TestPhotoRow[]> {
   const { data, error } = await supabase
     .from("test_photos")
-    .select("id, test_id, day, storage_path, created_at")
+    .select("id, test_id, day, storage_path, created_at, kind, photo_index")
     .eq("test_id", testId)
     .order("created_at", { ascending: true })
 
@@ -95,6 +97,7 @@ export async function replaceDayPhotos(params: {
     .select("id, storage_path")
     .eq("test_id", testId)
     .eq("day", day)
+    .eq("kind", "single")
 
   if (oldErr) throw oldErr
   const oldRows = (old ?? []) as any[]
@@ -129,7 +132,13 @@ export async function replaceDayPhotos(params: {
     }
 
     // Gravar banco (1 insert)
-    const payload = uploadedPaths.map((p) => ({ test_id: testId, day, storage_path: p }))
+    const payload = uploadedPaths.map((p, idx) => ({
+      test_id: testId,
+      day,
+      storage_path: p,
+      kind: "single",
+      photo_index: idx + 1,
+    }))
     const { error: insErr } = await supabase.from("test_photos").insert(payload)
     if (insErr) throw insErr
 
@@ -156,4 +165,74 @@ export async function replaceDayPhotos(params: {
     }
     throw err
   }
+}
+/**
+ * Substitui a foto MESCLADA (mosaico) de um dia (7 ou 14):
+ * - faz upload do mosaico
+ * - grava no banco com kind='merged'
+ * - só depois remove a antiga (kind='merged')
+ *
+ * Nome do arquivo usa index=99 para continuar compatível com a validação de path.
+ */
+export async function replaceMergedDayPhoto(params: {
+  supabase: SupabaseClient
+  userId: string
+  testId: string
+  day: 7 | 14
+  mosaicBlob: Blob
+}) {
+  const { supabase, userId, testId, day, mosaicBlob } = params
+
+  if (!isUuid(userId)) throw new Error(`replaceMergedDayPhoto: userId invalido (UUID). Recebido: "${String(userId)}"`)
+  if (!isUuid(testId)) throw new Error(`replaceMergedDayPhoto: testId invalido (UUID). Recebido: "${String(testId)}"`)
+
+  const { data: old, error: oldErr } = await supabase
+    .from("test_photos")
+    .select("id, storage_path")
+    .eq("test_id", testId)
+    .eq("day", day)
+    .eq("kind", "merged")
+
+  if (oldErr) throw oldErr
+  const oldRows = (old ?? []) as any[]
+  const oldIds = oldRows.map((r) => r.id).filter(Boolean)
+  const oldPaths = oldRows.map((r) => r.storage_path).filter(Boolean)
+
+  const mergedPath = buildTestPhotoPath({
+    userId,
+    testId,
+    day,
+    index: 99,
+    ext: "jpg",
+    timestamp: Date.now(),
+  })
+
+  assertValidTestPhotoPath(mergedPath, { userId, testId })
+
+  // Upload novo
+  const { error: upErr } = await supabase.storage.from("test-photos").upload(mergedPath, mosaicBlob, {
+    contentType: "image/jpeg",
+    upsert: true,
+  })
+  if (upErr) throw upErr
+
+  // Insert novo (mantemos photo_index null)
+  const { error: insErr } = await supabase.from("test_photos").insert({
+    test_id: testId,
+    day,
+    storage_path: mergedPath,
+    kind: "merged",
+    photo_index: null,
+  })
+  if (insErr) throw insErr
+
+  // Remove antigos após sucesso
+  if (oldIds.length) {
+    await supabase.from("test_photos").delete().in("id", oldIds)
+  }
+  if (oldPaths.length) {
+    await supabase.storage.from("test-photos").remove(oldPaths)
+  }
+
+  return { uploaded: 1, mergedPath }
 }

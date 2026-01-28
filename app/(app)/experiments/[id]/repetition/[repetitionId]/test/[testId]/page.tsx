@@ -1,4 +1,3 @@
-// @ts-nocheck
 "use client"
 
 import { useEffect, useMemo, useState } from "react"
@@ -9,6 +8,8 @@ import { zodResolver } from "@hookform/resolvers/zod"
 
 import { createClient } from "@/lib/supabase/client"
 import { assertValidTestPhotoPath, buildTestPhotoPath } from "@/lib/pdi/storage-path"
+import { getSignedUrlCached, clearSignedUrlCache } from "@/lib/pdi/signed-url-cache"
+
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form"
@@ -19,6 +20,52 @@ import { Camera, Check } from "lucide-react"
 
 type Annotation = { x: number; y: number; size: string; caption: string; color?: string }
 type AnnotationsByPhotoIndex = Record<number, Annotation[]>
+
+type DbExperiment = {
+  id: string
+  number: number
+  strain: string
+  start_date: string
+  test_count: number
+  repetition_count: number
+}
+
+type DbTest = {
+  id: string
+  unit: string | null
+  requisition: string | null
+  test_lot: string | null
+  matrix_lot: string | null
+  strain: string | null
+  mp_lot: string | null
+  test_type: string | null
+
+  average_humidity: number | null
+  bozo: number | null
+  sensorial: number | null
+  quantity: number | null
+
+  date_7_day: string | null
+  date_14_day: string | null
+
+  temp7_chamber: number | null
+  temp14_chamber: number | null
+  temp7_rice: number | null
+  temp14_rice: number | null
+
+  wet_weight: number | null
+  dry_weight: number | null
+  extracted_conidium_weight: number | null
+
+  annotations_7_day: any | null
+  annotations_14_day: any | null
+}
+
+type DbPhotoRow = {
+  day: 7 | 14
+  storage_path: string
+  created_at: string
+}
 
 const toNumberOrUndefined = (v: unknown) => {
   if (v === "" || v === null || v === undefined) return undefined
@@ -34,6 +81,17 @@ const toNumberOrUndefined = (v: unknown) => {
 
 const isDataUrlImage = (s?: string) => typeof s === "string" && s.startsWith("data:image/")
 const hasNewCapturedPhotos = (photos: string[]) => Array.isArray(photos) && photos.some((p) => isDataUrlImage(p))
+
+function isRateLimitError(err: unknown) {
+  const status = (err as any)?.status
+  const msg = String((err as any)?.message ?? err ?? "")
+  return status === 429 || msg.includes("Too Many") || msg.includes("rate limit")
+}
+
+async function dataUrlToBlob(dataUrl: string): Promise<Blob> {
+  const res = await fetch(dataUrl)
+  return await res.blob()
+}
 
 const formSchema = z.object({
   unit: z.enum(["americana", "salto"]).optional(),
@@ -69,11 +127,7 @@ export default function TestEditPage() {
   const router = useRouter()
   const params = useParams()
 
-  const {
-    id: experimentId,
-    repetitionId,
-    testId,
-  } = params as {
+  const { id: experimentId, repetitionId, testId } = params as {
     id: string
     repetitionId: string
     testId: string
@@ -86,21 +140,20 @@ export default function TestEditPage() {
 
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
+  const [errorMsg, setErrorMsg] = useState<string | null>(null)
+
   const [isCapturing7Day, setIsCapturing7Day] = useState(false)
   const [isCapturing14Day, setIsCapturing14Day] = useState(false)
 
-  // OBS: aqui podem existir 2 tipos de strings:
-  // - data:image/... (capturado agora)
-  // - URL http(s) (foto já existente no storage)
+  // Pode conter dataURL (capturado agora) ou signed URL (existente)
   const [photos7Day, setPhotos7Day] = useState<string[]>([])
   const [photos14Day, setPhotos14Day] = useState<string[]>([])
 
-  // Anotações (legendas) por índice de foto (0..n-1)
   const [annotations7Day, setAnnotations7Day] = useState<AnnotationsByPhotoIndex>({})
   const [annotations14Day, setAnnotations14Day] = useState<AnnotationsByPhotoIndex>({})
 
   const [testDbId, setTestDbId] = useState<string | null>(null)
-  const [experiment, setExperiment] = useState<any>(null)
+  const [experiment, setExperiment] = useState<DbExperiment | null>(null)
 
   const form = useForm<FormValues>({
     resolver: zodResolver(formSchema),
@@ -129,19 +182,15 @@ export default function TestEditPage() {
   })
 
   async function storagePathToUrl(path: string) {
-    // Preferir signed URL (funciona em bucket privado e público)
-    const { data, error } = await supabase.storage.from("test-photos").createSignedUrl(path, 60 * 60)
-    if (error || !data?.signedUrl) {
-      console.error("[v0] Erro ao criar signed URL:", error)
-      return ""
-    }
-    return data.signedUrl
+    return await getSignedUrlCached(supabase as any, "test-photos", path, 60 * 60)
   }
 
   useEffect(() => {
     let cancelled = false
+
     ;(async () => {
       try {
+        setErrorMsg(null)
         setLoading(true)
 
         const { data: exp, error: expErr } = await supabase
@@ -152,7 +201,7 @@ export default function TestEditPage() {
 
         if (expErr) throw expErr
         if (cancelled) return
-        setExperiment(exp)
+        setExperiment(exp as DbExperiment)
 
         const { data, error } = await supabase
           .from("tests")
@@ -165,61 +214,66 @@ export default function TestEditPage() {
         if (error) throw error
         if (cancelled) return
 
-        setTestDbId(data.id)
+        const t = data as DbTest
+        setTestDbId(t.id)
 
-        // Carregar anotações que já existiam
-        setAnnotations7Day((data.annotations_7_day as any) ?? {})
-        setAnnotations14Day((data.annotations_14_day as any) ?? {})
+        setAnnotations7Day((t.annotations_7_day as any) ?? {})
+        setAnnotations14Day((t.annotations_14_day as any) ?? {})
 
         form.reset({
-          unit: (data.unit as any) ?? "americana",
-          requisition: (data.requisition as any) ?? "interna",
-          testLot: data.test_lot ?? "",
-          matrixLot: data.matrix_lot ?? "",
-          strain: data.strain ?? "",
-          mpLot: data.mp_lot ?? "",
-          testType: data.test_type ?? "",
+          unit: (t.unit as any) ?? "americana",
+          requisition: (t.requisition as any) ?? "interna",
+          testLot: t.test_lot ?? "",
+          matrixLot: t.matrix_lot ?? "",
+          strain: t.strain ?? "",
+          mpLot: t.mp_lot ?? "",
+          testType: t.test_type ?? "",
 
-          averageHumidity: data.average_humidity ?? undefined,
-          bozo: data.bozo ?? undefined,
-          sensorial: data.sensorial ?? undefined,
-          quantity: data.quantity ?? undefined,
+          averageHumidity: t.average_humidity ?? undefined,
+          bozo: t.bozo ?? undefined,
+          sensorial: t.sensorial ?? undefined,
+          quantity: t.quantity ?? undefined,
 
-          date7Day: data.date_7_day ? String(data.date_7_day).slice(0, 10) : "",
-          date14Day: data.date_14_day ? String(data.date_14_day).slice(0, 10) : "",
+          date7Day: t.date_7_day ? String(t.date_7_day).slice(0, 10) : "",
+          date14Day: t.date_14_day ? String(t.date_14_day).slice(0, 10) : "",
 
-          temp7Chamber: data.temp7_chamber ?? undefined,
-          temp7Rice: data.temp7_rice ?? undefined,
-          temp14Chamber: data.temp14_chamber ?? undefined,
-          temp14Rice: data.temp14_rice ?? undefined,
+          temp7Chamber: t.temp7_chamber ?? undefined,
+          temp7Rice: t.temp7_rice ?? undefined,
+          temp14Chamber: t.temp14_chamber ?? undefined,
+          temp14Rice: t.temp14_rice ?? undefined,
 
-          wetWeight: data.wet_weight ?? undefined,
-          dryWeight: data.dry_weight ?? undefined,
-          extractedConidiumWeight: data.extracted_conidium_weight ?? undefined,
+          wetWeight: t.wet_weight ?? undefined,
+          dryWeight: t.dry_weight ?? undefined,
+          extractedConidiumWeight: t.extracted_conidium_weight ?? undefined,
         })
 
-        const { data: existingPhotos } = await supabase
+        const { data: existingPhotos, error: pErr } = await supabase
           .from("test_photos")
           .select("day, storage_path, created_at")
-          .eq("test_id", data.id)
+          .eq("test_id", t.id)
           .order("created_at", { ascending: true })
 
-        if (existingPhotos) {
-          const photos7 = existingPhotos.filter((p: any) => p.day === 7)
-          const photos14 = existingPhotos.filter((p: any) => p.day === 14)
+        if (pErr) throw pErr
 
-          if (photos7.length > 0) {
-            const urls7 = await Promise.all(photos7.map((p: any) => storagePathToUrl(p.storage_path)))
-            setPhotos7Day(urls7.filter(Boolean))
-          }
+        const rows = (existingPhotos ?? []) as DbPhotoRow[]
+        const photos7 = rows.filter((p) => p.day === 7)
+        const photos14 = rows.filter((p) => p.day === 14)
 
-          if (photos14.length > 0) {
-            const urls14 = await Promise.all(photos14.map((p: any) => storagePathToUrl(p.storage_path)))
-            setPhotos14Day(urls14.filter(Boolean))
-          }
+        if (photos7.length) {
+          const urls7 = await Promise.all(photos7.map((p) => storagePathToUrl(p.storage_path)))
+          if (!cancelled) setPhotos7Day(urls7.filter(Boolean))
+        }
+
+        if (photos14.length) {
+          const urls14 = await Promise.all(photos14.map((p) => storagePathToUrl(p.storage_path)))
+          if (!cancelled) setPhotos14Day(urls14.filter(Boolean))
         }
       } catch (e) {
         console.error(e)
+        const msg = isRateLimitError(e)
+          ? "Muitas requisições ao Supabase (429). Aguarde alguns segundos e recarregue."
+          : "Erro ao carregar o teste."
+        if (!cancelled) setErrorMsg(msg)
       } finally {
         if (!cancelled) setLoading(false)
       }
@@ -230,28 +284,34 @@ export default function TestEditPage() {
     }
   }, [supabase, experimentId, repetitionNumber, testNumber, form])
 
-    async function savePhotosToStorage(photos: string[], day: 7 | 14, userId: string) {
-    if (!testDbId) return
+  async function savePhotosToStorage(photos: string[], day: 7 | 14, userId: string) {
+    if (!testDbId) throw new Error("Test interno não encontrado (testDbId). Recarregue a página.")
 
-    // Segurança: só faz upload se forem fotos NOVAS (dataURL).
-    // Se forem URLs antigas, NÃO re-upar / NÃO deletar nada.
+    // Só mexe no storage se houver foto NOVA (dataURL)
     if (!hasNewCapturedPhotos(photos)) return
 
+    // Evita apagar fotos antigas se houver mistura de URLs antigas + dataURL.
+    const hasOldUrls = photos.some((p) => !isDataUrlImage(p))
+    if (hasOldUrls) {
+      throw new Error(
+        "Detectei mistura de fotos antigas e novas no mesmo dia. Para evitar perder imagens, recapture o dia completo.",
+      )
+    }
+
+    // Buscar fotos antigas (para remover após o sucesso)
+    const { data: oldPhotos, error: oldErr } = await supabase
+      .from("test_photos")
+      .select("storage_path")
+      .eq("test_id", testDbId)
+      .eq("day", day)
+
+    if (oldErr) throw oldErr
+    const oldPaths = (oldPhotos ?? []).map((p: any) => p.storage_path)
+
+    const newPaths: string[] = []
+
     try {
-      // Deletar fotos antigas do dia específico (somente porque vamos substituir)
-      const { data: oldPhotos } = await supabase
-        .from("test_photos")
-        .select("storage_path")
-        .eq("test_id", testDbId)
-        .eq("day", day)
-
-      if (oldPhotos && oldPhotos.length > 0) {
-        const pathsToDelete = oldPhotos.map((p: any) => p.storage_path)
-        await supabase.storage.from("test-photos").remove(pathsToDelete)
-        await supabase.from("test_photos").delete().eq("test_id", testDbId).eq("day", day)
-      }
-
-      // Fazer upload das novas fotos (dataURL)
+      // Upload sequencial (mais estável no browser)
       for (let i = 0; i < photos.length; i++) {
         const photo = photos[i]
         if (!isDataUrlImage(photo)) continue
@@ -259,17 +319,16 @@ export default function TestEditPage() {
         const response = await fetch(photo)
         const blob = await response.blob()
 
-        const fileName = `day${day}_photo${i + 1}_${Date.now()}.jpg`
         const filePath = buildTestPhotoPath({
-        userId,
-        testId: testDbId,
-        day,
-        index: i + 1,
-        ext: "jpg",
-      })
+          userId,
+          testId: testDbId,
+          day,
+          index: i + 1,
+          ext: "jpg",
+          timestamp: Date.now() + i,
+        })
 
-      assertValidTestPhotoPath(filePath, { userId, testId: testDbId })
-
+        assertValidTestPhotoPath(filePath, { userId, testId: testDbId })
 
         const { error: uploadError } = await supabase.storage.from("test-photos").upload(filePath, blob, {
           contentType: "image/jpeg",
@@ -277,21 +336,46 @@ export default function TestEditPage() {
         })
         if (uploadError) throw uploadError
 
-        const { error: dbError } = await supabase.from("test_photos").insert({
-          test_id: testDbId,
-          day: day,
-          storage_path: filePath,
-        })
-        if (dbError) throw dbError
+        newPaths.push(filePath)
       }
+
+      if (newPaths.length === 0) return
+
+      // Inserção em lote no DB (mais rápido e reduz chamadas)
+      const rows = newPaths.map((p) => ({ test_id: testDbId, day, storage_path: p }))
+      const { error: dbError } = await supabase.from("test_photos").insert(rows)
+      if (dbError) throw dbError
     } catch (error) {
+      // rollback best-effort: remove uploads novos
+      if (newPaths.length > 0) {
+        await supabase.storage.from("test-photos").remove(newPaths)
+      }
       console.error(`Erro ao salvar fotos do ${day}º dia:`, error)
       throw error
     }
+
+    // Agora, remove fotos antigas (best-effort)
+    try {
+      if (oldPaths && oldPaths.length > 0) {
+        await supabase.storage.from("test-photos").remove(oldPaths)
+        await supabase.from("test_photos").delete().eq("test_id", testDbId).eq("day", day).in("storage_path", oldPaths)
+      }
+    } catch (e) {
+      console.warn("[photos] Não foi possível remover fotos antigas (best-effort):", e)
+    }
+
+    // Limpar cache de signed URLs para garantir preview atualizado
+    clearSignedUrlCache("test-photos:")
+
+    // Atualiza o preview local para URLs do storage
+    const signedUrls = await Promise.all(newPaths.map((p) => storagePathToUrl(p)))
+    if (day === 7) setPhotos7Day(signedUrls.filter(Boolean))
+    if (day === 14) setPhotos14Day(signedUrls.filter(Boolean))
   }
 
   async function onSubmit(values: FormValues) {
     setSaving(true)
+    setErrorMsg(null)
     try {
       const {
         data: { user },
@@ -331,7 +415,6 @@ export default function TestEditPage() {
         dry_weight: values.dryWeight ?? null,
         extracted_conidium_weight: values.extractedConidiumWeight ?? null,
 
-        // ✅ AGORA SALVA AS ANOTAÇÕES NO TESTE (jsonb)
         annotations_7_day: annotations7Day && Object.keys(annotations7Day).length ? annotations7Day : null,
         annotations_14_day: annotations14Day && Object.keys(annotations14Day).length ? annotations14Day : null,
 
@@ -347,10 +430,10 @@ export default function TestEditPage() {
 
       if (error) throw error
 
-      // ✅ Só mexe no storage se tiver foto NOVA (dataURL)
       if (photos7Day.length > 0 && hasNewCapturedPhotos(photos7Day)) {
         await savePhotosToStorage(photos7Day, 7, user.id)
       }
+
       if (photos14Day.length > 0 && hasNewCapturedPhotos(photos14Day)) {
         await savePhotosToStorage(photos14Day, 14, user.id)
       }
@@ -358,7 +441,11 @@ export default function TestEditPage() {
       router.push(`/experiments/${experimentId}/repetition/${repetitionId}/test/${testId}/view`)
     } catch (e: any) {
       console.error(e)
-      alert(e?.message ?? "Erro ao salvar teste.")
+      const msg = isRateLimitError(e)
+        ? "Muitas requisições ao Supabase (429). Aguarde alguns segundos e tente novamente."
+        : e?.message ?? "Erro ao salvar teste."
+      setErrorMsg(msg)
+      alert(msg)
     } finally {
       setSaving(false)
     }
@@ -380,13 +467,25 @@ export default function TestEditPage() {
     return <div className="container mx-auto p-4">Carregando formulário...</div>
   }
 
+  if (errorMsg) {
+    return (
+      <div className="container mx-auto p-4">
+        <h1 className="text-xl font-semibold">Não foi possível carregar</h1>
+        <p className="mt-2 text-sm text-muted-foreground">{errorMsg}</p>
+        <Button className="mt-4" onClick={() => window.location.reload()}>
+          Recarregar
+        </Button>
+      </div>
+    )
+  }
+
   if (isCapturing7Day) {
     return (
       <PhotoCaptureWorkflow
         onComplete={handleCapture7DayComplete}
         onCancel={() => setIsCapturing7Day(false)}
         testInfo={{
-          experimentNumber: experiment?.number || experimentId,
+          experimentNumber: String(experiment?.number ?? experimentId),
           repetitionNumber: String(repetitionId),
           testNumber: String(testId),
           strain: form.getValues("strain") || experiment?.strain || "",
@@ -407,7 +506,7 @@ export default function TestEditPage() {
         onComplete={handleCapture14DayComplete}
         onCancel={() => setIsCapturing14Day(false)}
         testInfo={{
-          experimentNumber: experiment?.number || experimentId,
+          experimentNumber: String(experiment?.number ?? experimentId),
           repetitionNumber: String(repetitionId),
           testNumber: String(testId),
           strain: form.getValues("strain") || experiment?.strain || "",
@@ -546,55 +645,30 @@ export default function TestEditPage() {
                 name="testType"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Tipo de Teste</FormLabel>
+                    <FormLabel>Tipo de teste</FormLabel>
                     <FormControl>
-                      <Input {...field} value={field.value ?? ""} placeholder="Ex: Teste A" />
+                      <Input {...field} value={field.value ?? ""} />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
                 )}
               />
 
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <FormField
                   control={form.control}
                   name="averageHumidity"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Média umidade</FormLabel>
+                      <FormLabel>Umidade média</FormLabel>
                       <FormControl>
-                        <Input type="number" step="0.1" value={field.value ?? ""} onChange={field.onChange} />
+                        <Input type="number" step="any" {...field} value={(field.value as any) ?? ""} />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
                   )}
                 />
-                <FormField
-                  control={form.control}
-                  name="bozo"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Bozo</FormLabel>
-                      <FormControl>
-                        <Input type="number" step="0.1" value={field.value ?? ""} onChange={field.onChange} />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                <FormField
-                  control={form.control}
-                  name="sensorial"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Sensorial</FormLabel>
-                      <FormControl>
-                        <Input type="number" step="0.1" value={field.value ?? ""} onChange={field.onChange} />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
+
                 <FormField
                   control={form.control}
                   name="quantity"
@@ -602,7 +676,7 @@ export default function TestEditPage() {
                     <FormItem>
                       <FormLabel>Quantidade</FormLabel>
                       <FormControl>
-                        <Input type="number" step="0.1" value={field.value ?? ""} onChange={field.onChange} />
+                        <Input type="number" step="any" {...field} value={(field.value as any) ?? ""} />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -610,16 +684,47 @@ export default function TestEditPage() {
                 />
               </div>
 
-              <div className="border rounded-lg p-4 space-y-3">
-                <h3 className="font-semibold">Dados do 7º dia</h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <FormField
+                  control={form.control}
+                  name="bozo"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Bozo</FormLabel>
+                      <FormControl>
+                        <Input type="number" step="any" {...field} value={(field.value as any) ?? ""} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <FormField
+                  control={form.control}
+                  name="sensorial"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Sensorial</FormLabel>
+                      <FormControl>
+                        <Input type="number" step="any" {...field} value={(field.value as any) ?? ""} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </div>
+
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-base">Registro do 7º dia</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4">
                   <FormField
                     control={form.control}
                     name="date7Day"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>Data 7º dia</FormLabel>
+                        <FormLabel>Data (7º dia)</FormLabel>
                         <FormControl>
                           <Input type="date" {...field} value={field.value ?? ""} />
                         </FormControl>
@@ -627,63 +732,54 @@ export default function TestEditPage() {
                       </FormItem>
                     )}
                   />
-                </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <FormField
-                    control={form.control}
-                    name="temp7Chamber"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Temp 7 Câmara</FormLabel>
-                        <FormControl>
-                          <Input type="number" step="0.1" value={field.value ?? ""} onChange={field.onChange} />
-                        </FormControl>
-                      </FormItem>
-                    )}
-                  />
-                  <FormField
-                    control={form.control}
-                    name="temp7Rice"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Temp 7 Arroz</FormLabel>
-                        <FormControl>
-                          <Input type="number" step="0.1" value={field.value ?? ""} onChange={field.onChange} />
-                        </FormControl>
-                      </FormItem>
-                    )}
-                  />
-                </div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <FormField
+                      control={form.control}
+                      name="temp7Chamber"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Temperatura Câmara (7º)</FormLabel>
+                          <FormControl>
+                            <Input type="number" step="any" {...field} value={(field.value as any) ?? ""} />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    <FormField
+                      control={form.control}
+                      name="temp7Rice"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Temperatura Arroz (7º)</FormLabel>
+                          <FormControl>
+                            <Input type="number" step="any" {...field} value={(field.value as any) ?? ""} />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  </div>
 
-                <Button
-                  type="button"
-                  variant={photos7Day.length > 0 ? "default" : "outline"}
-                  onClick={() => setIsCapturing7Day(true)}
-                  className="w-full"
-                >
-                  <Camera className="h-4 w-4 mr-2" />
-                  {photos7Day.length > 0 ? (
-                    <>
-                      <Check className="h-4 w-4 mr-2" />
-                      Fotos do 7º dia capturadas ({photos7Day.length})
-                    </>
-                  ) : (
-                    "Capturar Fotos do 7º dia"
-                  )}
-                </Button>
-              </div>
+                  <Button type="button" variant="outline" onClick={() => setIsCapturing7Day(true)} className="w-full">
+                    <Camera className="h-4 w-4 mr-2" />
+                    {photos7Day.length ? "Refazer / atualizar fotos do 7º dia" : "Capturar fotos do 7º dia"}
+                  </Button>
+                </CardContent>
+              </Card>
 
-              <div className="border rounded-lg p-4 space-y-3">
-                <h3 className="font-semibold">Dados do 14º dia</h3>
-
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-base">Registro do 14º dia</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4">
                   <FormField
                     control={form.control}
                     name="date14Day"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>Data 14º dia</FormLabel>
+                        <FormLabel>Data (14º dia)</FormLabel>
                         <FormControl>
                           <Input type="date" {...field} value={field.value ?? ""} />
                         </FormControl>
@@ -691,52 +787,42 @@ export default function TestEditPage() {
                       </FormItem>
                     )}
                   />
-                </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <FormField
-                    control={form.control}
-                    name="temp14Chamber"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Temp 14 Câmara</FormLabel>
-                        <FormControl>
-                          <Input type="number" step="0.1" value={field.value ?? ""} onChange={field.onChange} />
-                        </FormControl>
-                      </FormItem>
-                    )}
-                  />
-                  <FormField
-                    control={form.control}
-                    name="temp14Rice"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Temp 14 Arroz</FormLabel>
-                        <FormControl>
-                          <Input type="number" step="0.1" value={field.value ?? ""} onChange={field.onChange} />
-                        </FormControl>
-                      </FormItem>
-                    )}
-                  />
-                </div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <FormField
+                      control={form.control}
+                      name="temp14Chamber"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Temperatura Câmara (14º)</FormLabel>
+                          <FormControl>
+                            <Input type="number" step="any" {...field} value={(field.value as any) ?? ""} />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    <FormField
+                      control={form.control}
+                      name="temp14Rice"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Temperatura Arroz (14º)</FormLabel>
+                          <FormControl>
+                            <Input type="number" step="any" {...field} value={(field.value as any) ?? ""} />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  </div>
 
-                <Button
-                  type="button"
-                  variant={photos14Day.length > 0 ? "default" : "outline"}
-                  onClick={() => setIsCapturing14Day(true)}
-                  className="w-full"
-                >
-                  <Camera className="h-4 w-4 mr-2" />
-                  {photos14Day.length > 0 ? (
-                    <>
-                      <Check className="h-4 w-4 mr-2" />
-                      Fotos do 14º dia capturadas ({photos14Day.length})
-                    </>
-                  ) : (
-                    "Capturar Fotos do 14º dia"
-                  )}
-                </Button>
-              </div>
+                  <Button type="button" variant="outline" onClick={() => setIsCapturing14Day(true)} className="w-full">
+                    <Camera className="h-4 w-4 mr-2" />
+                    {photos14Day.length ? "Refazer / atualizar fotos do 14º dia" : "Capturar fotos do 14º dia"}
+                  </Button>
+                </CardContent>
+              </Card>
 
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <FormField
@@ -744,10 +830,11 @@ export default function TestEditPage() {
                   name="wetWeight"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Peso Úmido</FormLabel>
+                      <FormLabel>Peso úmido</FormLabel>
                       <FormControl>
-                        <Input type="number" step="0.01" value={field.value ?? ""} onChange={field.onChange} />
+                        <Input type="number" step="any" {...field} value={(field.value as any) ?? ""} />
                       </FormControl>
+                      <FormMessage />
                     </FormItem>
                   )}
                 />
@@ -756,10 +843,11 @@ export default function TestEditPage() {
                   name="dryWeight"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Peso Seco</FormLabel>
+                      <FormLabel>Peso seco</FormLabel>
                       <FormControl>
-                        <Input type="number" step="0.01" value={field.value ?? ""} onChange={field.onChange} />
+                        <Input type="number" step="any" {...field} value={(field.value as any) ?? ""} />
                       </FormControl>
+                      <FormMessage />
                     </FormItem>
                   )}
                 />
@@ -770,26 +858,22 @@ export default function TestEditPage() {
                     <FormItem>
                       <FormLabel>Peso conídio extraído</FormLabel>
                       <FormControl>
-                        <Input type="number" step="0.01" value={field.value ?? ""} onChange={field.onChange} />
+                        <Input type="number" step="any" {...field} value={(field.value as any) ?? ""} />
                       </FormControl>
+                      <FormMessage />
                     </FormItem>
                   )}
                 />
               </div>
 
-              <div className="flex justify-end gap-2 pt-2">
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => router.push(`/experiments/${experimentId}`)}
-                  disabled={saving}
-                >
-                  Cancelar
-                </Button>
-                <Button type="submit" disabled={saving}>
-                  {saving ? "Salvando..." : "Salvar"}
-                </Button>
-              </div>
+              <Button type="submit" className="w-full" disabled={saving}>
+                {saving ? "Salvando..." : (
+                  <>
+                    <Check className="h-4 w-4 mr-2" />
+                    Salvar
+                  </>
+                )}
+              </Button>
             </form>
           </Form>
         </CardContent>

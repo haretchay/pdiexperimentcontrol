@@ -233,11 +233,11 @@ export default function TestViewPage() {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
               <h3 className="text-sm font-medium text-muted-foreground">Temp 7º dia - Câmara</h3>
-              <p className="font-medium">{testData.temp7Chamber ? `${testData.temp7Chamber} ºC` : "Não informado"}</p>
+              <p className="font-medium">{testData.temp7Chamber === null || testData.temp7Chamber === undefined ? "Não informado" : `${testData.temp7Chamber} ºC`}</p>
             </div>
             <div>
               <h3 className="text-sm font-medium text-muted-foreground">Temp 7º dia - Arroz</h3>
-              <p className="font-medium">{testData.temp7Rice ? `${testData.temp7Rice} ºC` : "Não informado"}</p>
+              <p className="font-medium">{testData.temp7Rice === null || testData.temp7Rice === undefined ? "Não informado" : `${testData.temp7Rice} ºC`}</p>
             </div>
           </div>
 
@@ -284,11 +284,11 @@ export default function TestViewPage() {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
               <h3 className="text-sm font-medium text-muted-foreground">Temp 14º dia - Câmara</h3>
-              <p className="font-medium">{testData.temp14Chamber ? `${testData.temp14Chamber} ºC` : "Não informado"}</p>
+              <p className="font-medium">{testData.temp14Chamber === null || testData.temp14Chamber === undefined ? "Não informado" : `${testData.temp14Chamber} ºC`}</p>
             </div>
             <div>
               <h3 className="text-sm font-medium text-muted-foreground">Temp 14º dia - Arroz</h3>
-              <p className="font-medium">{testData.temp14Rice ? `${testData.temp14Rice} ºC` : "Não informado"}</p>
+              <p className="font-medium">{testData.temp14Rice === null || testData.temp14Rice === undefined ? "Não informado" : `${testData.temp14Rice} ºC`}</p>
             </div>
           </div>
 
@@ -328,16 +328,16 @@ export default function TestViewPage() {
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div>
               <h3 className="text-sm font-medium text-muted-foreground">Peso Úmido</h3>
-              <p className="font-medium">{testData.wetWeight ? `${testData.wetWeight} g` : "Não informado"}</p>
+              <p className="font-medium">{testData.wetWeight === null || testData.wetWeight === undefined ? "Não informado" : `${testData.wetWeight} g`}</p>
             </div>
             <div>
               <h3 className="text-sm font-medium text-muted-foreground">Peso Seco</h3>
-              <p className="font-medium">{testData.dryWeight ? `${testData.dryWeight} g` : "Não informado"}</p>
+              <p className="font-medium">{testData.dryWeight === null || testData.dryWeight === undefined ? "Não informado" : `${testData.dryWeight} g`}</p>
             </div>
             <div>
               <h3 className="text-sm font-medium text-muted-foreground">Peso Conídio Extraído</h3>
               <p className="font-medium">
-                {testData.extractedConidiumWeight ? `${testData.extractedConidiumWeight} g` : "Não informado"}
+                {testData.extractedConidiumWeight === null || testData.extractedConidiumWeight === undefined ? "Não informado" : `${testData.extractedConidiumWeight} g`}
               </p>
             </div>
           </div>

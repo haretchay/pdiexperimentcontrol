@@ -1,4 +1,3 @@
-// @ts-nocheck
 "use client"
 
 import { Button } from "@/components/ui/button"
@@ -9,6 +8,7 @@ import { useParams, useRouter } from "next/navigation"
 import { useEffect, useMemo, useState } from "react"
 import { PhotoGridDisplay } from "@/components/camera/photo-grid-display"
 import { createClient } from "@/lib/supabase/client"
+import { getSignedUrlCached } from "@/lib/pdi/signed-url-cache"
 
 type PhotoRow = {
   id: string
@@ -47,12 +47,7 @@ export default function TestViewPage() {
   }
 
   async function storagePathToUrl(path: string) {
-    const { data, error } = await supabase.storage.from("test-photos").createSignedUrl(path, 60 * 60)
-    if (error || !data?.signedUrl) {
-      console.error("[v0] Erro ao criar signed URL:", error)
-      return ""
-    }
-    return data.signedUrl
+    return await getSignedUrlCached(supabase as any, "test-photos", path, 60 * 60)
   }
 
   useEffect(() => {
@@ -233,11 +228,11 @@ export default function TestViewPage() {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
               <h3 className="text-sm font-medium text-muted-foreground">Temp 7º dia - Câmara</h3>
-              <p className="font-medium">{testData.temp7Chamber === null || testData.temp7Chamber === undefined ? "Não informado" : `${testData.temp7Chamber} ºC`}</p>
+              <p className="font-medium">{(testData.temp7Chamber === null || testData.temp7Chamber === undefined) ? "Não informado" : `${testData.temp7Chamber} ºC`}</p>
             </div>
             <div>
               <h3 className="text-sm font-medium text-muted-foreground">Temp 7º dia - Arroz</h3>
-              <p className="font-medium">{testData.temp7Rice === null || testData.temp7Rice === undefined ? "Não informado" : `${testData.temp7Rice} ºC`}</p>
+              <p className="font-medium">{(testData.temp7Rice === null || testData.temp7Rice === undefined) ? "Não informado" : `${testData.temp7Rice} ºC`}</p>
             </div>
           </div>
 
@@ -284,11 +279,11 @@ export default function TestViewPage() {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
               <h3 className="text-sm font-medium text-muted-foreground">Temp 14º dia - Câmara</h3>
-              <p className="font-medium">{testData.temp14Chamber === null || testData.temp14Chamber === undefined ? "Não informado" : `${testData.temp14Chamber} ºC`}</p>
+              <p className="font-medium">{(testData.temp14Chamber === null || testData.temp14Chamber === undefined) ? "Não informado" : `${testData.temp14Chamber} ºC`}</p>
             </div>
             <div>
               <h3 className="text-sm font-medium text-muted-foreground">Temp 14º dia - Arroz</h3>
-              <p className="font-medium">{testData.temp14Rice === null || testData.temp14Rice === undefined ? "Não informado" : `${testData.temp14Rice} ºC`}</p>
+              <p className="font-medium">{(testData.temp14Rice === null || testData.temp14Rice === undefined) ? "Não informado" : `${testData.temp14Rice} ºC`}</p>
             </div>
           </div>
 
@@ -328,16 +323,16 @@ export default function TestViewPage() {
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div>
               <h3 className="text-sm font-medium text-muted-foreground">Peso Úmido</h3>
-              <p className="font-medium">{testData.wetWeight === null || testData.wetWeight === undefined ? "Não informado" : `${testData.wetWeight} g`}</p>
+              <p className="font-medium">{testData.wetWeight ? `${testData.wetWeight} g` : "Não informado"}</p>
             </div>
             <div>
               <h3 className="text-sm font-medium text-muted-foreground">Peso Seco</h3>
-              <p className="font-medium">{testData.dryWeight === null || testData.dryWeight === undefined ? "Não informado" : `${testData.dryWeight} g`}</p>
+              <p className="font-medium">{testData.dryWeight ? `${testData.dryWeight} g` : "Não informado"}</p>
             </div>
             <div>
               <h3 className="text-sm font-medium text-muted-foreground">Peso Conídio Extraído</h3>
               <p className="font-medium">
-                {testData.extractedConidiumWeight === null || testData.extractedConidiumWeight === undefined ? "Não informado" : `${testData.extractedConidiumWeight} g`}
+                {testData.extractedConidiumWeight ? `${testData.extractedConidiumWeight} g` : "Não informado"}
               </p>
             </div>
           </div>

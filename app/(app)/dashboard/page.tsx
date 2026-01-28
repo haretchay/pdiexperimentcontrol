@@ -1,7 +1,5 @@
-import { redirect } from "next/navigation"
 import { createClient } from "@/lib/supabase/server"
 import { DashboardClient } from "@/components/dashboard/dashboard-client"
-import { getExperiments, getTestsByExperiment } from "@/lib/supabase/experiments"
 
 export const runtime = "nodejs"
 
@@ -14,83 +12,126 @@ function isRateLimitError(err: unknown) {
     msg.includes("Too Many") ||
     msg.includes("Too many") ||
     msg.includes("rate limit") ||
-    msg.includes("Unexpected token 'T'") // quando a resposta começa com "Too Many R..."
+    msg.includes("Unexpected token 'T'")
   )
+}
+
+type DbTestRow = {
+  id: string
+  repetition_number: number
+  test_number: number
+
+  average_humidity: number | null
+  bozo: number | null
+  sensorial: number | null
+
+  temp7_chamber: number | null
+  temp14_chamber: number | null
+  temp7_rice: number | null
+  temp14_rice: number | null
+
+  created_at: string
+}
+
+type DbExperimentRow = {
+  id: string
+  number: number
+  strain: string
+  start_date: string
+  test_count: number
+  repetition_count: number
+  tests?: DbTestRow[] | null
 }
 
 export default async function DashboardPage() {
   const supabase = await createClient()
 
-  // 1) Autenticação (não entrar em loop por causa de 429)
-  try {
-    const { data, error } = await supabase.auth.getUser()
+  // Autenticação já é tratada no app/(app)/layout.tsx via requireActiveUser().
+  // Aqui focamos em carregar dados com o mínimo de chamadas possível (evita 429).
 
-    if (error) {
-      // Se for rate limit, não redireciona pro login (evita looping)
-      if (isRateLimitError(error)) {
-        return (
-          <div className="p-6">
-            <h1 className="text-xl font-semibold">Muitas requisições ao Supabase</h1>
-            <p className="mt-2 text-sm text-muted-foreground">
-              Você atingiu temporariamente o limite de requisições do Supabase (429). Aguarde alguns segundos e
-              recarregue a página.
-            </p>
-            <p className="mt-4 text-sm">
-              Se isso continuar acontecendo, é sinal de que algum componente está chamando getUser/getSession em loop
-              (vamos corrigir isso em seguida).
-            </p>
-          </div>
-        )
-      }
-
-      console.error("[v0] Error getting user:", error)
-      redirect("/auth/login")
-    }
-
-    const user = data.user
-    if (!user) {
-      redirect("/auth/login")
-    }
-  } catch (err) {
-    // Alguns 429 voltam como texto e estouram como exceção/parse — trate como rate limit também
-    if (isRateLimitError(err)) {
-      return (
-        <div className="p-6">
-          <h1 className="text-xl font-semibold">Muitas requisições ao Supabase</h1>
-          <p className="mt-2 text-sm text-muted-foreground">
-            O Supabase respondeu com rate-limit (429) e a requisição foi interrompida. Aguarde alguns segundos e
-            recarregue a página.
-          </p>
-          <p className="mt-4 text-sm">
-            Próximo passo: vamos identificar onde o app está disparando chamadas repetidas de autenticação no client.
-          </p>
-        </div>
-      )
-    }
-
-    console.error("[v0] Exception getting user:", err)
-    redirect("/auth/login")
-  }
-
-  // 2) Carregamento dos dados (se falhar, mantém vazio sem derrubar a página)
   let experiments: any[] = []
   let experimentData: any[] = []
 
   try {
-    experiments = await getExperiments(supabase)
+    const { data, error } = await supabase
+      .from("experiments")
+      .select(
+        `
+        id,
+        number,
+        strain,
+        start_date,
+        test_count,
+        repetition_count,
+        tests (
+          id,
+          repetition_number,
+          test_number,
+          average_humidity,
+          bozo,
+          sensorial,
+          temp7_chamber,
+          temp14_chamber,
+          temp7_rice,
+          temp14_rice,
+          created_at
+        )
+      `,
+      )
+      .order("number", { ascending: false })
 
-    experimentData = await Promise.all(
-      experiments.map(async (experiment) => {
-        const tests = await getTestsByExperiment(supabase, experiment.id)
-        return {
-          ...experiment,
-          testsData: tests,
-          completedTests: tests.length,
-        }
-      }),
-    )
+    if (error) throw error
+
+    const rows = (data ?? []) as unknown as DbExperimentRow[]
+
+    experiments = rows.map((row) => ({
+      id: row.id,
+      number: row.number,
+      strain: row.strain,
+      startDate: row.start_date,
+      testCount: row.test_count,
+      repetitionCount: row.repetition_count,
+      totalTests: (row.test_count ?? 0) * (row.repetition_count ?? 0),
+    }))
+
+    experimentData = rows.map((row) => {
+      const tests = (row.tests ?? []) as DbTestRow[]
+      const testsData = tests.map((t) => ({
+        id: t.id,
+        repetitionNumber: t.repetition_number,
+        testNumber: t.test_number,
+        averageHumidity: t.average_humidity ?? undefined,
+        bozo: t.bozo ?? undefined,
+        sensorial: t.sensorial ?? undefined,
+        temp7Chamber: t.temp7_chamber ?? undefined,
+        temp14Chamber: t.temp14_chamber ?? undefined,
+        temp7Rice: t.temp7_rice ?? undefined,
+        temp14Rice: t.temp14_rice ?? undefined,
+        createdAt: t.created_at,
+      }))
+
+      return {
+        id: row.id,
+        number: row.number,
+        strain: row.strain,
+        startDate: row.start_date,
+        testsData,
+        completedTests: testsData.length,
+      }
+    })
   } catch (error) {
-    console.error("[v0] Error loading experiments:", error)
+    console.error("[dashboard] Error loading data:", error)
+
+    if (isRateLimitError(error)) {
+      return (
+        <div className="p-6">
+          <h1 className="text-xl font-semibold">Muitas requisições ao Supabase</h1>
+          <p className="mt-2 text-sm text-muted-foreground">
+            Você atingiu temporariamente o limite de requisições (429). Aguarde alguns segundos e recarregue.
+          </p>
+        </div>
+      )
+    }
   }
 
   return <DashboardClient experiments={experiments} experimentData={experimentData} />

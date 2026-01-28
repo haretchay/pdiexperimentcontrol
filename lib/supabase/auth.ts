@@ -31,7 +31,7 @@ export const getServerAuth = cache(async () => {
     const { data: authData, error: authError } = await supabase.auth.getUser()
 
     if (authError && isRateLimitError(authError)) {
-      return { supabase, user: null as any, profile: null as any, error: authError, rateLimited: true }
+      return { supabase, user: null, profile: null, error: authError, rateLimited: true }
     }
 
     const user = authData.user ?? null
@@ -49,28 +49,15 @@ export const getServerAuth = cache(async () => {
       console.error("[auth] profile error:", profileError)
     }
 
-    return {
-      supabase,
-      user,
-      profile: profile ?? null,
-      error: authError ?? null,
-      rateLimited: false,
-    }
+    return { supabase, user, profile: profile ?? null, error: authError ?? null, rateLimited: false }
   } catch (err) {
     console.error("[auth] Exception in getServerAuth:", err)
-    return {
-      supabase,
-      user: null as any,
-      profile: null as any,
-      error: err as any,
-      rateLimited: isRateLimitError(err),
-    }
+    return { supabase, user: null, profile: null, error: err as any, rateLimited: isRateLimitError(err) }
   }
 })
 
 /**
- * Mantido por compatibilidade: retorna apenas o usuário.
- * (Não cria outro client; reaproveita getServerAuth.)
+ * Compat: retorna apenas o usuário (reaproveita getServerAuth)
  */
 export const getServerUser = cache(async () => {
   const { supabase, user, error, rateLimited } = await getServerAuth()
@@ -84,9 +71,10 @@ export const getServerUser = cache(async () => {
  * - evita loops em caso de 429 (rate limit)
  */
 export const requireActiveUser = cache(async () => {
-  const { supabase, user, profile, error, rateLimited } = await getServerAuth()
+  const { user, profile, error, rateLimited, supabase } = await getServerAuth()
 
   if (rateLimited) {
+    // Não redireciona (evita loop). Quem chamar decide o que renderizar.
     return { ok: false as const, reason: "rate_limit" as const, supabase }
   }
 

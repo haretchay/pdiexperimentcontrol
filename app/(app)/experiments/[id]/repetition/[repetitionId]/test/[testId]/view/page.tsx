@@ -17,6 +17,8 @@ type PhotoRow = {
   day: 7 | 14
   storage_path: string
   created_at: string
+  kind?: "single" | "merged"
+  photo_index?: number | null
 }
 
 export default function TestViewPage() {
@@ -47,9 +49,6 @@ export default function TestViewPage() {
     const pastDaysOfYear = (date.getTime() - firstDayOfYear.getTime()) / 86400000
     return Math.ceil((pastDaysOfYear + firstDayOfYear.getDay() + 1) / 7)
   }
-    return data.signedUrl
-  }
-
   useEffect(() => {
     let cancelled = false
     ;(async () => {
@@ -78,8 +77,9 @@ export default function TestViewPage() {
 
         const { data: photos, error: pErr } = await supabase
           .from("test_photos")
-          .select("id, test_id, day, storage_path, created_at")
+          .select("id, test_id, day, storage_path, created_at, kind, photo_index")
           .eq("test_id", t.id)
+          .eq("kind", "single")
           .order("created_at", { ascending: true })
 
         if (pErr) throw pErr
@@ -87,8 +87,19 @@ export default function TestViewPage() {
         const photos7 = (photos ?? []).filter((p: PhotoRow) => p.day === 7)
         const photos14 = (photos ?? []).filter((p: PhotoRow) => p.day === 14)
 
-        const paths7 = photos7.map((p: PhotoRow) => p.storage_path).filter(Boolean)
-        const paths14 = photos14.map((p: PhotoRow) => p.storage_path).filter(Boolean)
+        const ordered7 = [...photos7].sort(
+          (a: PhotoRow, b: PhotoRow) =>
+            (a.photo_index ?? 999) - (b.photo_index ?? 999) ||
+            new Date(a.created_at).getTime() - new Date(b.created_at).getTime(),
+        )
+        const ordered14 = [...photos14].sort(
+          (a: PhotoRow, b: PhotoRow) =>
+            (a.photo_index ?? 999) - (b.photo_index ?? 999) ||
+            new Date(a.created_at).getTime() - new Date(b.created_at).getTime(),
+        )
+
+        const paths7 = ordered7.map((p: PhotoRow) => p.storage_path).filter(Boolean)
+        const paths14 = ordered14.map((p: PhotoRow) => p.storage_path).filter(Boolean)
 
         const urls7 = await getSignedUrlsForPaths(supabase, paths7, { cache: signedUrlCache })
         const urls14 = await getSignedUrlsForPaths(supabase, paths14, { cache: signedUrlCache })

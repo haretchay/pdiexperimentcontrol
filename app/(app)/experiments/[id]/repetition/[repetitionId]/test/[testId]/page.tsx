@@ -5,6 +5,8 @@ import { useParams, useRouter } from "next/navigation"
 import { z } from "zod"
 import { useForm } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
+import { saveMergedPhotosForDay } from "@/lib/pdi/merged-photos"
+
 
 import { createClient } from "@/lib/supabase/client"
 import { SignedUrlCache } from "@/lib/pdi/signed-url-cache"

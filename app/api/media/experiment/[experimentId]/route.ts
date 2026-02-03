@@ -1,42 +1,34 @@
 import { NextResponse } from "next/server"
 import { createClient } from "@/lib/supabase/server"
 
-export const runtime = "nodejs"
-
 function isRateLimitError(err: unknown) {
   const status = (err as any)?.status
   const msg = String((err as any)?.message ?? err ?? "")
-  return (
-    status === 429 ||
-    msg.includes("Too Many") ||
-    msg.includes("Too many") ||
-    msg.includes("rate limit") ||
-    msg.includes("Unexpected token 'T'")
-  )
+  return status === 429 || msg.includes("Too Many") || msg.includes("rate limit") || msg.includes("Unexpected token 'T'")
 }
 
-async function signedUrlOrNull(supabase: any, path: string) {
+async function safeSignedUrl(supabase: any, path: string) {
   try {
     const { data, error } = await supabase.storage.from("test-photos").createSignedUrl(path, 60 * 60)
-    if (error || !data?.signedUrl) return null
-    return data.signedUrl as string
+    if (error || !data?.signedUrl) {
+      return { url: null as string | null, missing: true }
+    }
+    return { url: data.signedUrl as string, missing: false }
   } catch {
-    return null
+    return { url: null as string | null, missing: true }
   }
 }
 
-/**
- * GET /api/media/experiment/:experimentId
- * Retorna a lista de testes do experimento, com 2 imagens mescladas (7º e 14º) quando existirem.
- */
 export async function GET(_req: Request, { params }: { params: { experimentId: string } }) {
   const experimentId = params.experimentId
   const supabase = await createClient()
 
+  // auth
   const { data: authData, error: authError } = await supabase.auth.getUser()
   if (authError && isRateLimitError(authError)) return NextResponse.json({ error: "rate_limit" }, { status: 429 })
   if (!authData.user) return NextResponse.json({ error: "unauthorized" }, { status: 401 })
 
+  // tests do experimento
   const { data: tests, error: testsError } = await supabase
     .from("tests")
     .select("id, repetition_number, test_number, strain, date_7_day, date_14_day, created_at")
@@ -52,6 +44,7 @@ export async function GET(_req: Request, { params }: { params: { experimentId: s
   const testIds = (tests ?? []).map((t: any) => t.id)
   if (!testIds.length) return NextResponse.json({ tests: [] })
 
+  // fotos mescladas
   const { data: photos, error: photosError } = await supabase
     .from("test_photos")
     .select("id, test_id, day, storage_path, created_at, kind")
@@ -65,19 +58,19 @@ export async function GET(_req: Request, { params }: { params: { experimentId: s
   }
 
   // pega o merged mais recente por (test_id, day)
-  const byTestDay = new Map<string, any>()
+  const latest = new Map<string, any>()
   for (const p of photos ?? []) {
     const key = `${p.test_id}|${p.day}`
-    if (!byTestDay.has(key)) byTestDay.set(key, p)
+    if (!latest.has(key)) latest.set(key, p)
   }
 
   const result = await Promise.all(
     (tests ?? []).map(async (t: any) => {
-      const p7 = byTestDay.get(`${t.id}|7`)
-      const p14 = byTestDay.get(`${t.id}|14`)
+      const p7 = latest.get(`${t.id}|7`)
+      const p14 = latest.get(`${t.id}|14`)
 
-      const url7 = p7?.storage_path ? await signedUrlOrNull(supabase, p7.storage_path) : null
-      const url14 = p14?.storage_path ? await signedUrlOrNull(supabase, p14.storage_path) : null
+      const s7 = p7?.storage_path ? await safeSignedUrl(supabase, p7.storage_path) : { url: null, missing: false }
+      const s14 = p14?.storage_path ? await safeSignedUrl(supabase, p14.storage_path) : { url: null, missing: false }
 
       return {
         id: t.id,
@@ -88,18 +81,10 @@ export async function GET(_req: Request, { params }: { params: { experimentId: s
         date14Day: t.date_14_day ?? null,
         merged: {
           day7: p7
-            ? {
-                storagePath: p7.storage_path,
-                url: url7,
-                createdAt: p7.created_at,
-              }
+            ? { storagePath: p7.storage_path, url: s7.url, missing: s7.missing, createdAt: p7.created_at }
             : null,
           day14: p14
-            ? {
-                storagePath: p14.storage_path,
-                url: url14,
-                createdAt: p14.created_at,
-              }
+            ? { storagePath: p14.storage_path, url: s14.url, missing: s14.missing, createdAt: p14.created_at }
             : null,
         },
       }

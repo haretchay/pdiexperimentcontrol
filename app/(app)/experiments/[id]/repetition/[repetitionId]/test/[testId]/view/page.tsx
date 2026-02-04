@@ -75,36 +75,50 @@ export default function TestViewPage() {
 
         if (tErr) throw tErr
 
+        const ENABLE_INDIVIDUAL_PHOTOS = false
+
         const { data: photos, error: pErr } = await supabase
           .from("test_photos")
           .select("id, test_id, day, storage_path, created_at, kind, photo_index")
           .eq("test_id", t.id)
-          .eq("kind", "merged")
+          .eq("kind", ENABLE_INDIVIDUAL_PHOTOS ? "single" : "merged")
           .order("created_at", { ascending: false })
 
         if (pErr) throw pErr
 
-        const photos7 = (photos ?? []).filter((p: PhotoRow) => p.day === 7)
-        const photos14 = (photos ?? []).filter((p: PhotoRow) => p.day === 14)
+        let paths7: string[] = []
+        let paths14: string[] = []
 
-        const ordered7 = [...photos7].sort(
-          (a: PhotoRow, b: PhotoRow) =>
-            (a.photo_index ?? 999) - (b.photo_index ?? 999) ||
-            new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
-        )
-        const ordered14 = [...photos14].sort(
-          (a: PhotoRow, b: PhotoRow) =>
-            (a.photo_index ?? 999) - (b.photo_index ?? 999) ||
-            new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
-        )
+        if (ENABLE_INDIVIDUAL_PHOTOS) {
+          // modo antigo: 6 fotos individuais
+          const photos7 = (photos ?? []).filter((p: PhotoRow) => p.day === 7)
+          const photos14 = (photos ?? []).filter((p: PhotoRow) => p.day === 14)
 
-        const paths7 = ordered7.map((p: PhotoRow) => p.storage_path).filter(Boolean)
-        const paths14 = ordered14.map((p: PhotoRow) => p.storage_path).filter(Boolean)
+          const ordered7 = [...photos7].sort(
+            (a: PhotoRow, b: PhotoRow) =>
+              (a.photo_index ?? 999) - (b.photo_index ?? 999) ||
+              new Date(a.created_at).getTime() - new Date(b.created_at).getTime(),
+          )
+          const ordered14 = [...photos14].sort(
+            (a: PhotoRow, b: PhotoRow) =>
+              (a.photo_index ?? 999) - (b.photo_index ?? 999) ||
+              new Date(a.created_at).getTime() - new Date(b.created_at).getTime(),
+          )
+
+          paths7 = ordered7.map((p: PhotoRow) => p.storage_path).filter(Boolean)
+          paths14 = ordered14.map((p: PhotoRow) => p.storage_path).filter(Boolean)
+        } else {
+          // modo econômico: apenas 1 mosaico por dia (pega o mais recente)
+          const merged7 = (photos ?? []).find((p: PhotoRow) => p.day === 7)
+          const merged14 = (photos ?? []).find((p: PhotoRow) => p.day === 14)
+          if (merged7?.storage_path) paths7 = [merged7.storage_path]
+          if (merged14?.storage_path) paths14 = [merged14.storage_path]
+        }
 
         const urls7 = await getSignedUrlsForPaths(supabase, paths7, { cache: signedUrlCache })
         const urls14 = await getSignedUrlsForPaths(supabase, paths14, { cache: signedUrlCache })
 
-        const mapped = {
+const mapped = {
           unit: t.unit,
           requisition: t.requisition,
           testLot: t.test_lot,
@@ -125,8 +139,8 @@ export default function TestViewPage() {
           wetWeight: t.wet_weight,
           dryWeight: t.dry_weight,
           extractedConidiumWeight: t.extracted_conidium_weight,
-          annotations7Day: null,
-          annotations14Day: null,
+          annotations7Day: t.annotations_7_day,
+          annotations14Day: t.annotations_14_day,
           photos7Day: urls7.filter(Boolean),
           photos14Day: urls14.filter(Boolean),
         }

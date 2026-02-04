@@ -256,4 +256,3 @@ export async function replaceMergedDayPhoto(params: {
 
   return { uploaded: 1, mergedPath }
 }
-}

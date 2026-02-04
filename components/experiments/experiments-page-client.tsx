@@ -257,7 +257,7 @@ export function ExperimentsPageClient({ initialExperiments }: { initialExperimen
   }
 
   return (
-    <div className="container mx-auto p-4 overflow-x-hidden">
+    <div className="w-full px-4 sm:px-6 lg:px-8 py-6 overflow-x-hidden space-y-4">
       <PageTitle title="Experimentos" />
 
       <div className="mb-6">
@@ -309,7 +309,7 @@ export function ExperimentsPageClient({ initialExperiments }: { initialExperimen
 
       {Object.entries(groupedExperiments).map(([periodTitle, exps]) => (
         <PeriodGroup key={periodTitle} title={periodTitle}>
-          <div className="grid gap-4 [grid-template-columns:repeat(auto-fit,minmax(320px,1fr))]">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
             {exps.map((experiment) => (
               <Card
                 key={experiment.id}

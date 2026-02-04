@@ -10,7 +10,7 @@ export function RepetitionsPageClient({ initialRepetitions }: { initialRepetitio
     <div className="container mx-auto p-4">
       <PageTitle title="Repetições" />
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+      <div className="grid gap-4 [grid-template-columns:repeat(auto-fit,minmax(320px,1fr))]">
         {initialRepetitions.map((rep) => (
           <Card key={`${rep.experimentId}-${rep.repetitionNumber}`}>
             <CardHeader>

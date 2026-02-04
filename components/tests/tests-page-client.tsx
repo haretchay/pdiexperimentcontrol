@@ -25,7 +25,7 @@ export function TestsPageClient({ initialTests }: { initialTests: UITestRow[] })
     <div className="container mx-auto p-4">
       <PageTitle title="Testes" />
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+      <div className="grid gap-4 [grid-template-columns:repeat(auto-fit,minmax(360px,1fr))]">
         {initialTests.map((t) => (
           <Card key={t.id}>
             <CardHeader>

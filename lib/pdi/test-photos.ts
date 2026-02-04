@@ -2,6 +2,9 @@ import type { SupabaseClient } from "@supabase/supabase-js"
 import { SignedUrlCache } from "@/lib/pdi/signed-url-cache"
 import { assertValidTestPhotoPath, buildTestPhotoPath } from "@/lib/pdi/storage-path"
 
+const ENABLE_INDIVIDUAL_PHOTOS = false
+
+
 export type TestPhotoRow = {
   id: string
   test_id: string
@@ -81,6 +84,10 @@ export async function replaceDayPhotos(params: {
 
   if (!isUuid(userId)) throw new Error(`replaceDayPhotos: userId invalido (UUID). Recebido: "${String(userId)}"`)
   if (!isUuid(testId)) throw new Error(`replaceDayPhotos: testId invalido (UUID). Recebido: "${String(testId)}"`)
+
+  if (!ENABLE_INDIVIDUAL_PHOTOS) {
+    throw new Error("Salvamento de fotos individuais está desativado (modo econômico).");
+  }
 
   // Se tiver algum dataURL, exigimos que TODAS sejam dataURL (evita misturar url antiga + nova)
   const hasAnyData = photos.some((p) => isDataUrlImage(p))
@@ -186,12 +193,12 @@ export async function replaceMergedDayPhoto(params: {
   if (!isUuid(userId)) throw new Error(`replaceMergedDayPhoto: userId invalido (UUID). Recebido: "${String(userId)}"`)
   if (!isUuid(testId)) throw new Error(`replaceMergedDayPhoto: testId invalido (UUID). Recebido: "${String(testId)}"`)
 
+  // Pega quaisquer fotos antigas do dia (single OU merged) para limpeza após sucesso
   const { data: old, error: oldErr } = await supabase
     .from("test_photos")
-    .select("id, storage_path")
+    .select("id, storage_path, kind")
     .eq("test_id", testId)
     .eq("day", day)
-    .eq("kind", "merged")
 
   if (oldErr) throw oldErr
   const oldRows = (old ?? []) as any[]
@@ -209,14 +216,25 @@ export async function replaceMergedDayPhoto(params: {
 
   assertValidTestPhotoPath(mergedPath, { userId, testId })
 
-  // Upload novo
+  // 1) Upload do novo mosaico
   const { error: upErr } = await supabase.storage.from("test-photos").upload(mergedPath, mosaicBlob, {
     contentType: "image/jpeg",
     upsert: true,
   })
   if (upErr) throw upErr
 
-  // Insert novo (mantemos photo_index null)
+  // 2) Para respeitar UNIQUE(test_id, day, kind), removemos as linhas antigas ANTES de inserir a nova.
+  // (também remove singles antigos para economizar espaço)
+  if (oldIds.length) {
+    const { error: delOldErr } = await supabase.from("test_photos").delete().in("id", oldIds)
+    if (delOldErr) {
+      // rollback best-effort do upload
+      await supabase.storage.from("test-photos").remove([mergedPath])
+      throw delOldErr
+    }
+  }
+
+  // 3) Insere somente o merged (modo econômico)
   const { error: insErr } = await supabase.from("test_photos").insert({
     test_id: testId,
     day,
@@ -224,15 +242,18 @@ export async function replaceMergedDayPhoto(params: {
     kind: "merged",
     photo_index: null,
   })
-  if (insErr) throw insErr
-
-  // Remove antigos após sucesso
-  if (oldIds.length) {
-    await supabase.from("test_photos").delete().in("id", oldIds)
+  if (insErr) {
+    await supabase.storage.from("test-photos").remove([mergedPath])
+    throw insErr
   }
-  if (oldPaths.length) {
-    await supabase.storage.from("test-photos").remove(oldPaths)
+
+  // 4) Remove arquivos antigos do Storage APÓS salvar o novo
+  // (não tenta remover o novo path)
+  const pathsToRemove = oldPaths.filter((p) => p && p !== mergedPath)
+  if (pathsToRemove.length) {
+    await supabase.storage.from("test-photos").remove(pathsToRemove)
   }
 
   return { uploaded: 1, mergedPath }
+}
 }

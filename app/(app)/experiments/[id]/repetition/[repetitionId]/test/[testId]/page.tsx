@@ -380,7 +380,7 @@ export default function TestEditPage() {
         } else {
           throw new Error("Para salvar as fotos do 14º dia, capture as 6 fotos antes de salvar.")
         }
-      }      }
+      }
 
       router.push(`/experiments/${experimentId}/repetition/${repetitionId}/test/${testId}/view`)
     } catch (e: any) {

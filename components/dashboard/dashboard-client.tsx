@@ -1,7 +1,6 @@
 "use client"
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { GenerateTestDataButton } from "@/components/generate-test-data-button"
 import { PageTitle } from "@/components/page-title"
 import { StatsCard } from "@/components/dashboard/stats-card"
 import { ExperimentBarChart } from "@/components/dashboard/experiment-bar-chart"
@@ -80,9 +79,8 @@ export function DashboardClient({ experiments, experimentData }: DashboardClient
     <div className="container mx-auto p-4">
       <PageTitle title="Dashboard" />
 
-      <div className="flex justify-between items-center mb-6">
+      <div className="flex items-center mb-6">
         <h1 className="text-2xl font-bold">Visão Geral</h1>
-        <GenerateTestDataButton />
       </div>
 
       {experiments.length === 0 ? (

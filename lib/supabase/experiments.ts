@@ -276,8 +276,19 @@ export async function createExperiment(
 /**
  * Deleta experimento (admin-only no seu RLS)
  */
-export async function deleteExperiment(supabase: SupabaseClient, id: string): Promise<void> {
-  const { error } = await supabase.from("experiments").delete().eq("id", id)
+export async function deleteExperiment(supabase: SupabaseClient, experimentId: string) {
+  // No browser, usamos uma rota API que também remove as mídias do Storage.
+  if (typeof window !== "undefined") {
+    const res = await fetch(`/api/experiments/${experimentId}/delete`, { method: "POST" })
+    if (!res.ok) {
+      const msg = await res.text().catch(() => "")
+      throw new Error(msg || `Falha ao excluir experimento (${res.status})`)
+    }
+    return
+  }
+
+  // Fallback (server): apenas remove a linha do experimento.
+  const { error } = await supabase.from("experiments").delete().eq("id", experimentId)
   if (error) throw error
 }
 

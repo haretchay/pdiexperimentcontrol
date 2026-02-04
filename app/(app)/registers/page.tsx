@@ -6,7 +6,7 @@ import { Construction } from "lucide-react"
 
 export default function RegistersPage() {
   return (
-    <div className="container mx-auto p-4 max-w-7xl">
+    <div className="w-full px-4 sm:px-6 lg:px-8 py-6">
       <PageTitle title="Cadastros" />
 
       <Card className="mb-6">

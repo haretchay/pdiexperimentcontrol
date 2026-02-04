@@ -22,10 +22,10 @@ type UITestRow = {
 
 export function TestsPageClient({ initialTests }: { initialTests: UITestRow[] }) {
   return (
-    <div className="container mx-auto p-4">
+    <div className="w-full px-4 sm:px-6 lg:px-8 py-6">
       <PageTitle title="Testes" />
 
-      <div className="grid gap-4 [grid-template-columns:repeat(auto-fit,minmax(360px,1fr))]">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         {initialTests.map((t) => (
           <Card key={t.id}>
             <CardHeader>

@@ -309,7 +309,7 @@ export function ExperimentsPageClient({ initialExperiments }: { initialExperimen
 
       {Object.entries(groupedExperiments).map(([periodTitle, exps]) => (
         <PeriodGroup key={periodTitle} title={periodTitle}>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          <div className="grid gap-4 [grid-template-columns:repeat(auto-fit,minmax(320px,1fr))]">
             {exps.map((experiment) => (
               <Card
                 key={experiment.id}

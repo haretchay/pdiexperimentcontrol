@@ -79,8 +79,8 @@ export default function TestViewPage() {
           .from("test_photos")
           .select("id, test_id, day, storage_path, created_at, kind, photo_index")
           .eq("test_id", t.id)
-          .eq("kind", "single")
-          .order("created_at", { ascending: true })
+          .eq("kind", "merged")
+          .order("created_at", { ascending: false })
 
         if (pErr) throw pErr
 
@@ -90,12 +90,12 @@ export default function TestViewPage() {
         const ordered7 = [...photos7].sort(
           (a: PhotoRow, b: PhotoRow) =>
             (a.photo_index ?? 999) - (b.photo_index ?? 999) ||
-            new Date(a.created_at).getTime() - new Date(b.created_at).getTime(),
+            new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
         )
         const ordered14 = [...photos14].sort(
           (a: PhotoRow, b: PhotoRow) =>
             (a.photo_index ?? 999) - (b.photo_index ?? 999) ||
-            new Date(a.created_at).getTime() - new Date(b.created_at).getTime(),
+            new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
         )
 
         const paths7 = ordered7.map((p: PhotoRow) => p.storage_path).filter(Boolean)
@@ -125,8 +125,8 @@ export default function TestViewPage() {
           wetWeight: t.wet_weight,
           dryWeight: t.dry_weight,
           extractedConidiumWeight: t.extracted_conidium_weight,
-          annotations7Day: t.annotations_7_day,
-          annotations14Day: t.annotations_14_day,
+          annotations7Day: null,
+          annotations14Day: null,
           photos7Day: urls7.filter(Boolean),
           photos14Day: urls14.filter(Boolean),
         }

@@ -10,7 +10,7 @@ import { saveMergedPhotosForDay } from "@/lib/pdi/merged-photos"
 
 import { createClient } from "@/lib/supabase/client"
 import { SignedUrlCache } from "@/lib/pdi/signed-url-cache"
-import { getSignedUrlsForPaths, replaceDayPhotos, replaceMergedDayPhoto } from "@/lib/pdi/test-photos"
+import { getSignedUrlsForPaths } from "@/lib/pdi/test-photos"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form"
@@ -37,73 +37,6 @@ const toNumberOrUndefined = (v: unknown) => {
 const isDataUrlImage = (s?: string) => typeof s === "string" && s.startsWith("data:image/")
 const hasNewCapturedPhotos = (photos: string[]) => Array.isArray(photos) && photos.some((p) => isDataUrlImage(p))
 
-
-async function createMosaicBlob(imageDataUrls: string[]) {
-  // Mosaico 3x2 (6 fotos): mantém zoom normal ao abrir a imagem final
-  const cols = 3
-  const rows = 2
-  const cellW = 1000
-  const cellH = 750
-  const gutter = 6
-  const quality = 0.9
-
-  const load = (src: string) =>
-    new Promise<HTMLImageElement>((resolve, reject) => {
-      const img = new Image()
-      img.onload = () => resolve(img)
-      img.onerror = () => reject(new Error("Falha ao carregar imagem para mosaico"))
-      img.src = src
-    })
-
-  const imgs = await Promise.all(imageDataUrls.slice(0, 6).map((u) => load(u)))
-
-  const canvas = document.createElement("canvas")
-  canvas.width = cols * cellW
-  canvas.height = rows * cellH
-
-  const ctx = canvas.getContext("2d")
-  if (!ctx) throw new Error("Canvas 2D indisponível")
-
-  // fundo escuro compatível com tema
-  ctx.fillStyle = "#111827"
-  ctx.fillRect(0, 0, canvas.width, canvas.height)
-
-  const drawCover = (img: HTMLImageElement, dx: number, dy: number, dw: number, dh: number) => {
-    const iw = img.naturalWidth || img.width
-    const ih = img.naturalHeight || img.height
-    const ir = iw / ih
-    const dr = dw / dh
-
-    let sx = 0,
-      sy = 0,
-      sw = iw,
-      sh = ih
-
-    if (ir > dr) {
-      sw = Math.round(ih * dr)
-      sx = Math.round((iw - sw) / 2)
-    } else {
-      sh = Math.round(iw / dr)
-      sy = Math.round((ih - sh) / 2)
-    }
-
-    ctx.drawImage(img, sx, sy, sw, sh, dx, dy, dw, dh)
-  }
-
-  imgs.forEach((img, i) => {
-    const col = i % cols
-    const row = Math.floor(i / cols)
-    const x = col * cellW
-    const y = row * cellH
-    drawCover(img, x + gutter, y + gutter, cellW - gutter * 2, cellH - gutter * 2)
-  })
-
-  const blob = await new Promise<Blob>((resolve, reject) => {
-    canvas.toBlob((b) => (b ? resolve(b) : reject(new Error("Falha ao gerar JPG do mosaico"))), "image/jpeg", quality)
-  })
-
-  return blob
-}
 
 const formSchema = z.object({
   unit: z.enum(["americana", "salto"]).optional(),
@@ -262,33 +195,21 @@ export default function TestEditPage() {
           .from("test_photos")
           .select("day, storage_path, created_at, kind, photo_index")
           .eq("test_id", data.id)
-          .order("created_at", { ascending: true })
+          .eq("kind", "merged")
+          .order("created_at", { ascending: false })
 
         if (existingPhotos) {
-          const singles = existingPhotos.filter((p: any) => !p.kind || p.kind === "single")
-          const photos7 = singles.filter((p: any) => p.day === 7)
-          const photos14 = singles.filter((p: any) => p.day === 14)
+          const merged7 = (existingPhotos as any[]).find((p: any) => p.day === 7 && p.storage_path)
+          const merged14 = (existingPhotos as any[]).find((p: any) => p.day === 14 && p.storage_path)
 
-          if (photos7.length > 0) {
-            const ordered7 = [...photos7].sort(
-              (a: any, b: any) =>
-                (a.photo_index ?? 999) - (b.photo_index ?? 999) ||
-                new Date(a.created_at).getTime() - new Date(b.created_at).getTime(),
-            )
-            const paths7 = ordered7.map((p: any) => p.storage_path).filter(Boolean)
-            const urls7 = await getSignedUrlsForPaths(supabase, paths7, { cache: signedUrlCache })
-            setPhotos7Day(urls7.filter(Boolean))
+          if (merged7?.storage_path) {
+            const [url7] = await getSignedUrlsForPaths(supabase, [merged7.storage_path], { cache: signedUrlCache })
+            if (url7) setPhotos7Day([url7])
           }
 
-          if (photos14.length > 0) {
-            const ordered14 = [...photos14].sort(
-              (a: any, b: any) =>
-                (a.photo_index ?? 999) - (b.photo_index ?? 999) ||
-                new Date(a.created_at).getTime() - new Date(b.created_at).getTime(),
-            )
-            const paths14 = ordered14.map((p: any) => p.storage_path).filter(Boolean)
-            const urls14 = await getSignedUrlsForPaths(supabase, paths14, { cache: signedUrlCache })
-            setPhotos14Day(urls14.filter(Boolean))
+          if (merged14?.storage_path) {
+            const [url14] = await getSignedUrlsForPaths(supabase, [merged14.storage_path], { cache: signedUrlCache })
+            if (url14) setPhotos14Day([url14])
           }
         }
       } catch (e) {
@@ -360,24 +281,34 @@ export default function TestEditPage() {
 
       if (error) throw error
 
-      // ✅ Só mexe no storage se tiver foto NOVA (dataURL)
-      // ✅ Fotos: substitui o dia somente se o usuário recapturou (dataURL)
-      if (photos7Day.length > 0 && hasNewCapturedPhotos(photos7Day) && testDbId) {
-        await replaceDayPhotos({ supabase, userId: user.id, testId: testDbId, day: 7, photos: photos7Day })
-
-        // Gera e salva mosaico (kind=merged) para o 7º dia (somente se houver 6 fotos NOVAS)
-        if (hasNewCapturedPhotos(photos7Day) && photos7Day.every((p) => isDataUrlImage(p)) && photos7Day.length >= 6) {
-          const mosaicBlob = await createMosaicBlob(photos7Day.slice(0, 6))
-          await replaceMergedDayPhoto({ supabase, userId: user.id, testId: testDbId, day: 7, mosaicBlob })
+      // ✅ Fotos (REDUZIDAS): salva SOMENTE 1 foto mesclada por dia (7 e 14)
+      // - se o usuário recapturou (dataURL), exige 6 fotos e substitui a mesclada
+      // - apaga quaisquer fotos antigas do mesmo dia (inclusive singles de versões anteriores)
+      if (testDbId) {
+        if (hasNewCapturedPhotos(photos7Day)) {
+          if (!(photos7Day.every((p) => isDataUrlImage(p)) && photos7Day.length >= 6)) {
+            throw new Error("Para salvar o 7º dia, capture as 6 fotos.")
+          }
+          await saveMergedPhotosForDay({
+            supabase,
+            userId: user.id,
+            testId: testDbId,
+            day: 7,
+            dataUrls: photos7Day.slice(0, 6),
+          })
         }
-      }
-      if (photos14Day.length > 0 && hasNewCapturedPhotos(photos14Day) && testDbId) {
-        await replaceDayPhotos({ supabase, userId: user.id, testId: testDbId, day: 14, photos: photos14Day })
 
-        // Gera e salva mosaico (kind=merged) para o 14º dia (somente se houver 6 fotos NOVAS)
-        if (hasNewCapturedPhotos(photos14Day) && photos14Day.every((p) => isDataUrlImage(p)) && photos14Day.length >= 6) {
-          const mosaicBlob = await createMosaicBlob(photos14Day.slice(0, 6))
-          await replaceMergedDayPhoto({ supabase, userId: user.id, testId: testDbId, day: 14, mosaicBlob })
+        if (hasNewCapturedPhotos(photos14Day)) {
+          if (!(photos14Day.every((p) => isDataUrlImage(p)) && photos14Day.length >= 6)) {
+            throw new Error("Para salvar o 14º dia, capture as 6 fotos.")
+          }
+          await saveMergedPhotosForDay({
+            supabase,
+            userId: user.id,
+            testId: testDbId,
+            day: 14,
+            dataUrls: photos14Day.slice(0, 6),
+          })
         }
       }
 
@@ -692,7 +623,7 @@ export default function TestEditPage() {
                   {photos7Day.length > 0 ? (
                     <>
                       <Check className="h-4 w-4 mr-2" />
-                      Fotos do 7º dia capturadas ({photos7Day.length})
+                      Foto(s) do 7º dia vinculada(s) ({photos7Day.length})
                     </>
                   ) : (
                     "Capturar Fotos do 7º dia"
@@ -756,7 +687,7 @@ export default function TestEditPage() {
                   {photos14Day.length > 0 ? (
                     <>
                       <Check className="h-4 w-4 mr-2" />
-                      Fotos do 14º dia capturadas ({photos14Day.length})
+                      Foto(s) do 14º dia vinculada(s) ({photos14Day.length})
                     </>
                   ) : (
                     "Capturar Fotos do 14º dia"

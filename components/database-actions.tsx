@@ -69,7 +69,7 @@ export function DatabaseActions() {
 
   // Import propositalmente não implementado (vamos migrar para Supabase)
   const handleImport = () => {
-    alert("Importação local desativada. Vamos migrar para Supabase.")
+    alert("Importação local desativada.")
   }
 
   return (

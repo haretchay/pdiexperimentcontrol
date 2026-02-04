@@ -4,8 +4,8 @@ import { ThemeProvider } from "@/components/theme-provider"
 import type { Metadata } from "next"
 
 export const metadata: Metadata = {
-  title: "Fungi Lab - Experimentos Agrícolas",
-  description: "Aplicativo para condução de experimentos com fungos agrícolas",
+  title: "PDI - Controle de Testes",
+  description: "Condução de experimentos com fungos agrícolas",
   generator: "v0.app",
 }
 

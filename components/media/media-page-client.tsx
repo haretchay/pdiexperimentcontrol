@@ -54,6 +54,10 @@ function fmtNum(v: number | null | undefined, suffix = " g") {
   return `${n}${suffix}`
 }
 
+function expLabel(n: number) {
+  return `#${String(n).padStart(3, "0")}`
+}
+
 function monthKey(iso: string) {
   const d = new Date(iso)
   if (Number.isNaN(d.getTime())) return ""
@@ -73,71 +77,72 @@ function weekKey(iso: string) {
   return `${d.getUTCFullYear()}-W${String(weekNo).padStart(2, "0")}`
 }
 
-function expLabel(n: number) {
-  return `#${String(n).padStart(3, "0")}`
-}
+type SortKey = "newest" | "oldest" | "wet_desc" | "dry_desc" | "conidium_desc"
 
 export function MediaPageClient() {
-  const [items, setItems] = useState<MediaPhoto[] | null>(null)
-  const [loading, setLoading] = useState(false)
-  const [errorMsg, setErrorMsg] = useState<string | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [items, setItems] = useState<MediaPhoto[]>([])
+  const [error, setError] = useState<string | null>(null)
 
   // filtros
   const [q, setQ] = useState("")
-  const [expId, setExpId] = useState<string>("all")
-  const [month, setMonth] = useState<string>("all")
-  const [week, setWeek] = useState<string>("all")
-  const [sort, setSort] = useState<string>("newest")
+  const [expId, setExpId] = useState("all")
+  const [month, setMonth] = useState("all")
+  const [week, setWeek] = useState("all")
+  const [sort, setSort] = useState<SortKey>("newest")
 
   useEffect(() => {
-    let cancelled = false
-    async function load() {
+    let mounted = true
+
+    async function run() {
+      setLoading(true)
+      setError(null)
+
       try {
-        setLoading(true)
-        setErrorMsg(null)
-        const res = await fetch("/api/media/all", { cache: "no-store" })
+        const res = await fetch("/api/media/all", { method: "GET" })
+        if (!res.ok) {
+          const text = await res.text()
+          throw new Error(text || `HTTP ${res.status}`)
+        }
         const json = await res.json()
-        if (!res.ok) throw new Error(json?.error ?? "Falha ao carregar mídias")
-        if (cancelled) return
-        setItems((json?.photos ?? []) as MediaPhoto[])
+        const photos: MediaPhoto[] = Array.isArray(json?.photos) ? json.photos : []
+        if (mounted) setItems(photos)
       } catch (e: any) {
-        if (cancelled) return
-        setErrorMsg(e?.message ?? "Erro ao carregar mídias")
-        setItems([])
+        console.error("[media] fetch error:", e)
+        if (mounted) setError(e?.message ?? "Erro ao carregar mídias.")
       } finally {
-        if (!cancelled) setLoading(false)
+        if (mounted) setLoading(false)
       }
     }
-    load()
+
+    run()
     return () => {
-      cancelled = true
+      mounted = false
     }
   }, [])
 
   const experiments = useMemo(() => {
     const map = new Map<string, { id: string; number: number; strain: string | null }>()
-    for (const p of items ?? []) {
-      map.set(p.experiment.id, { id: p.experiment.id, number: p.experiment.number, strain: p.experiment.strain ?? null })
-    }
-    return Array.from(map.values()).sort((a, b) => b.number - a.number)
+    for (const p of items) map.set(p.experiment.id, { id: p.experiment.id, number: p.experiment.number, strain: p.experiment.strain })
+    return Array.from(map.values()).sort((a, b) => a.number - b.number)
   }, [items])
 
   const months = useMemo(() => {
     const set = new Set<string>()
-    for (const p of items ?? []) set.add(monthKey(p.createdAt))
+    for (const p of items) set.add(monthKey(p.createdAt))
     return Array.from(set.values()).filter(Boolean).sort((a, b) => (a < b ? 1 : -1))
   }, [items])
 
   const weeks = useMemo(() => {
     const set = new Set<string>()
-    for (const p of items ?? []) set.add(weekKey(p.createdAt))
+    for (const p of items) set.add(weekKey(p.createdAt))
     return Array.from(set.values()).filter(Boolean).sort((a, b) => (a < b ? 1 : -1))
   }, [items])
 
   const filtered = useMemo(() => {
     const qn = q.trim().toLowerCase()
-    let arr = (items ?? []).filter((p) => {
-      // sempre mostrar só com mídia (conforme pedido: sem toggle)
+    let arr = items.filter((p) => {
+      // sem toggle: sempre mostrar só com mídia
       if (!p.url) return false
 
       if (expId !== "all" && p.experiment.id !== expId) return false
@@ -145,6 +150,7 @@ export function MediaPageClient() {
       if (week !== "all" && weekKey(p.createdAt) !== week) return false
 
       if (!qn) return true
+
       const hay = [
         expLabel(p.experiment.number),
         p.experiment.strain ?? "",
@@ -153,9 +159,11 @@ export function MediaPageClient() {
         p.test.matrixLot ?? "",
         String(p.test.repetitionNumber),
         String(p.test.testNumber),
+        String(p.test.unit ?? ""),
       ]
         .join(" ")
         .toLowerCase()
+
       return hay.includes(qn)
     })
 
@@ -165,14 +173,16 @@ export function MediaPageClient() {
       return db - da
     }
 
-    if (sort === "newest") arr = arr.sort(byCreated)
-    if (sort === "oldest") arr = arr.sort((a, b) => -byCreated(a, b))
-    if (sort === "wet_desc") arr = arr.sort((a, b) => (b.test.wetWeight ?? -Infinity) - (a.test.wetWeight ?? -Infinity) || byCreated(a, b))
-    if (sort === "dry_desc") arr = arr.sort((a, b) => (b.test.dryWeight ?? -Infinity) - (a.test.dryWeight ?? -Infinity) || byCreated(a, b))
-    if (sort === "conidium_desc")
-      arr = arr.sort(
-        (a, b) => (b.test.extractedConidiumWeight ?? -Infinity) - (a.test.extractedConidiumWeight ?? -Infinity) || byCreated(a, b)
+    if (sort === "newest") arr = arr.slice().sort(byCreated)
+    if (sort === "oldest") arr = arr.slice().sort((a, b) => -byCreated(a, b))
+    if (sort === "wet_desc") arr = arr.slice().sort((a, b) => (b.test.wetWeight ?? -Infinity) - (a.test.wetWeight ?? -Infinity) || byCreated(a, b))
+    if (sort === "dry_desc") arr = arr.slice().sort((a, b) => (b.test.dryWeight ?? -Infinity) - (a.test.dryWeight ?? -Infinity) || byCreated(a, b))
+    if (sort === "conidium_desc") {
+      arr = arr.slice().sort(
+        (a, b) =>
+          (b.test.extractedConidiumWeight ?? -Infinity) - (a.test.extractedConidiumWeight ?? -Infinity) || byCreated(a, b)
       )
+    }
 
     return arr
   }, [items, q, expId, month, week, sort])
@@ -188,18 +198,21 @@ export function MediaPageClient() {
   return (
     <div className="container mx-auto max-w-7xl py-6 space-y-6">
       <Card>
-        <CardHeader>
+        <CardHeader className="flex flex-row items-center justify-between gap-3">
           <CardTitle>Mídias</CardTitle>
+          <div className="flex items-center gap-2">
+            <Badge variant="secondary">{filtered.length} fotos</Badge>
+            <Button variant="outline" onClick={clear} disabled={loading}>
+              Limpar filtros
+            </Button>
+          </div>
         </CardHeader>
+
         <CardContent className="space-y-4">
           <div className="grid grid-cols-1 md:grid-cols-12 gap-3 items-end">
             <div className="md:col-span-4">
               <Label className="text-sm">Buscar</Label>
-              <Input
-                value={q}
-                onChange={(e) => setQ(e.target.value)}
-                placeholder="Digite cepa, exp (#001), lote, rep, teste..."
-              />
+              <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Digite cepa, exp (#001), lote, rep, teste..." />
             </div>
 
             <div className="md:col-span-3">
@@ -212,7 +225,7 @@ export function MediaPageClient() {
                   <SelectItem value="all">Todos</SelectItem>
                   {experiments.map((e) => (
                     <SelectItem key={e.id} value={e.id}>
-                      {expLabel(e.number)}{e.strain ? ` — ${e.strain}` : ""}
+                      {expLabel(e.number)} {e.strain ? `• ${e.strain}` : ""}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -255,132 +268,134 @@ export function MediaPageClient() {
 
             <div className="md:col-span-1">
               <Label className="text-sm">Ordem</Label>
-              <Select value={sort} onValueChange={setSort}>
+              <Select value={sort} onValueChange={(v) => setSort(v as SortKey)}>
                 <SelectTrigger>
-                  <SelectValue placeholder="Mais novos" />
+                  <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="newest">Mais novos</SelectItem>
-                  <SelectItem value="oldest">Mais antigos</SelectItem>
-                  <SelectItem value="wet_desc">Peso úmido (maior)</SelectItem>
-                  <SelectItem value="dry_desc">Peso seco (maior)</SelectItem>
-                  <SelectItem value="conidium_desc">Peso conídio (maior)</SelectItem>
+                  <SelectItem value="newest">Novas</SelectItem>
+                  <SelectItem value="oldest">Antigas</SelectItem>
+                  <SelectItem value="wet_desc">↑ Peso úmido</SelectItem>
+                  <SelectItem value="dry_desc">↑ Peso seco</SelectItem>
+                  <SelectItem value="conidium_desc">↑ Peso conídio</SelectItem>
                 </SelectContent>
               </Select>
             </div>
           </div>
 
-          <div className="flex items-center justify-between gap-3">
-            <div className="text-sm text-muted-foreground">
-              {items ? (
-                <span>
-                  Exibindo <span className="font-medium text-foreground">{filtered.length}</span> foto(s) mesclada(s)
-                </span>
-              ) : (
-                <span>Carregando…</span>
-              )}
+          {loading ? (
+            <div className="flex items-center gap-2 text-sm text-muted-foreground py-10">
+              <Loader2 className="h-4 w-4 animate-spin" />
+              Carregando mídias...
             </div>
-            <Button variant="secondary" onClick={clear}>
-              Limpar filtros
-            </Button>
-          </div>
+          ) : error ? (
+            <div className="text-sm text-destructive py-6">
+              Erro ao carregar mídias: {error}
+            </div>
+          ) : filtered.length === 0 ? (
+            <div className="text-sm text-muted-foreground py-10">Nenhuma mídia encontrada com os filtros atuais.</div>
+          ) : (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+              {filtered.map((p) => {
+                const exp = expLabel(p.experiment.number)
+                const title = `${exp} • Rep ${p.test.repetitionNumber} • Teste ${p.test.testNumber} • Dia ${p.day}º`
+                const dref = p.day === 7 ? p.test.date7Day : p.test.date14Day
+
+                return (
+                  <Card key={p.id} className="overflow-hidden">
+                    <div className="relative">
+                      <div className="w-full aspect-[3/2] bg-muted/30">
+                        {p.url ? (
+                          <img src={p.url} alt={title} className="w-full h-full object-cover" />
+                        ) : (
+                          <div className="w-full h-full flex items-center justify-center text-xs text-muted-foreground">
+                            Sem imagem
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="absolute top-2 left-2 flex gap-2">
+                        <Badge>{exp}</Badge>
+                        <Badge variant="secondary">{p.day}º dia</Badge>
+                      </div>
+
+                      <div className="absolute top-2 right-2">
+                        <Dialog>
+                          <DialogTrigger asChild>
+                            <Button size="icon" variant="secondary" className="h-9 w-9">
+                              <ZoomIn className="h-4 w-4" />
+                            </Button>
+                          </DialogTrigger>
+
+                          <DialogContent className="max-w-5xl">
+                            <DialogTitle>{title}</DialogTitle>
+                            <DialogDescription className="space-y-2">
+                              <div className="text-xs text-muted-foreground">
+                                Data: <span className="text-foreground">{fmtDate(dref)}</span> • Cepa:{" "}
+                                <span className="text-foreground">{p.test.strain ?? p.experiment.strain ?? "-"}</span> • Unidade:{" "}
+                                <span className="text-foreground">{p.test.unit ?? "-"}</span>
+                              </div>
+                              {p.url ? <ZoomableImage src={p.url} title={title} /> : null}
+
+                              <div className="grid grid-cols-1 md:grid-cols-3 gap-2 text-xs">
+                                <div className="rounded-md border p-2">
+                                  <div className="text-muted-foreground">Peso úmido</div>
+                                  <div className="font-medium">{fmtNum(p.test.wetWeight)}</div>
+                                </div>
+                                <div className="rounded-md border p-2">
+                                  <div className="text-muted-foreground">Peso seco</div>
+                                  <div className="font-medium">{fmtNum(p.test.dryWeight)}</div>
+                                </div>
+                                <div className="rounded-md border p-2">
+                                  <div className="text-muted-foreground">Peso conídio</div>
+                                  <div className="font-medium">{fmtNum(p.test.extractedConidiumWeight)}</div>
+                                </div>
+                              </div>
+                            </DialogDescription>
+                          </DialogContent>
+                        </Dialog>
+                      </div>
+                    </div>
+
+                    <CardContent className="p-3 space-y-2">
+                      <div className="text-sm font-medium">{title}</div>
+                      <div className="grid grid-cols-2 gap-2 text-xs">
+                        <div>
+                          <span className="text-muted-foreground">Data:</span> {fmtDate(dref)}
+                        </div>
+                        <div>
+                          <span className="text-muted-foreground">Cepa:</span> {p.test.strain ?? p.experiment.strain ?? "-"}
+                        </div>
+                        <div>
+                          <span className="text-muted-foreground">Unid.:</span> {p.test.unit ?? "-"}
+                        </div>
+                        <div>
+                          <span className="text-muted-foreground">Lote:</span> {p.test.testLot ?? "-"}
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-3 gap-2 text-[11px]">
+                        <div className="rounded-md border p-2">
+                          <div className="text-muted-foreground">Úmido</div>
+                          <div className="font-medium">{fmtNum(p.test.wetWeight)}</div>
+                        </div>
+                        <div className="rounded-md border p-2">
+                          <div className="text-muted-foreground">Seco</div>
+                          <div className="font-medium">{fmtNum(p.test.dryWeight)}</div>
+                        </div>
+                        <div className="rounded-md border p-2">
+                          <div className="text-muted-foreground">Conídio</div>
+                          <div className="font-medium">{fmtNum(p.test.extractedConidiumWeight)}</div>
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                )
+              })}
+            </div>
+          )}
         </CardContent>
       </Card>
-
-      {loading ? (
-        <div className="flex items-center gap-2 text-sm text-muted-foreground">
-          <Loader2 className="h-4 w-4 animate-spin" />
-          Carregando mídias...
-        </div>
-      ) : null}
-
-      {errorMsg ? (
-        <Card>
-          <CardHeader>
-            <CardTitle>Erro</CardTitle>
-          </CardHeader>
-          <CardContent className="text-sm text-muted-foreground">{errorMsg}</CardContent>
-        </Card>
-      ) : null}
-
-      {items ? (
-        filtered.length === 0 ? (
-          <Card>
-            <CardHeader>
-              <CardTitle>Nenhuma mídia</CardTitle>
-            </CardHeader>
-            <CardContent className="text-sm text-muted-foreground">Não há fotos mescladas para o filtro atual.</CardContent>
-          </Card>
-        ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-            {filtered.map((p) => (
-              <Card key={p.id} className="overflow-hidden">
-                <CardContent className="p-0">
-                  <Dialog>
-                    <DialogTrigger asChild>
-                      <div className="relative bg-black cursor-pointer group">
-                        <div className="relative w-full aspect-[3/2]">
-                          {/* img simples para evitar warning de dimensão (recharts) e permitir fallback */}
-                          <img
-                            src={p.url ?? "/placeholder.svg"}
-                            alt={`Foto ${p.day}º dia`}
-                            className="h-full w-full object-cover"
-                          />
-                        </div>
-                        <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 bg-black/40 transition-opacity">
-                          <div className="flex items-center gap-2 text-white text-sm">
-                            <ZoomIn className="h-5 w-5" />
-                            Ampliar
-                          </div>
-                        </div>
-                        <div className="absolute top-2 left-2 bg-black/60 text-white px-2 py-1 text-xs rounded">
-                          Dia {p.day}º
-                        </div>
-                      </div>
-                    </DialogTrigger>
-
-                    <DialogContent className="max-w-5xl">
-                      <DialogTitle>{`Exp. ${expLabel(p.experiment.number)} • Rep. ${p.test.repetitionNumber} • Teste ${p.test.testNumber} • Dia ${p.day}º`}</DialogTitle>
-                      <DialogDescription className="sr-only">Visualização ampliada da foto mesclada.</DialogDescription>
-                      <ZoomableImage src={p.url ?? "/placeholder.svg"} title={`Foto ${p.day}º dia`} />
-                    </DialogContent>
-                  </Dialog>
-
-                  <div className="p-3 space-y-2">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <Badge variant="secondary">Exp. {expLabel(p.experiment.number)}</Badge>
-                      <Badge variant="outline">Rep. {p.test.repetitionNumber}</Badge>
-                      <Badge variant="outline">Teste {p.test.testNumber}</Badge>
-                      {p.test.strain ? <Badge>{p.test.strain}</Badge> : p.experiment.strain ? <Badge>{p.experiment.strain}</Badge : null}
-                    </div>
-
-                    <div className="grid grid-cols-3 gap-2 text-xs">
-                      <div className="rounded-md border p-2">
-                        <div className="text-muted-foreground">Úmido</div>
-                        <div className="font-medium">{fmtNum(p.test.wetWeight)}</div>
-                      </div>
-                      <div className="rounded-md border p-2">
-                        <div className="text-muted-foreground">Seco</div>
-                        <div className="font-medium">{fmtNum(p.test.dryWeight)}</div>
-                      </div>
-                      <div className="rounded-md border p-2">
-                        <div className="text-muted-foreground">Conídio</div>
-                        <div className="font-medium">{fmtNum(p.test.extractedConidiumWeight)}</div>
-                      </div>
-                    </div>
-
-                    <div className="text-xs text-muted-foreground flex flex-wrap gap-x-4 gap-y-1">
-                      <span>Data 7º: {fmtDate(p.test.date7Day)}</span>
-                      <span>Data 14º: {fmtDate(p.test.date14Day)}</span>
-                      <span>Inserido: {fmtDate(p.createdAt)}</span>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-            ))}
-          </div>
-        )
-      ) : null}
     </div>
   )
 }

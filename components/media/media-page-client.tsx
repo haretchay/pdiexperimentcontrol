@@ -1,275 +1,288 @@
 "use client"
 
 import { useEffect, useMemo, useState } from "react"
-import { PageTitle } from "@/components/page-title"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Button } from "@/components/ui/button"
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
-import { Slider } from "@/components/ui/slider"
 import { Input } from "@/components/ui/input"
-import { Switch } from "@/components/ui/switch"
 import { Label } from "@/components/ui/label"
-import { Loader2, ZoomIn, ZoomOut } from "lucide-react"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Dialog, DialogContent, DialogDescription, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
+import { Badge } from "@/components/ui/badge"
+import { Loader2, ZoomIn } from "lucide-react"
+import { ZoomableImage } from "@/components/media/zoomable-image"
 
-type MediaExperiment = {
+type MediaPhoto = {
   id: string
-  number: string
-  strain: string
-  startDate: string
-  testCount: number
-  repetitionCount: number
-}
-
-type MediaTest = {
-  id: string
-  repetitionNumber: number
-  testNumber: number
-  strain: string | null
-  date7Day: string | null
-  date14Day: string | null
-  merged: {
-    day7: null | { url: string | null; missing: boolean; storagePath: string; createdAt: string }
-    day14: null | { url: string | null; missing: boolean; storagePath: string; createdAt: string }
+  day: 7 | 14
+  storagePath: string
+  url: string | null
+  missing: boolean
+  createdAt: string
+  experiment: {
+    id: string
+    number: number
+    strain: string | null
+    startDate: string | null
+  }
+  test: {
+    id: string
+    repetitionNumber: number
+    testNumber: number
+    strain: string | null
+    unit: string | null
+    testLot: string | null
+    matrixLot: string | null
+    date7Day: string | null
+    date14Day: string | null
+    wetWeight: number | null
+    dryWeight: number | null
+    extractedConidiumWeight: number | null
   }
 }
 
-function fmtDate(d?: string | null) {
-  if (!d) return "—"
-  try {
-    return new Date(d).toLocaleDateString("pt-BR")
-  } catch {
-    return "—"
-  }
+function fmtDate(v: string | null | undefined) {
+  if (!v) return "-"
+  const d = new Date(v)
+  if (Number.isNaN(d.getTime())) return String(v)
+  return d.toLocaleDateString("pt-BR")
 }
 
-function ZoomableImage({ src, title }: { src: string; title: string }) {
-  const [zoom, setZoom] = useState(1)
-
-  return (
-    <div className="space-y-3">
-      <div className="flex items-center gap-3">
-        <Button
-          type="button"
-          variant="secondary"
-          size="sm"
-          onClick={() => setZoom((z) => Math.max(1, +(z - 0.25).toFixed(2)))}
-        >
-          <ZoomOut className="h-4 w-4 mr-1" /> -
-        </Button>
-
-        <div className="flex-1">
-          <Slider value={[zoom]} min={1} max={3} step={0.05} onValueChange={(v) => setZoom(v[0] ?? 1)} />
-        </div>
-
-        <Button
-          type="button"
-          variant="secondary"
-          size="sm"
-          onClick={() => setZoom((z) => Math.min(3, +(z + 0.25).toFixed(2)))}
-        >
-          <ZoomIn className="h-4 w-4 mr-1" /> +
-        </Button>
-
-        <div className="text-xs text-muted-foreground w-14 text-right">{zoom.toFixed(2)}x</div>
-      </div>
-
-      <div className="overflow-auto rounded-md border bg-background">
-        <div className="p-2">
-          <img
-            src={src}
-            alt={title}
-            className="block max-h-[70vh] w-auto origin-top-left"
-            style={{ transform: `scale(${zoom})` }}
-          />
-        </div>
-      </div>
-    </div>
-  )
+function fmtNum(v: number | null | undefined, suffix = " g") {
+  if (v === null || v === undefined) return "-"
+  const n = Number(v)
+  if (Number.isNaN(n)) return "-"
+  return `${n}${suffix}`
 }
 
-function MediaCard({
-  title,
-  date,
-  item,
-  dialogTitle,
-}: {
-  title: string
-  date: string
-  item: MediaTest["merged"]["day7"]
-  dialogTitle: string
-}) {
-  if (!item) return <div className="text-sm text-muted-foreground">Sem imagem mesclada.</div>
-
-  if (item.missing) {
-    return (
-      <div className="space-y-2">
-        <div className="text-sm font-medium">{title}</div>
-        <div className="text-xs text-muted-foreground">Data: {date}</div>
-        <div className="text-sm text-muted-foreground">
-          Arquivo não encontrado no Storage (referência antiga no banco).
-        </div>
-      </div>
-    )
-  }
-
-  if (!item.url) {
-    return (
-      <div className="space-y-2">
-        <div className="text-sm font-medium">{title}</div>
-        <div className="text-xs text-muted-foreground">Data: {date}</div>
-        <div className="text-sm text-muted-foreground">Sem URL para exibir.</div>
-      </div>
-    )
-  }
-
-  return (
-    <div className="space-y-2">
-      <div className="text-sm font-medium">{title}</div>
-      <div className="text-xs text-muted-foreground">Data: {date}</div>
-
-      <Dialog>
-        <DialogTrigger asChild>
-          <button className="w-full overflow-hidden rounded-md border bg-background hover:bg-accent transition">
-            <img src={item.url} alt={title} className="w-full h-auto" />
-          </button>
-        </DialogTrigger>
-        <DialogContent className="max-w-4xl">
-          <DialogHeader>
-            <DialogTitle>{dialogTitle}</DialogTitle>
-          </DialogHeader>
-          <ZoomableImage src={item.url} title={title} />
-        </DialogContent>
-      </Dialog>
-    </div>
-  )
+function monthKey(iso: string) {
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return ""
+  const m = String(d.getMonth() + 1).padStart(2, "0")
+  return `${d.getFullYear()}-${m}`
 }
 
-export function MediaPageClient({ initialExperiments }: { initialExperiments: MediaExperiment[] }) {
-  const [selectedId, setSelectedId] = useState<string>("")
+function weekKey(iso: string) {
+  // ISO week (simplificado)
+  const d0 = new Date(iso)
+  if (Number.isNaN(d0.getTime())) return ""
+  const d = new Date(Date.UTC(d0.getFullYear(), d0.getMonth(), d0.getDate()))
+  const dayNum = d.getUTCDay() || 7
+  d.setUTCDate(d.getUTCDate() + 4 - dayNum)
+  const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1))
+  const weekNo = Math.ceil((((d.getTime() - yearStart.getTime()) / 86400000) + 1) / 7)
+  return `${d.getUTCFullYear()}-W${String(weekNo).padStart(2, "0")}`
+}
+
+function expLabel(n: number) {
+  return `#${String(n).padStart(3, "0")}`
+}
+
+export function MediaPageClient() {
+  const [items, setItems] = useState<MediaPhoto[] | null>(null)
   const [loading, setLoading] = useState(false)
-  const [tests, setTests] = useState<MediaTest[] | null>(null)
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
 
-  const [query, setQuery] = useState("")
-  const [onlyWithMedia, setOnlyWithMedia] = useState(true)
-
-  const selected = useMemo(
-    () => initialExperiments.find((e) => e.id === selectedId),
-    [initialExperiments, selectedId]
-  )
+  // filtros
+  const [q, setQ] = useState("")
+  const [expId, setExpId] = useState<string>("all")
+  const [month, setMonth] = useState<string>("all")
+  const [week, setWeek] = useState<string>("all")
+  const [sort, setSort] = useState<string>("newest")
 
   useEffect(() => {
     let cancelled = false
-
-    async function run() {
-      if (!selectedId) {
-        setTests(null)
-        setErrorMsg(null)
-        return
-      }
-
-      setLoading(true)
-      setErrorMsg(null)
-      setTests(null)
-
+    async function load() {
       try {
-        const res = await fetch(`/api/media/experiment/${selectedId}`, { cache: "no-store" })
-
-        if (!res.ok) {
-          const txt = await res.text()
-          if (txt.includes("rate_limit")) {
-            throw new Error("Muitas requisições ao Supabase (429). Aguarde alguns segundos e recarregue.")
-          }
-          throw new Error("Falha ao carregar mídias.")
-        }
-
-        const json = (await res.json()) as { tests: MediaTest[] }
+        setLoading(true)
+        setErrorMsg(null)
+        const res = await fetch("/api/media/all", { cache: "no-store" })
+        const json = await res.json()
+        if (!res.ok) throw new Error(json?.error ?? "Falha ao carregar mídias")
         if (cancelled) return
-        setTests(json.tests ?? [])
+        setItems((json?.photos ?? []) as MediaPhoto[])
       } catch (e: any) {
         if (cancelled) return
-        setErrorMsg(e?.message ?? "Erro ao carregar mídias.")
+        setErrorMsg(e?.message ?? "Erro ao carregar mídias")
+        setItems([])
       } finally {
         if (!cancelled) setLoading(false)
       }
     }
-
-    run()
+    load()
     return () => {
       cancelled = true
     }
-  }, [selectedId])
+  }, [])
+
+  const experiments = useMemo(() => {
+    const map = new Map<string, { id: string; number: number; strain: string | null }>()
+    for (const p of items ?? []) {
+      map.set(p.experiment.id, { id: p.experiment.id, number: p.experiment.number, strain: p.experiment.strain ?? null })
+    }
+    return Array.from(map.values()).sort((a, b) => b.number - a.number)
+  }, [items])
+
+  const months = useMemo(() => {
+    const set = new Set<string>()
+    for (const p of items ?? []) set.add(monthKey(p.createdAt))
+    return Array.from(set.values()).filter(Boolean).sort((a, b) => (a < b ? 1 : -1))
+  }, [items])
+
+  const weeks = useMemo(() => {
+    const set = new Set<string>()
+    for (const p of items ?? []) set.add(weekKey(p.createdAt))
+    return Array.from(set.values()).filter(Boolean).sort((a, b) => (a < b ? 1 : -1))
+  }, [items])
 
   const filtered = useMemo(() => {
-    const list = tests ?? []
-    const q = query.trim().toLowerCase()
+    const qn = q.trim().toLowerCase()
+    let arr = (items ?? []).filter((p) => {
+      // sempre mostrar só com mídia (conforme pedido: sem toggle)
+      if (!p.url) return false
 
-    return list
-      .filter((t) => {
-        const hasMedia = Boolean(t.merged.day7?.url || t.merged.day14?.url) && !(t.merged.day7?.missing || t.merged.day14?.missing)
-        if (onlyWithMedia && !hasMedia) return false
-        if (!q) return true
+      if (expId !== "all" && p.experiment.id !== expId) return false
+      if (month !== "all" && monthKey(p.createdAt) !== month) return false
+      if (week !== "all" && weekKey(p.createdAt) !== week) return false
 
-        const key = `rep ${t.repetitionNumber} teste ${t.testNumber} ${(t.strain ?? "").toLowerCase()}`
-        return key.includes(q)
-      })
-  }, [tests, query, onlyWithMedia])
+      if (!qn) return true
+      const hay = [
+        expLabel(p.experiment.number),
+        p.experiment.strain ?? "",
+        p.test.strain ?? "",
+        p.test.testLot ?? "",
+        p.test.matrixLot ?? "",
+        String(p.test.repetitionNumber),
+        String(p.test.testNumber),
+      ]
+        .join(" ")
+        .toLowerCase()
+      return hay.includes(qn)
+    })
+
+    const byCreated = (a: MediaPhoto, b: MediaPhoto) => {
+      const da = new Date(a.createdAt).getTime()
+      const db = new Date(b.createdAt).getTime()
+      return db - da
+    }
+
+    if (sort === "newest") arr = arr.sort(byCreated)
+    if (sort === "oldest") arr = arr.sort((a, b) => -byCreated(a, b))
+    if (sort === "wet_desc") arr = arr.sort((a, b) => (b.test.wetWeight ?? -Infinity) - (a.test.wetWeight ?? -Infinity) || byCreated(a, b))
+    if (sort === "dry_desc") arr = arr.sort((a, b) => (b.test.dryWeight ?? -Infinity) - (a.test.dryWeight ?? -Infinity) || byCreated(a, b))
+    if (sort === "conidium_desc")
+      arr = arr.sort(
+        (a, b) => (b.test.extractedConidiumWeight ?? -Infinity) - (a.test.extractedConidiumWeight ?? -Infinity) || byCreated(a, b)
+      )
+
+    return arr
+  }, [items, q, expId, month, week, sort])
+
+  const clear = () => {
+    setQ("")
+    setExpId("all")
+    setMonth("all")
+    setWeek("all")
+    setSort("newest")
+  }
 
   return (
-    <div className="container mx-auto p-4">
-      <PageTitle title="Mídias" />
-
-      <Card className="mb-6">
+    <div className="container mx-auto max-w-7xl py-6 space-y-6">
+      <Card>
         <CardHeader>
-          <CardTitle>Selecionar experimento</CardTitle>
+          <CardTitle>Mídias</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
-          <Select value={selectedId} onValueChange={setSelectedId}>
-            <SelectTrigger className="w-full max-w-md">
-              <SelectValue placeholder="Selecione um experimento" />
-            </SelectTrigger>
-            <SelectContent>
-              {initialExperiments.map((exp) => (
-                <SelectItem key={exp.id} value={exp.id}>
-                  #{exp.number} — {exp.strain}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <div className="grid grid-cols-1 md:grid-cols-12 gap-3 items-end">
+            <div className="md:col-span-4">
+              <Label className="text-sm">Buscar</Label>
+              <Input
+                value={q}
+                onChange={(e) => setQ(e.target.value)}
+                placeholder="Digite cepa, exp (#001), lote, rep, teste..."
+              />
+            </div>
 
-          {selected ? (
+            <div className="md:col-span-3">
+              <Label className="text-sm">Experimento</Label>
+              <Select value={expId} onValueChange={setExpId}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Todos" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Todos</SelectItem>
+                  {experiments.map((e) => (
+                    <SelectItem key={e.id} value={e.id}>
+                      {expLabel(e.number)}{e.strain ? ` — ${e.strain}` : ""}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="md:col-span-2">
+              <Label className="text-sm">Mês</Label>
+              <Select value={month} onValueChange={setMonth}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Todos" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Todos</SelectItem>
+                  {months.map((m) => (
+                    <SelectItem key={m} value={m}>
+                      {m}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="md:col-span-2">
+              <Label className="text-sm">Semana</Label>
+              <Select value={week} onValueChange={setWeek}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Todas" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Todas</SelectItem>
+                  {weeks.map((w) => (
+                    <SelectItem key={w} value={w}>
+                      {w}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="md:col-span-1">
+              <Label className="text-sm">Ordem</Label>
+              <Select value={sort} onValueChange={setSort}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Mais novos" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="newest">Mais novos</SelectItem>
+                  <SelectItem value="oldest">Mais antigos</SelectItem>
+                  <SelectItem value="wet_desc">Peso úmido (maior)</SelectItem>
+                  <SelectItem value="dry_desc">Peso seco (maior)</SelectItem>
+                  <SelectItem value="conidium_desc">Peso conídio (maior)</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+
+          <div className="flex items-center justify-between gap-3">
             <div className="text-sm text-muted-foreground">
-              <div>
-                <strong>Início:</strong> {new Date(selected.startDate).toLocaleDateString("pt-BR")}
-              </div>
-              <div>
-                <strong>Testes:</strong> {selected.testCount} | <strong>Repetições:</strong> {selected.repetitionCount}
-              </div>
+              {items ? (
+                <span>
+                  Exibindo <span className="font-medium text-foreground">{filtered.length}</span> foto(s) mesclada(s)
+                </span>
+              ) : (
+                <span>Carregando…</span>
+              )}
             </div>
-          ) : (
-            <div className="text-sm text-muted-foreground">Selecione um experimento para visualizar as mídias.</div>
-          )}
-
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-            <Input
-              placeholder="Buscar (ex: rep 1, teste 2, cepa...)"
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-            />
-
-            <div className="flex items-center gap-2 md:justify-center">
-              <Switch checked={onlyWithMedia} onCheckedChange={setOnlyWithMedia} id="onlyWithMedia" />
-              <Label htmlFor="onlyWithMedia" className="text-sm">
-                Mostrar só com mídia
-              </Label>
-            </div>
-
-            <div className="flex md:justify-end">
-              <Button variant="secondary" onClick={() => { setQuery(""); setOnlyWithMedia(true) }}>
-                Limpar filtros
-              </Button>
-            </div>
+            <Button variant="secondary" onClick={clear}>
+              Limpar filtros
+            </Button>
           </div>
         </CardContent>
       </Card>
@@ -282,7 +295,7 @@ export function MediaPageClient({ initialExperiments }: { initialExperiments: Me
       ) : null}
 
       {errorMsg ? (
-        <Card className="mb-6">
+        <Card>
           <CardHeader>
             <CardTitle>Erro</CardTitle>
           </CardHeader>
@@ -290,47 +303,83 @@ export function MediaPageClient({ initialExperiments }: { initialExperiments: Me
         </Card>
       ) : null}
 
-      {tests ? (
-        <div className="space-y-4">
-          {filtered.length === 0 ? (
-            <Card>
-              <CardHeader>
-                <CardTitle>Nenhuma mídia</CardTitle>
-              </CardHeader>
-              <CardContent className="text-sm text-muted-foreground">
-                Não há imagens mescladas (merged) para o filtro atual.
-              </CardContent>
-            </Card>
-          ) : (
-            filtered.map((t) => (
-              <Card key={t.id}>
-                <CardHeader>
-                  <CardTitle className="text-base">
-                    Repetição {t.repetitionNumber} • Teste {t.testNumber}
-                    {t.strain ? <span className="text-muted-foreground"> — {t.strain}</span> : null}
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <MediaCard
-                      title="7º dia (mesclado)"
-                      date={fmtDate(t.date7Day)}
-                      item={t.merged.day7}
-                      dialogTitle={`Repetição ${t.repetitionNumber} • Teste ${t.testNumber} — 7º dia (mesclado)`}
-                    />
+      {items ? (
+        filtered.length === 0 ? (
+          <Card>
+            <CardHeader>
+              <CardTitle>Nenhuma mídia</CardTitle>
+            </CardHeader>
+            <CardContent className="text-sm text-muted-foreground">Não há fotos mescladas para o filtro atual.</CardContent>
+          </Card>
+        ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+            {filtered.map((p) => (
+              <Card key={p.id} className="overflow-hidden">
+                <CardContent className="p-0">
+                  <Dialog>
+                    <DialogTrigger asChild>
+                      <div className="relative bg-black cursor-pointer group">
+                        <div className="relative w-full aspect-[3/2]">
+                          {/* img simples para evitar warning de dimensão (recharts) e permitir fallback */}
+                          <img
+                            src={p.url ?? "/placeholder.svg"}
+                            alt={`Foto ${p.day}º dia`}
+                            className="h-full w-full object-cover"
+                          />
+                        </div>
+                        <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 bg-black/40 transition-opacity">
+                          <div className="flex items-center gap-2 text-white text-sm">
+                            <ZoomIn className="h-5 w-5" />
+                            Ampliar
+                          </div>
+                        </div>
+                        <div className="absolute top-2 left-2 bg-black/60 text-white px-2 py-1 text-xs rounded">
+                          Dia {p.day}º
+                        </div>
+                      </div>
+                    </DialogTrigger>
 
-                    <MediaCard
-                      title="14º dia (mesclado)"
-                      date={fmtDate(t.date14Day)}
-                      item={t.merged.day14}
-                      dialogTitle={`Repetição ${t.repetitionNumber} • Teste ${t.testNumber} — 14º dia (mesclado)`}
-                    />
+                    <DialogContent className="max-w-5xl">
+                      <DialogTitle>{`Exp. ${expLabel(p.experiment.number)} • Rep. ${p.test.repetitionNumber} • Teste ${p.test.testNumber} • Dia ${p.day}º`}</DialogTitle>
+                      <DialogDescription className="sr-only">Visualização ampliada da foto mesclada.</DialogDescription>
+                      <ZoomableImage src={p.url ?? "/placeholder.svg"} title={`Foto ${p.day}º dia`} />
+                    </DialogContent>
+                  </Dialog>
+
+                  <div className="p-3 space-y-2">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Badge variant="secondary">Exp. {expLabel(p.experiment.number)}</Badge>
+                      <Badge variant="outline">Rep. {p.test.repetitionNumber}</Badge>
+                      <Badge variant="outline">Teste {p.test.testNumber}</Badge>
+                      {p.test.strain ? <Badge>{p.test.strain}</Badge> : p.experiment.strain ? <Badge>{p.experiment.strain}</Badge : null}
+                    </div>
+
+                    <div className="grid grid-cols-3 gap-2 text-xs">
+                      <div className="rounded-md border p-2">
+                        <div className="text-muted-foreground">Úmido</div>
+                        <div className="font-medium">{fmtNum(p.test.wetWeight)}</div>
+                      </div>
+                      <div className="rounded-md border p-2">
+                        <div className="text-muted-foreground">Seco</div>
+                        <div className="font-medium">{fmtNum(p.test.dryWeight)}</div>
+                      </div>
+                      <div className="rounded-md border p-2">
+                        <div className="text-muted-foreground">Conídio</div>
+                        <div className="font-medium">{fmtNum(p.test.extractedConidiumWeight)}</div>
+                      </div>
+                    </div>
+
+                    <div className="text-xs text-muted-foreground flex flex-wrap gap-x-4 gap-y-1">
+                      <span>Data 7º: {fmtDate(p.test.date7Day)}</span>
+                      <span>Data 14º: {fmtDate(p.test.date14Day)}</span>
+                      <span>Inserido: {fmtDate(p.createdAt)}</span>
+                    </div>
                   </div>
                 </CardContent>
               </Card>
-            ))
-          )}
-        </div>
+            ))}
+          </div>
+        )
       ) : null}
     </div>
   )

@@ -75,10 +75,10 @@ export function DatabaseActions() {
   return (
     <div className="flex flex-wrap gap-2">
       <Button variant="outline" onClick={handleExport}>
-        Exportar dados (local)
+        Exportar dados
       </Button>
       <Button variant="secondary" onClick={handleImport}>
-        Importar dados (desativado)
+        Importar dados
       </Button>
     </div>
   )

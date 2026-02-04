@@ -1,10 +1,12 @@
+// SUBSTITUIR ARQUIVO COMPLETO: components/camera/photo-grid-display.tsx
+
 "use client"
 
 import { useMemo, useState } from "react"
-import Image from "next/image"
 import { Dialog, DialogContent, DialogDescription, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
 import { ChevronDown, ChevronUp, ZoomIn } from "lucide-react"
+import { ZoomableImage } from "@/components/media/zoomable-image"
 
 type Annotation = { x: number; y: number; size: string; caption: string; color?: string }
 type AnnotationsByPhotoIndex = Record<string, Annotation[]>
@@ -72,7 +74,11 @@ export function PhotoGridDisplay({ photos, annotations, testInfo, showCaption = 
             <div className="relative w-full bg-gray-800 cursor-pointer group">
               {/* mosaico 3x2 (6 fotos) tende a ficar bem em 3/2 */}
               <div className="relative w-full aspect-[3/2] sm:aspect-[16/9]">
-                <Image src={photo0 || "/placeholder.svg"} alt={`Foto ${testInfo.day}º dia`} fill className="object-contain" />
+                <img
+                  src={photo0 || "/placeholder.svg"}
+                  alt={`Foto ${testInfo.day}º dia`}
+                  className="h-full w-full object-contain"
+                />
               </div>
 
               <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 bg-black/40 transition-opacity">
@@ -94,18 +100,21 @@ export function PhotoGridDisplay({ photos, annotations, testInfo, showCaption = 
             </div>
           </DialogTrigger>
 
-          <DialogContent className="max-w-5xl p-0 bg-black">
-            <DialogTitle className="sr-only">{`Foto ${testInfo.day}º dia`}</DialogTitle>
+          <DialogContent className="max-w-5xl">
+            <DialogTitle>{`Foto ${testInfo.day}º dia`}</DialogTitle>
             <DialogDescription className="sr-only">Visualização ampliada da foto.</DialogDescription>
 
-            <div className="relative h-[82vh] w-full">
-              <Image src={photo0 || "/placeholder.svg"} alt={`Foto ${testInfo.day}º dia`} fill className="object-contain" />
-            </div>
+            <ZoomableImage src={photo0 || "/placeholder.svg"} title={`Foto ${testInfo.day}º dia`} />
 
             {hasAnn0 && (
-              <div className="bg-gray-950 text-white px-4 py-3 text-sm border-t border-white/10">
-                <div className="font-medium mb-2">Legendas</div>
-                <ul className="space-y-1">
+              <div className="mt-3 rounded-lg border bg-muted/30 p-4">
+                <div className="flex items-center justify-between gap-3 mb-2">
+                  <div className="font-semibold">Legendas</div>
+                  <div className="text-xs text-muted-foreground">
+                    {ann0.filter((a) => (a.caption ?? "").trim().length > 0).length} item(ns)
+                  </div>
+                </div>
+                <ul className="space-y-2 text-sm">
                   {ann0
                     .filter((a) => (a.caption ?? "").trim().length > 0)
                     .map((a, i) => (
@@ -129,7 +138,11 @@ export function PhotoGridDisplay({ photos, annotations, testInfo, showCaption = 
               <Dialog key={index} onOpenChange={(open) => setSelectedIndex(open ? index : null)}>
                 <DialogTrigger asChild>
                   <div className="relative aspect-square cursor-pointer group">
-                    <Image src={photo || "/placeholder.svg"} alt={`Foto ${index + 1}`} fill className="object-cover" />
+                    <img
+                      src={photo || "/placeholder.svg"}
+                      alt={`Foto ${index + 1}`}
+                      className="h-full w-full object-cover"
+                    />
                     <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 bg-black/50 transition-opacity">
                       <ZoomIn className="h-6 w-6 text-white" />
                     </div>
@@ -145,18 +158,21 @@ export function PhotoGridDisplay({ photos, annotations, testInfo, showCaption = 
                   </div>
                 </DialogTrigger>
 
-                <DialogContent className="max-w-4xl p-0 bg-black">
-                  <DialogTitle className="sr-only">{`Foto ${index + 1} - ${testInfo.day}º dia`}</DialogTitle>
+                <DialogContent className="max-w-5xl">
+                  <DialogTitle>{`Foto ${index + 1} • ${testInfo.day}º dia`}</DialogTitle>
                   <DialogDescription className="sr-only">Visualização ampliada da foto.</DialogDescription>
 
-                  <div className="relative h-[78vh] w-full">
-                    <Image src={photo || "/placeholder.svg"} alt={`Foto ${index + 1}`} fill className="object-contain" />
-                  </div>
+                  <ZoomableImage src={photo || "/placeholder.svg"} title={`Foto ${index + 1}`} />
 
                   {hasAnn && (
-                    <div className="bg-gray-950 text-white px-4 py-3 text-sm border-t border-white/10">
-                      <div className="font-medium mb-2">Legendas da Foto {index + 1}</div>
-                      <ul className="space-y-1">
+                    <div className="mt-3 rounded-lg border bg-muted/30 p-4">
+                      <div className="flex items-center justify-between gap-3 mb-2">
+                        <div className="font-semibold">Legendas da Foto {index + 1}</div>
+                        <div className="text-xs text-muted-foreground">
+                          {ann.filter((a) => (a.caption ?? "").trim().length > 0).length} item(ns)
+                        </div>
+                      </div>
+                      <ul className="space-y-2 text-sm">
                         {ann
                           .filter((a) => (a.caption ?? "").trim().length > 0)
                           .map((a, i) => (
@@ -177,23 +193,23 @@ export function PhotoGridDisplay({ photos, annotations, testInfo, showCaption = 
 
       {/* Área de informações + legendas */}
       {showCaption && (
-        <div className="bg-gray-900 text-white px-3 py-2 text-sm">
+        <div className="bg-slate-950/95 text-white px-4 py-3 text-sm border-t border-white/10">
           {/* Linha compacta (sempre visível) */}
-          <div className="flex flex-wrap items-center gap-x-5 gap-y-1">
-            <div className="text-gray-300">
-              <span className="text-gray-400">Exp.</span> <span>#{testInfo.experimentNumber}</span>
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+            <div className="rounded-full bg-white/10 px-3 py-1 text-[13px] font-medium">
+              <span className="text-white/70">Experimento:</span> <span>#{testInfo.experimentNumber}</span>
             </div>
-            <div className="text-gray-300">
-              <span className="text-gray-400">Rep.</span> <span>#{testInfo.repetitionNumber}</span>
+            <div className="rounded-full bg-white/10 px-3 py-1 text-[13px] font-medium">
+              <span className="text-white/70">Repetição:</span> <span>#{testInfo.repetitionNumber}</span>
             </div>
-            <div className="text-gray-300">
-              <span className="text-gray-400">Teste</span> <span>#{testInfo.testNumber}</span>
+            <div className="rounded-full bg-white/10 px-3 py-1 text-[13px] font-medium">
+              <span className="text-white/70">Teste:</span> <span>#{testInfo.testNumber}</span>
             </div>
-            <div className="text-gray-300">
-              <span className="text-gray-400">Dia</span> <span>{testInfo.day}º</span>
+            <div className="rounded-full bg-white/10 px-3 py-1 text-[13px] font-medium">
+              <span className="text-white/70">Dia:</span> <span>{testInfo.day}º</span>
             </div>
-            <div className="text-gray-300">
-              <span className="text-gray-400">Data</span> <span>{testInfo.date || "N/A"}</span>
+            <div className="rounded-full bg-white/10 px-3 py-1 text-[13px] font-medium">
+              <span className="text-white/70">Data:</span> <span>{testInfo.date || "N/A"}</span>
             </div>
 
             <div className="ml-auto">

@@ -1,3 +1,5 @@
+import { buildTestPhotoPath } from "@/lib/pdi/storage-path"
+
 type SaveMergedInput = {
   supabase: any
   userId: string
@@ -102,7 +104,14 @@ export async function saveMergedPhotosForDay({ supabase, userId, testId, day, da
 
   // 1) gera mosaico
   const mosaicBlob = await createMosaicBlob(valid)
-  const newPath = `${userId}/${testId}/day${day}_merged_${Date.now()}.jpg`
+  const newPath = buildTestPhotoPath({
+    userId,
+    testId,
+    day,
+    index: 99,
+    ext: "jpg",
+    timestamp: Date.now(),
+  })
 
   // 2) upload do novo mosaico
   const { error: upError } = await supabase.storage.from("test-photos").upload(newPath, mosaicBlob, {

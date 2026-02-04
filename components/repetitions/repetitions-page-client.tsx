@@ -7,10 +7,10 @@ import type { UIRepetition } from "@/app/(app)/repetitions/page"
 
 export function RepetitionsPageClient({ initialRepetitions }: { initialRepetitions: UIRepetition[] }) {
   return (
-    <div className="container mx-auto p-4">
+    <div className="w-full px-4 sm:px-6 lg:px-8 py-6">
       <PageTitle title="Repetições" />
 
-      <div className="grid gap-4 [grid-template-columns:repeat(auto-fit,minmax(320px,1fr))]">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
         {initialRepetitions.map((rep) => (
           <Card key={`${rep.experimentId}-${rep.repetitionNumber}`}>
             <CardHeader>

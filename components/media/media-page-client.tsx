@@ -145,7 +145,7 @@ function MediaCard({
   )
 }
 
-export function MediaPageClient({ initialExperiments = [] }: { initialExperiments?: MediaExperiment[] }) {
+export function MediaPageClient({ initialExperiments }: { initialExperiments: MediaExperiment[] }) {
   const [selectedId, setSelectedId] = useState<string>("")
   const [loading, setLoading] = useState(false)
   const [tests, setTests] = useState<MediaTest[] | null>(null)
@@ -154,10 +154,10 @@ export function MediaPageClient({ initialExperiments = [] }: { initialExperiment
   const [query, setQuery] = useState("")
   const [onlyWithMedia, setOnlyWithMedia] = useState(true)
 
-  const selected = useMemo(() => {
-    if (!selectedId) return undefined
-    return (initialExperiments ?? []).find((e) => e.id === selectedId)
-  }, [initialExperiments, selectedId])
+  const selected = useMemo(
+    () => initialExperiments.find((e) => e.id === selectedId),
+    [initialExperiments, selectedId]
+  )
 
   useEffect(() => {
     let cancelled = false
@@ -217,7 +217,7 @@ export function MediaPageClient({ initialExperiments = [] }: { initialExperiment
   }, [tests, query, onlyWithMedia])
 
   return (
-    <div className="w-full px-4 py-4 sm:px-6 lg:px-8">
+    <div className="w-full px-4 pb-6">
       <PageTitle title="Mídias" />
 
       <Card className="mb-6">

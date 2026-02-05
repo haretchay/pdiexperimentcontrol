@@ -193,7 +193,7 @@ export async function replaceMergedDayPhoto(params: {
   if (!isUuid(userId)) throw new Error(`replaceMergedDayPhoto: userId invalido (UUID). Recebido: "${String(userId)}"`)
   if (!isUuid(testId)) throw new Error(`replaceMergedDayPhoto: testId invalido (UUID). Recebido: "${String(testId)}"`)
 
-  // Pega quaisquer fotos antigas do dia (single OU merged) para limpeza após sucesso
+  // Arquivos antigos (limpeza após sucesso)
   const { data: old, error: oldErr } = await supabase
     .from("test_photos")
     .select("id, storage_path, kind")
@@ -202,8 +202,11 @@ export async function replaceMergedDayPhoto(params: {
 
   if (oldErr) throw oldErr
   const oldRows = (old ?? []) as any[]
-  const oldIds = oldRows.map((r) => r.id).filter(Boolean)
   const oldPaths = oldRows.map((r) => r.storage_path).filter(Boolean)
+
+  // Pega o merged atual do DB para remover do Storage depois (best-effort)
+  const currentMerged = oldRows.find((r) => r.kind === "merged")
+  const oldMergedPath = currentMerged?.storage_path ?? null
 
   const mergedPath = buildTestPhotoPath({
     userId,
@@ -223,35 +226,36 @@ export async function replaceMergedDayPhoto(params: {
   })
   if (upErr) throw upErr
 
-  // 2) Para respeitar UNIQUE(test_id, day, kind), removemos as linhas antigas ANTES de inserir a nova.
-  // (também remove singles antigos para economizar espaço)
-  if (oldIds.length) {
-    const { error: delOldErr } = await supabase.from("test_photos").delete().in("id", oldIds)
-    if (delOldErr) {
-      // rollback best-effort do upload
-      await supabase.storage.from("test-photos").remove([mergedPath])
-      throw delOldErr
-    }
-  }
+  // 2) UPSERT no DB (1 registro merged por dia)
+  // Requer UNIQUE/INDEX em (test_id, day, kind) — caso seu schema já tenha esse índice, evita deletes recursivos.
+  const { error: upDbErr } = await supabase.from("test_photos").upsert(
+    {
+      test_id: testId,
+      day,
+      storage_path: mergedPath,
+      kind: "merged",
+      photo_index: null,
+    },
+    { onConflict: "test_id,day,kind" },
+  )
 
-  // 3) Insere somente o merged (modo econômico)
-  const { error: insErr } = await supabase.from("test_photos").insert({
-    test_id: testId,
-    day,
-    storage_path: mergedPath,
-    kind: "merged",
-    photo_index: null,
-  })
-  if (insErr) {
+  if (upDbErr) {
     await supabase.storage.from("test-photos").remove([mergedPath])
-    throw insErr
+    throw upDbErr
   }
 
-  // 4) Remove arquivos antigos do Storage APÓS salvar o novo
-  // (não tenta remover o novo path)
-  const pathsToRemove = oldPaths.filter((p) => p && p !== mergedPath)
-  if (pathsToRemove.length) {
-    await supabase.storage.from("test-photos").remove(pathsToRemove)
+  // 3) Remove quaisquer singles antigos do DB (modo econômico)
+  await supabase.from("test_photos").delete().eq("test_id", testId).eq("day", day).neq("kind", "merged")
+
+  // 4) Remove arquivos antigos do Storage APÓS salvar o novo (não remove o novo path)
+  const toRemove = new Set<string>()
+  for (const p of oldPaths) {
+    if (p && p !== mergedPath) toRemove.add(p)
+  }
+  if (oldMergedPath && oldMergedPath !== mergedPath) toRemove.add(oldMergedPath)
+
+  if (toRemove.size) {
+    await supabase.storage.from("test-photos").remove(Array.from(toRemove))
   }
 
   return { uploaded: 1, mergedPath }

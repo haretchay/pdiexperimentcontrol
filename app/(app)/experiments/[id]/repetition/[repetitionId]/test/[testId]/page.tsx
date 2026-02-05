@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useMemo, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import { useParams, useRouter } from "next/navigation"
 import { z } from "zod"
 import { useForm } from "react-hook-form"
@@ -15,6 +15,7 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form"
 import { Input } from "@/components/ui/input"
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { PhotoCaptureWorkflow } from "@/components/camera/photo-capture-workflow"
 import { Camera, Check } from "lucide-react"
@@ -50,6 +51,7 @@ async function createMosaicBlob(imageDataUrls: string[]) {
   const load = (src: string) =>
     new Promise<HTMLImageElement>((resolve, reject) => {
       const img = new Image()
+      img.crossOrigin = "anonymous"
       img.onload = () => resolve(img)
       img.onerror = () => reject(new Error("Falha ao carregar imagem para mosaico"))
       img.src = src
@@ -67,25 +69,28 @@ async function createMosaicBlob(imageDataUrls: string[]) {
   // fundo escuro compatível com tema
   ctx.fillStyle = "#111827"
   ctx.fillRect(0, 0, canvas.width, canvas.height)
-
-  const drawCover = (img: HTMLImageElement, dx: number, dy: number, dw: number, dh: number) => {
+  const drawContain = (img: HTMLImageElement, dx: number, dy: number, dw: number, dh: number) => {
     const iw = img.naturalWidth || img.width
     const ih = img.naturalHeight || img.height
     const ir = iw / ih
     const dr = dw / dh
 
-    let sx = 0,
-      sy = 0,
-      sw = iw,
-      sh = ih
-
+    let rw = dw
+    let rh = dh
     if (ir > dr) {
-      sw = Math.round(ih * dr)
-      sx = Math.round((iw - sw) / 2)
+      rh = dw / ir
     } else {
-      sh = Math.round(iw / dr)
-      sy = Math.round((ih - sh) / 2)
+      rw = dh * ir
     }
+
+    const x = dx + (dw - rw) / 2
+    const y = dy + (dh - rh) / 2
+
+    ctx.fillStyle = "#111827"
+    ctx.fillRect(dx, dy, dw, dh)
+
+    ctx.drawImage(img, x, y, rw, rh)
+  }
 
     ctx.drawImage(img, sx, sy, sw, sh, dx, dy, dw, dh)
   }
@@ -95,7 +100,7 @@ async function createMosaicBlob(imageDataUrls: string[]) {
     const row = Math.floor(i / cols)
     const x = col * cellW
     const y = row * cellH
-    drawCover(img, x + gutter, y + gutter, cellW - gutter * 2, cellH - gutter * 2)
+    drawContain(img, x + gutter, y + gutter, cellW - gutter * 2, cellH - gutter * 2)
   })
 
   const blob = await new Promise<Blob>((resolve, reject) => {
@@ -169,6 +174,17 @@ export default function TestEditPage() {
   // Anotações (legendas) por índice de foto (0..n-1)
   const [annotations7Day, setAnnotations7Day] = useState<AnnotationsByPhotoIndex>({})
   const [annotations14Day, setAnnotations14Day] = useState<AnnotationsByPhotoIndex>({})
+
+  // Preview de fotos já salvas (mosaico) ao editar
+  const [existingMerged7Url, setExistingMerged7Url] = useState<string | null>(null)
+  const [existingMerged14Url, setExistingMerged14Url] = useState<string | null>(null)
+
+  // Modal para visualizar/decidir manter ou refazer
+  const [openDayPreview, setOpenDayPreview] = useState<7 | 14 | null>(null)
+
+  // Backup das fotos carregadas (URLs) caso o usuário clique em "Refazer" e depois cancele
+  const prevPhotos7Ref = useRef<string[] | null>(null)
+  const prevPhotos14Ref = useRef<string[] | null>(null)
 
   const [testDbId, setTestDbId] = useState<string | null>(null)
   const [experiment, setExperiment] = useState<any>(null)
@@ -277,7 +293,16 @@ export default function TestEditPage() {
             )
             const paths7 = ordered7.map((p: any) => p.storage_path).filter(Boolean)
             const urls7 = await getSignedUrlsForPaths(supabase, paths7, { cache: signedUrlCache })
-            setPhotos7Day(urls7.filter(Boolean))
+            const clean7 = urls7.filter(Boolean)
+            setPhotos7Day(clean7)
+            // se existir merged (mosaico), normalmente vem como última ou como único item
+            const merged7 = ordered7.find((p: any) => p.kind === "merged")
+            if (merged7) {
+              const idx = ordered7.findIndex((p: any) => p.kind === "merged")
+              setExistingMerged7Url(clean7[idx] ?? clean7[clean7.length - 1] ?? null)
+            } else {
+              setExistingMerged7Url(clean7[clean7.length - 1] ?? null)
+            }
           }
 
           if (photos14.length > 0) {
@@ -288,7 +313,15 @@ export default function TestEditPage() {
             )
             const paths14 = ordered14.map((p: any) => p.storage_path).filter(Boolean)
             const urls14 = await getSignedUrlsForPaths(supabase, paths14, { cache: signedUrlCache })
-            setPhotos14Day(urls14.filter(Boolean))
+            const clean14 = urls14.filter(Boolean)
+            setPhotos14Day(clean14)
+            const merged14 = ordered14.find((p: any) => p.kind === "merged")
+            if (merged14) {
+              const idx = ordered14.findIndex((p: any) => p.kind === "merged")
+              setExistingMerged14Url(clean14[idx] ?? clean14[clean14.length - 1] ?? null)
+            } else {
+              setExistingMerged14Url(clean14[clean14.length - 1] ?? null)
+            }
           }
         }
       } catch (e) {
@@ -411,7 +444,14 @@ export default function TestEditPage() {
     return (
       <PhotoCaptureWorkflow
         onComplete={handleCapture7DayComplete}
-        onCancel={() => setIsCapturing7Day(false)}
+        onCancel={() => {
+          setIsCapturing7Day(false)
+          if (prevPhotos7Ref.current) {
+            setPhotos7Day(prevPhotos7Ref.current)
+            prevPhotos7Ref.current = null
+            setAnnotations7Day({})
+          }
+        }}
         testInfo={{
           experimentNumber: experiment?.number || experimentId,
           repetitionNumber: String(repetitionId),
@@ -432,7 +472,14 @@ export default function TestEditPage() {
     return (
       <PhotoCaptureWorkflow
         onComplete={handleCapture14DayComplete}
-        onCancel={() => setIsCapturing14Day(false)}
+        onCancel={() => {
+          setIsCapturing14Day(false)
+          if (prevPhotos14Ref.current) {
+            setPhotos14Day(prevPhotos14Ref.current)
+            prevPhotos14Ref.current = null
+            setAnnotations14Day({})
+          }
+        }}
         testInfo={{
           experimentNumber: experiment?.number || experimentId,
           repetitionNumber: String(repetitionId),
@@ -686,7 +733,16 @@ export default function TestEditPage() {
                 <Button
                   type="button"
                   variant={photos7Day.length > 0 ? "default" : "outline"}
-                  onClick={() => setIsCapturing7Day(true)}
+                  onClick={() => {
+                    // Se já existe mosaico salvo e não há novas capturas (dataURL), abre modal para decidir
+                    if (existingMerged7Url && !hasNewCapturedPhotos(photos7Day)) {
+                      setOpenDayPreview(7)
+                      return
+                    }
+                    // caso contrário, captura normalmente
+                    prevPhotos7Ref.current = photos7Day?.length ? [...photos7Day] : null
+                    setIsCapturing7Day(true)
+                  }}
                   className="w-full"
                 >
                   <Camera className="h-4 w-4 mr-2" />
@@ -699,6 +755,36 @@ export default function TestEditPage() {
                     "Capturar Fotos do 7º dia"
                   )}
                 </Button>
+
+                {(existingMerged7Url || hasNewCapturedPhotos(photos7Day)) && (
+                  <div className="mt-3 space-y-2">
+                    <div className="text-xs text-muted-foreground">
+                      {hasNewCapturedPhotos(photos7Day)
+                        ? "Pré-visualização (ainda não salva)"
+                        : "Foto salva (mosaico)"}
+                    </div>
+                    <div className="overflow-hidden rounded-md border bg-black/10">
+                      <img
+                        src={(hasNewCapturedPhotos(photos7Day) ? photos7Day[0] : existingMerged7Url) || ""}
+                        alt="Foto 7º dia"
+                        className="w-full h-auto block"
+                      />
+                    </div>
+
+                    {Object.keys(annotations7Day || {}).length > 0 && (
+                      <div className="rounded-md border p-2">
+                        <div className="text-xs font-medium mb-1">Anotações (7º dia)</div>
+                        <ul className="text-xs text-muted-foreground space-y-1 list-disc pl-4">
+                          {Object.entries(annotations7Day).flatMap(([idx, anns]) =>
+                            (anns || []).map((a, j) => (
+                              <li key={`${idx}-${j}`}>Foto {Number(idx) + 1}: {a.caption}</li>
+                            )),
+                          )}
+                        </ul>
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
 
               <div className="border rounded-lg p-4 space-y-3">
@@ -750,7 +836,14 @@ export default function TestEditPage() {
                 <Button
                   type="button"
                   variant={photos14Day.length > 0 ? "default" : "outline"}
-                  onClick={() => setIsCapturing14Day(true)}
+                  onClick={() => {
+                    if (existingMerged14Url && !hasNewCapturedPhotos(photos14Day)) {
+                      setOpenDayPreview(14)
+                      return
+                    }
+                    prevPhotos14Ref.current = photos14Day?.length ? [...photos14Day] : null
+                    setIsCapturing14Day(true)
+                  }}
                   className="w-full"
                 >
                   <Camera className="h-4 w-4 mr-2" />
@@ -763,6 +856,36 @@ export default function TestEditPage() {
                     "Capturar Fotos do 14º dia"
                   )}
                 </Button>
+
+                {(existingMerged7Url || hasNewCapturedPhotos(photos7Day)) && (
+                  <div className="mt-3 space-y-2">
+                    <div className="text-xs text-muted-foreground">
+                      {hasNewCapturedPhotos(photos7Day)
+                        ? "Pré-visualização (ainda não salva)"
+                        : "Foto salva (mosaico)"}
+                    </div>
+                    <div className="overflow-hidden rounded-md border bg-black/10">
+                      <img
+                        src={(hasNewCapturedPhotos(photos7Day) ? photos7Day[0] : existingMerged7Url) || ""}
+                        alt="Foto 7º dia"
+                        className="w-full h-auto block"
+                      />
+                    </div>
+
+                    {Object.keys(annotations7Day || {}).length > 0 && (
+                      <div className="rounded-md border p-2">
+                        <div className="text-xs font-medium mb-1">Anotações (7º dia)</div>
+                        <ul className="text-xs text-muted-foreground space-y-1 list-disc pl-4">
+                          {Object.entries(annotations7Day).flatMap(([idx, anns]) =>
+                            (anns || []).map((a, j) => (
+                              <li key={`${idx}-${j}`}>Foto {Number(idx) + 1}: {a.caption}</li>
+                            )),
+                          )}
+                        </ul>
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -816,11 +939,93 @@ export default function TestEditPage() {
                 <Button type="submit" disabled={saving}>
                   {saving ? "Salvando..." : "Salvar"}
                 </Button>
+
+                {(existingMerged7Url || hasNewCapturedPhotos(photos7Day)) && (
+                  <div className="mt-3 space-y-2">
+                    <div className="text-xs text-muted-foreground">
+                      {hasNewCapturedPhotos(photos7Day)
+                        ? "Pré-visualização (ainda não salva)"
+                        : "Foto salva (mosaico)"}
+                    </div>
+                    <div className="overflow-hidden rounded-md border bg-black/10">
+                      <img
+                        src={(hasNewCapturedPhotos(photos7Day) ? photos7Day[0] : existingMerged7Url) || ""}
+                        alt="Foto 7º dia"
+                        className="w-full h-auto block"
+                      />
+                    </div>
+
+                    {Object.keys(annotations7Day || {}).length > 0 && (
+                      <div className="rounded-md border p-2">
+                        <div className="text-xs font-medium mb-1">Anotações (7º dia)</div>
+                        <ul className="text-xs text-muted-foreground space-y-1 list-disc pl-4">
+                          {Object.entries(annotations7Day).flatMap(([idx, anns]) =>
+                            (anns || []).map((a, j) => (
+                              <li key={`${idx}-${j}`}>Foto {Number(idx) + 1}: {a.caption}</li>
+                            )),
+                          )}
+                        </ul>
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
             </form>
           </Form>
         </CardContent>
       </Card>
+
+
+      <Dialog open={openDayPreview !== null} onOpenChange={(o) => setOpenDayPreview(o ? openDayPreview : null)}>
+        <DialogContent className="max-w-3xl">
+          <DialogHeader>
+            <DialogTitle>
+              {openDayPreview === 7 ? "Fotos do 7º dia" : "Fotos do 14º dia"}
+            </DialogTitle>
+          </DialogHeader>
+
+          <div className="space-y-3">
+            <div className="overflow-hidden rounded-md border bg-black/10">
+              <img
+                src={
+                  openDayPreview === 7
+                    ? existingMerged7Url || ""
+                    : existingMerged14Url || ""
+                }
+                alt={openDayPreview === 7 ? "Foto 7º dia" : "Foto 14º dia"}
+                className="w-full h-auto block"
+              />
+            </div>
+
+            <div className="flex flex-col sm:flex-row gap-2 justify-end">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setOpenDayPreview(null)}
+              >
+                Manter
+              </Button>
+              <Button
+                type="button"
+                onClick={() => {
+                  const day = openDayPreview
+                  setOpenDayPreview(null)
+                  if (day === 7) {
+                    prevPhotos7Ref.current = photos7Day?.length ? [...photos7Day] : null
+                    setIsCapturing7Day(true)
+                  } else if (day === 14) {
+                    prevPhotos14Ref.current = photos14Day?.length ? [...photos14Day] : null
+                    setIsCapturing14Day(true)
+                  }
+                }}
+              >
+                Refazer fotos
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
     </div>
   )
 }

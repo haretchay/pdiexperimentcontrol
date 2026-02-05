@@ -9,6 +9,7 @@ import { ArrowLeft, Edit, Share2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { QrExportButtons } from "@/components/experiments/qr-export-buttons"
 
 import { useCardColors } from "@/lib/color-utils"
 import { useIsMobile } from "@/hooks/use-mobile"
@@ -721,6 +722,21 @@ export default function ExperimentDetailPage() {
             Voltar
           </Button>
         </Link>
+      </div>
+
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between mb-6">
+        <div>
+          <h1 className="text-2xl sm:text-3xl font-bold">Experimento {experiment.number}</h1>
+          <p className="text-muted-foreground">{experiment.strain}</p>
+        </div>
+
+        <div className="flex flex-wrap gap-2">
+          <QrExportButtons
+            experimentId={experiment.id}
+            experimentNumber={experiment.number}
+            tests={Object.values(testInfoByKey)}
+          />
+        </div>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">

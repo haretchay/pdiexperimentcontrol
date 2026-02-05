@@ -2,7 +2,6 @@ import type React from "react"
 
 import { AppSidebar } from "@/components/app-sidebar"
 import { AuthProvider } from "@/components/auth-provider"
-import { DatabaseActions } from "@/components/database-actions"
 import { ThemeSelector } from "@/components/theme-selector"
 import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar"
 import { requireActiveUser } from "@/lib/supabase/auth"
@@ -56,7 +55,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
                   <div id="page-title" className="ml-4 text-xl font-bold"></div>
                 </div>
                 <div className="flex items-center gap-2">
-                  <DatabaseActions />
+                  
                   <ThemeSelector />
                 </div>
               </div>

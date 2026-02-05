@@ -185,8 +185,7 @@ export default function LoginPage() {
             </form>
 
             <div className="mt-4 text-center text-white/70 text-sm">
-              <p>Para fazer login, use qualquer email de usuário cadastrado</p>
-              <p>com a senha: senha123</p>
+              <p>Projeto PDI - Controle de Testes</p>
             </div>
 
             <div className="mt-4 text-center text-sm text-white/70">

@@ -197,50 +197,6 @@ const mapped = {
     }
   }, [pageUrl])
 
-  async function handleDownloadQrPdf() {
-    if (!qrDataUrl) return
-
-    try {
-      const doc = new jsPDF({
-        orientation: "portrait",
-        unit: "mm",
-        format: "a4",
-      })
-
-      const pageWidth = doc.internal.pageSize.getWidth()
-      const margin = 15
-      const qrSize = 90
-
-      const x = (pageWidth - qrSize) / 2
-      const y = 35
-
-      doc.setFontSize(16)
-      doc.text("PDI • QR Code do Teste", pageWidth / 2, 20, { align: "center" })
-
-      doc.addImage(qrDataUrl, "PNG", x, y, qrSize, qrSize)
-
-      doc.setFontSize(11)
-      const caption = [
-        `Experimento: ${experiment?.name ?? experimentId}`,
-        `Repetição: ${repetitionId}  •  Teste: ${testId}`,
-        `Cepa: ${testData?.strain ?? "-"}  •  Lote: ${testData?.batch ?? "-"}`,
-      ]
-
-      let cy = y + qrSize + 12
-      for (const line of caption) {
-        doc.text(line, pageWidth / 2, cy, { align: "center" })
-        cy += 6
-      }
-
-      doc.setFontSize(8)
-      doc.text(pageUrl, pageWidth / 2, 280, { align: "center" })
-
-      doc.save(`qr_teste_${experimentId}_r${repetitionId}_t${testId}.pdf`)
-    } catch (e) {
-      console.error(e)
-    }
-  }
-
   const handleDownloadQrPdf = async () => {
     if (!qrDataUrl) return
     try {
@@ -261,7 +217,7 @@ const mapped = {
 
       doc.setFontSize(10)
       const caption = [
-        `Experimento: ${experimentId}`,
+        `Experimento: ${experiment?.number ?? experimentId}`,
         `Repetição: ${repetitionId} | Teste: ${testId}`,
         `Cepa: ${testData?.strain || "-"} | Lote: ${testData?.testLot || "-"}`,
       ]

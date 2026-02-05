@@ -34,21 +34,33 @@ export async function createMosaicBlob(imageDataUrls: string[]) {
 
   ctx.fillStyle = "#111827"
   ctx.fillRect(0, 0, canvas.width, canvas.height)
-
-  const drawCover = (img: HTMLImageElement, dx: number, dy: number, dw: number, dh: number) => {
+  const drawContain = (img: HTMLImageElement, dx: number, dy: number, dw: number, dh: number) => {
+    // "contain": não corta bordas/legendas; adiciona letterbox quando necessário
     const iw = img.naturalWidth || img.width
     const ih = img.naturalHeight || img.height
     const ir = iw / ih
     const dr = dw / dh
 
-    let sx = 0, sy = 0, sw = iw, sh = ih
+    let rw = dw
+    let rh = dh
     if (ir > dr) {
-      sw = Math.round(ih * dr)
-      sx = Math.round((iw - sw) / 2)
+      // imagem mais "larga": limita pela largura
+      rh = dw / ir
     } else {
-      sh = Math.round(iw / dr)
-      sy = Math.round((ih - sh) / 2)
+      // imagem mais "alta": limita pela altura
+      rw = dh * ir
     }
+
+    const x = dx + (dw - rw) / 2
+    const y = dy + (dh - rh) / 2
+
+    // fundo do slot para letterbox
+    ctx.fillStyle = "#111827"
+    ctx.fillRect(dx, dy, dw, dh)
+
+    ctx.drawImage(img, x, y, rw, rh)
+  }
+
     ctx.drawImage(img, sx, sy, sw, sh, dx, dy, dw, dh)
   }
 
@@ -58,7 +70,7 @@ export async function createMosaicBlob(imageDataUrls: string[]) {
     const x = col * cellW
     const y = row * cellH
     const gutter = 6
-    drawCover(img, x + gutter, y + gutter, cellW - gutter * 2, cellH - gutter * 2)
+    drawContain(img, x + gutter, y + gutter, cellW - gutter * 2, cellH - gutter * 2)
   })
 
   const blob = await new Promise<Blob>((resolve, reject) => {

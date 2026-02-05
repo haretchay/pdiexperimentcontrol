@@ -206,6 +206,10 @@ export default function ExperimentDetailPage() {
   const { toast } = useToast()
   const [isSharing, setIsSharing] = useState(false)
 
+  // Backwards-compatible alias: some old bundles referenced `testInfoByKey`.
+  // Keeping this avoids runtime crashes if a stale chunk is served.
+  const testInfoByKey = useMemo(() => testData ?? {}, [testData])
+
   // Lista achatada de testes (rep/test) para exportação de QR Codes do experimento.
   // Ordem estável: Rep 1..N, Teste 1..N. Usa fallback para cepa/lotes quando faltarem dados no teste.
   const qrTests = useMemo(() => {
@@ -236,12 +240,6 @@ export default function ExperimentDetailPage() {
 
     return items
   }, [experiment, testData])
-
-  // Compat: versões antigas do código (ou bundles em cache) referenciam `testInfoByKey`.
-  // Aqui mantemos um alias estável para evitar ReferenceError em runtime.
-  const testInfoByKey = useMemo(() => {
-    return testData ?? {}
-  }, [testData])
 
 
   useEffect(() => {

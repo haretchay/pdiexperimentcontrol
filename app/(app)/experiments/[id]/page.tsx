@@ -237,6 +237,12 @@ export default function ExperimentDetailPage() {
     return items
   }, [experiment, testData])
 
+  // Compat: versões antigas do código (ou bundles em cache) referenciam `testInfoByKey`.
+  // Aqui mantemos um alias estável para evitar ReferenceError em runtime.
+  const testInfoByKey = useMemo(() => {
+    return testData ?? {}
+  }, [testData])
+
 
   useEffect(() => {
     let cancelled = false

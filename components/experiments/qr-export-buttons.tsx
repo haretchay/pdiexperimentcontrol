@@ -143,3 +143,6 @@ export function ExportExperimentQRCodesButton({ experimentId, experimentNumber, 
     </Button>
   )
 }
+
+// Backwards-compatible alias (older pages imported `QrExportButtons`).
+export const QrExportButtons = ExportExperimentQRCodesButton

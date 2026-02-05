@@ -217,7 +217,7 @@ const mapped = {
 
       doc.setFontSize(10)
       const caption = [
-        `Experimento: ${experiment?.number ?? experimentId}`,
+        `Experimento: ${experimentId}`,
         `Repetição: ${repetitionId} | Teste: ${testId}`,
         `Cepa: ${testData?.strain || "-"} | Lote: ${testData?.testLot || "-"}`,
       ]

@@ -66,19 +66,10 @@ export function DatabaseActions() {
     const db = readLocalDatabase()
     downloadJSON("pdi_local_database.json", db)
   }
-
-  // Import propositalmente não implementado (vamos migrar para Supabase)
-  const handleImport = () => {
-    alert("Importação local desativada.")
-  }
-
   return (
     <div className="flex flex-wrap gap-2">
       <Button variant="outline" onClick={handleExport}>
         Exportar dados
-      </Button>
-      <Button variant="secondary" onClick={handleImport}>
-        Importar dados
       </Button>
     </div>
   )

@@ -92,8 +92,6 @@ async function createMosaicBlob(imageDataUrls: string[]) {
     ctx.drawImage(img, x, y, rw, rh)
   }
 
-    ctx.drawImage(img, sx, sy, sw, sh, dx, dy, dw, dh)
-  }
 
   imgs.forEach((img, i) => {
     const col = i % cols

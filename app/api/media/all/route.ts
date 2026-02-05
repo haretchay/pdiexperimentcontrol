@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server"
 import { createClient } from "@/lib/supabase/server"
+import { createAdminClient } from "@/lib/supabase/admin"
 
 /**
  * Lista TODAS as fotos mescladas (kind='merged') do bucket test-photos.
@@ -8,6 +9,7 @@ import { createClient } from "@/lib/supabase/server"
 export async function GET() {
   try {
     const supabase = await createClient()
+    const admin = createAdminClient()
 
     // RLS / auth: se não estiver autenticado, a query falha.
     const { data: auth } = await supabase.auth.getUser()
@@ -15,7 +17,13 @@ export async function GET() {
       return NextResponse.json({ photos: [], error: "not_authenticated" }, { status: 401 })
     }
 
-    const { data, error } = await supabase
+    // Prefer the admin client (service role) so "Mídias" can show photos from all users
+    // even when RLS on test_photos / storage.objects is restrictive.
+    // If the service key isn't configured, we fall back to the regular server client
+    // and you must rely on permissive RLS policies for reads.
+    const dbClient = admin ?? supabase
+
+    const { data, error } = await dbClient
       .from("test_photos")
       .select(
         `
@@ -65,7 +73,10 @@ export async function GET() {
       let url: string | null = null
       let missing = false
       try {
-        const signed = await supabase.storage.from("test-photos").createSignedUrl(storagePath, 60 * 60)
+        const storageClient = (admin ?? supabase).storage
+        const signed = await storageClient
+          .from("test-photos")
+          .createSignedUrl(storagePath, 60 * 60)
         if (signed.error) {
           missing = true
         } else {

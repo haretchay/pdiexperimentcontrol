@@ -2,14 +2,20 @@
 
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { ArrowLeft, Edit, Camera } from "lucide-react"
+import { ArrowLeft, Edit, Camera, QrCode, Download } from "lucide-react"
 import Link from "next/link"
+import jsPDF from "jspdf"
+import QRCodeLib from "qrcode"
 import { useParams, useRouter } from "next/navigation"
 import { useEffect, useMemo, useState } from "react"
+import jsPDF from "jspdf"
+import QRCodeLib from "qrcode"
 import { PhotoGridDisplay } from "@/components/camera/photo-grid-display"
 import { createClient } from "@/lib/supabase/client"
 import { SignedUrlCache } from "@/lib/pdi/signed-url-cache"
 import { getSignedUrlsForPaths } from "@/lib/pdi/test-photos"
+
+import { toast } from "@/components/ui/use-toast"
 
 type PhotoRow = {
   id: string
@@ -163,6 +169,42 @@ const mapped = {
   const currentDate = new Date()
   const weekNumber = getWeekNumber(currentDate)
 
+  const handleDownloadQrPdf = async () => {
+    try {
+      const url = `${window.location.origin}${window.location.pathname}`
+      const qrDataUrl = await QRCodeLib.toDataURL(url, {
+        errorCorrectionLevel: "M",
+        margin: 1,
+        width: 512,
+      })
+
+      const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" })
+      const pageW = doc.internal.pageSize.getWidth()
+      const pageH = doc.internal.pageSize.getHeight()
+
+      const size = Math.min(120, pageW - 40)
+      const x = (pageW - size) / 2
+      const y = 30
+
+      doc.setFontSize(16)
+      doc.text("QR Code do teste", pageW / 2, 18, { align: "center" })
+
+      doc.addImage(qrDataUrl, "PNG", x, y, size, size)
+
+      const legend = `Exp ${experimentId} • Rep ${repetitionId} • Teste ${testId} • Cepa ${testData.strainCode || "-"} • Lote ${testData.testLot || "-"}`
+      doc.setFontSize(10)
+      doc.text(legend, pageW / 2, y + size + 10, { align: "center", maxWidth: pageW - 20 })
+
+      doc.setFontSize(9)
+      doc.text(url, pageW / 2, pageH - 14, { align: "center", maxWidth: pageW - 20 })
+
+      doc.save(`qr_teste_${experimentId}_rep${repetitionId}_t${testId}.pdf`)
+    } catch (err) {
+      console.error(err)
+      alert("Não foi possível gerar o QR Code em PDF.")
+    }
+  }
+
   if (loading) return <div className="container mx-auto p-4">Carregando detalhes do teste...</div>
   if (!testData) return <div className="container mx-auto p-4">Teste não encontrado</div>
 
@@ -181,13 +223,25 @@ const mapped = {
           </h1>
         </div>
 
-        <Button
-          onClick={() => router.push(`/experiments/${experimentId}/repetition/${repetitionId}/test/${testId}`)}
-          className="flex items-center gap-1 w-full sm:w-auto"
-        >
-          <Edit className="h-4 w-4" />
-          Editar Teste
-        </Button>
+        <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
+          <Button
+            variant="outline"
+            onClick={handleDownloadQrPdf}
+            className="flex items-center gap-1 w-full sm:w-auto"
+          >
+            <QrCode className="h-4 w-4" />
+            <Download className="h-4 w-4" />
+            QR Code (PDF)
+          </Button>
+
+          <Button
+            onClick={() => router.push(`/experiments/${experimentId}/repetition/${repetitionId}/test/${testId}`)}
+            className="flex items-center gap-1 w-full sm:w-auto"
+          >
+            <Edit className="h-4 w-4" />
+            Editar Teste
+          </Button>
+        </div>
       </div>
 
       <Card className="mb-6">

@@ -4,8 +4,6 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { ArrowLeft, Edit, Camera, QrCode, Download } from "lucide-react"
 import Link from "next/link"
-import jsPDF from "jspdf"
-import QRCodeLib from "qrcode"
 import { useParams, useRouter } from "next/navigation"
 import { useEffect, useMemo, useState } from "react"
 import jsPDF from "jspdf"
@@ -14,8 +12,6 @@ import { PhotoGridDisplay } from "@/components/camera/photo-grid-display"
 import { createClient } from "@/lib/supabase/client"
 import { SignedUrlCache } from "@/lib/pdi/signed-url-cache"
 import { getSignedUrlsForPaths } from "@/lib/pdi/test-photos"
-
-import { toast } from "@/components/ui/use-toast"
 
 type PhotoRow = {
   id: string
@@ -169,39 +165,120 @@ const mapped = {
   const currentDate = new Date()
   const weekNumber = getWeekNumber(currentDate)
 
-  const handleDownloadQrPdf = async () => {
+  // QR code (para esta página de view)
+  const pageUrl = useMemo(() => {
+    if (typeof window === "undefined") return ""
+    return window.location.href
+  }, [experimentId, repetitionId, testId])
+
+  const [qrDataUrl, setQrDataUrl] = useState<string | null>(null)
+  const [qrBusy, setQrBusy] = useState(false)
+
+  useEffect(() => {
+    let cancelled = false
+
+    ;(async () => {
+      if (!pageUrl) return
+      try {
+        const dataUrl = await QRCodeLib.toDataURL(pageUrl, {
+          margin: 1,
+          width: 600,
+          errorCorrectionLevel: "M",
+        })
+        if (!cancelled) setQrDataUrl(dataUrl)
+      } catch (e) {
+        console.error("Erro ao gerar QR code", e)
+        if (!cancelled) setQrDataUrl(null)
+      }
+    })()
+
+    return () => {
+      cancelled = true
+    }
+  }, [pageUrl])
+
+  async function handleDownloadQrPdf() {
+    if (!qrDataUrl) return
+
     try {
-      const url = `${window.location.origin}${window.location.pathname}`
-      const qrDataUrl = await QRCodeLib.toDataURL(url, {
-        errorCorrectionLevel: "M",
-        margin: 1,
-        width: 512,
+      const doc = new jsPDF({
+        orientation: "portrait",
+        unit: "mm",
+        format: "a4",
       })
 
-      const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" })
-      const pageW = doc.internal.pageSize.getWidth()
-      const pageH = doc.internal.pageSize.getHeight()
+      const pageWidth = doc.internal.pageSize.getWidth()
+      const margin = 15
+      const qrSize = 90
 
-      const size = Math.min(120, pageW - 40)
-      const x = (pageW - size) / 2
-      const y = 30
+      const x = (pageWidth - qrSize) / 2
+      const y = 35
 
       doc.setFontSize(16)
-      doc.text("QR Code do teste", pageW / 2, 18, { align: "center" })
+      doc.text("PDI • QR Code do Teste", pageWidth / 2, 20, { align: "center" })
 
-      doc.addImage(qrDataUrl, "PNG", x, y, size, size)
+      doc.addImage(qrDataUrl, "PNG", x, y, qrSize, qrSize)
 
-      const legend = `Exp ${experimentId} • Rep ${repetitionId} • Teste ${testId} • Cepa ${testData.strainCode || "-"} • Lote ${testData.testLot || "-"}`
+      doc.setFontSize(11)
+      const caption = [
+        `Experimento: ${experiment?.name ?? experimentId}`,
+        `Repetição: ${repetitionId}  •  Teste: ${testId}`,
+        `Cepa: ${testData?.strain ?? "-"}  •  Lote: ${testData?.batch ?? "-"}`,
+      ]
+
+      let cy = y + qrSize + 12
+      for (const line of caption) {
+        doc.text(line, pageWidth / 2, cy, { align: "center" })
+        cy += 6
+      }
+
+      doc.setFontSize(8)
+      doc.text(pageUrl, pageWidth / 2, 280, { align: "center" })
+
+      doc.save(`qr_teste_${experimentId}_r${repetitionId}_t${testId}.pdf`)
+    } catch (e) {
+      console.error(e)
+    }
+  }
+
+  const handleDownloadQrPdf = async () => {
+    if (!qrDataUrl) return
+    try {
+      setQrBusy(true)
+
+      const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" })
+
+      const pageW = doc.internal.pageSize.getWidth()
+      const margin = 16
+      const qrSize = 90
+      const x = (pageW - qrSize) / 2
+      const y = 28
+
+      doc.setFontSize(14)
+      doc.text("QR Code do teste", margin, 18)
+
+      doc.addImage(qrDataUrl, "PNG", x, y, qrSize, qrSize)
+
       doc.setFontSize(10)
-      doc.text(legend, pageW / 2, y + size + 10, { align: "center", maxWidth: pageW - 20 })
+      const caption = [
+        `Experimento: ${experimentId}`,
+        `Repetição: ${repetitionId} | Teste: ${testId}`,
+        `Cepa: ${testData?.strain || "-"} | Lote: ${testData?.testLot || "-"}`,
+      ]
 
-      doc.setFontSize(9)
-      doc.text(url, pageW / 2, pageH - 14, { align: "center", maxWidth: pageW - 20 })
+      let cy = y + qrSize + 10
+      for (const line of caption) {
+        doc.text(line, margin, cy)
+        cy += 6
+      }
 
-      doc.save(`qr_teste_${experimentId}_rep${repetitionId}_t${testId}.pdf`)
-    } catch (err) {
-      console.error(err)
-      alert("Não foi possível gerar o QR Code em PDF.")
+      doc.setFontSize(8)
+      const urlLines = doc.splitTextToSize(pageUrl, pageW - margin * 2)
+      doc.text(urlLines, margin, cy + 4)
+
+      doc.save(`qr_teste_${String(testId)}_rep_${String(repetitionId)}.pdf`)
+    } finally {
+      setQrBusy(false)
     }
   }
 
@@ -225,21 +302,21 @@ const mapped = {
 
         <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
           <Button
-            variant="outline"
-            onClick={handleDownloadQrPdf}
-            className="flex items-center gap-1 w-full sm:w-auto"
-          >
-            <QrCode className="h-4 w-4" />
-            <Download className="h-4 w-4" />
-            QR Code (PDF)
-          </Button>
-
-          <Button
             onClick={() => router.push(`/experiments/${experimentId}/repetition/${repetitionId}/test/${testId}`)}
             className="flex items-center gap-1 w-full sm:w-auto"
           >
             <Edit className="h-4 w-4" />
             Editar Teste
+          </Button>
+
+          <Button
+            variant="secondary"
+            onClick={handleDownloadQrPdf}
+            disabled={!qrDataUrl || qrBusy}
+            className="flex items-center gap-1 w-full sm:w-auto"
+          >
+            <Download className="h-4 w-4" />
+            QR Code (PDF)
           </Button>
         </div>
       </div>
@@ -292,6 +369,28 @@ const mapped = {
               <p className="font-medium">{testData.mpLot}</p>
             </div>
           </div>
+
+          {(qrBusy || qrDataUrl) && (
+            <div className="pt-2">
+              <div className="flex items-center gap-2">
+                <QrCode className="h-4 w-4 text-muted-foreground" />
+                <h3 className="text-sm font-medium">QR Code do teste</h3>
+              </div>
+              <div className="mt-2 flex flex-col sm:flex-row gap-3 sm:items-center">
+                <div className="w-40 h-40 rounded-md border bg-background flex items-center justify-center overflow-hidden">
+                  {qrDataUrl ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={qrDataUrl} alt="QR Code" className="w-full h-full object-contain" />
+                  ) : (
+                    <div className="text-xs text-muted-foreground">Gerando...</div>
+                  )}
+                </div>
+                <div className="text-xs text-muted-foreground break-all">
+                  {pageUrl}
+                </div>
+              </div>
+            </div>
+          )}
         </CardContent>
       </Card>
 

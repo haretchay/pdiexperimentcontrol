@@ -196,7 +196,7 @@ export function MediaPageClient() {
   }
 
   return (
-    <div className="container mx-auto max-w-7xl py-6 space-y-6">
+    <div className="w-full px-4 md:px-6 py-6 space-y-6">
       <Card>
         <CardHeader className="flex flex-row items-center justify-between gap-3">
           <CardTitle>Mídias</CardTitle>

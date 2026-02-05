@@ -9,7 +9,7 @@ import { ArrowLeft, Edit, Share2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { QrExportButtons } from "@/components/experiments/qr-export-buttons"
+import { ExportExperimentQRCodesButton } from "@/components/experiments/qr-export-buttons"
 
 import { useCardColors } from "@/lib/color-utils"
 import { useIsMobile } from "@/hooks/use-mobile"
@@ -205,6 +205,38 @@ export default function ExperimentDetailPage() {
   const isMobile = useIsMobile()
   const { toast } = useToast()
   const [isSharing, setIsSharing] = useState(false)
+
+  // Lista achatada de testes (rep/test) para exportação de QR Codes do experimento.
+  // Ordem estável: Rep 1..N, Teste 1..N. Usa fallback para cepa/lotes quando faltarem dados no teste.
+  const qrTests = useMemo(() => {
+    if (!experiment) return []
+
+    const items: {
+      repetitionNumber: number
+      testNumber: number
+      strain: string | null
+      testLot: string | null
+      matrixLot: string | null
+    }[] = []
+
+    for (let rep = 1; rep <= experiment.repetitionCount; rep++) {
+      for (let test = 1; test <= experiment.testCount; test++) {
+        const key = `${rep}_${test}`
+        const info = testData[key]
+
+        items.push({
+          repetitionNumber: rep,
+          testNumber: test,
+          strain: (info?.strain ?? experiment.strain) ?? null,
+          testLot: info?.testLot ?? null,
+          matrixLot: info?.matrixLot ?? null,
+        })
+      }
+    }
+
+    return items
+  }, [experiment, testData])
+
 
   useEffect(() => {
     let cancelled = false
@@ -731,10 +763,11 @@ export default function ExperimentDetailPage() {
         </div>
 
         <div className="flex flex-wrap gap-2">
-          <QrExportButtons
+          <ExportExperimentQRCodesButton
             experimentId={experiment.id}
             experimentNumber={experiment.number}
-            tests={Object.values(testInfoByKey)}
+            experimentStrain={experiment.strain}
+            tests={qrTests}
           />
         </div>
       </div>

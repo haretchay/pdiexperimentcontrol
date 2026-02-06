@@ -2,7 +2,7 @@
 
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { ArrowLeft, Edit, Camera, QrCode, Download } from "lucide-react"
+import { ArrowLeft, Edit, Camera, Download } from "lucide-react"
 import Link from "next/link"
 import { useParams, useRouter } from "next/navigation"
 import { useEffect, useMemo, useState } from "react"
@@ -174,6 +174,13 @@ const mapped = {
   const [qrDataUrl, setQrDataUrl] = useState<string | null>(null)
   const [qrBusy, setQrBusy] = useState(false)
 
+  const fmt = (v: any, suffix?: string) => {
+    if (v === null || v === undefined || v === "") return "Não informado"
+    const n = typeof v === "number" ? v : Number(v)
+    if (Number.isFinite(n)) return `${n}${suffix ? ` ${suffix}` : ""}`
+    return `${String(v)}${suffix ? ` ${suffix}` : ""}`
+  }
+
   useEffect(() => {
     let cancelled = false
 
@@ -326,27 +333,24 @@ const mapped = {
             </div>
           </div>
 
-          {(qrBusy || qrDataUrl) && (
-            <div className="pt-2">
-              <div className="flex items-center gap-2">
-                <QrCode className="h-4 w-4 text-muted-foreground" />
-                <h3 className="text-sm font-medium">QR Code do teste</h3>
-              </div>
-              <div className="mt-2 flex flex-col sm:flex-row gap-3 sm:items-center">
-                <div className="w-40 h-40 rounded-md border bg-background flex items-center justify-center overflow-hidden">
-                  {qrDataUrl ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img src={qrDataUrl} alt="QR Code" className="w-full h-full object-contain" />
-                  ) : (
-                    <div className="text-xs text-muted-foreground">Gerando...</div>
-                  )}
-                </div>
-                <div className="text-xs text-muted-foreground break-all">
-                  {pageUrl}
-                </div>
-              </div>
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+            <div>
+              <h3 className="text-sm font-medium text-muted-foreground">Quantidade da Amostra</h3>
+              <p className="font-medium">{fmt(testData.quantity, "kg")}</p>
             </div>
-          )}
+            <div>
+              <h3 className="text-sm font-medium text-muted-foreground">Bozo</h3>
+              <p className="font-medium">{fmt(testData.bozo, "min")}</p>
+            </div>
+            <div>
+              <h3 className="text-sm font-medium text-muted-foreground">Média umidade</h3>
+              <p className="font-medium">{fmt(testData.averageHumidity, "%")}</p>
+            </div>
+            <div>
+              <h3 className="text-sm font-medium text-muted-foreground">Sensorial</h3>
+              <p className="font-medium">{fmt(testData.sensorial, "pts")}</p>
+            </div>
+          </div>
         </CardContent>
       </Card>
 
@@ -460,16 +464,16 @@ const mapped = {
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div>
               <h3 className="text-sm font-medium text-muted-foreground">Peso Úmido</h3>
-              <p className="font-medium">{testData.wetWeight === null || testData.wetWeight === undefined ? "Não informado" : `${testData.wetWeight} g`}</p>
+              <p className="font-medium">{fmt(testData.wetWeight, "kg")}</p>
             </div>
             <div>
               <h3 className="text-sm font-medium text-muted-foreground">Peso Seco</h3>
-              <p className="font-medium">{testData.dryWeight === null || testData.dryWeight === undefined ? "Não informado" : `${testData.dryWeight} g`}</p>
+              <p className="font-medium">{fmt(testData.dryWeight, "kg")}</p>
             </div>
             <div>
               <h3 className="text-sm font-medium text-muted-foreground">Peso Conídio Extraído</h3>
               <p className="font-medium">
-                {testData.extractedConidiumWeight === null || testData.extractedConidiumWeight === undefined ? "Não informado" : `${testData.extractedConidiumWeight} g`}
+                {fmt(testData.extractedConidiumWeight, "kg")}
               </p>
             </div>
           </div>

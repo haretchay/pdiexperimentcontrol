@@ -38,6 +38,33 @@ const toNumberOrUndefined = (v: unknown) => {
 const isDataUrlImage = (s?: string) => typeof s === "string" && s.startsWith("data:image/")
 const hasNewCapturedPhotos = (photos: string[]) => Array.isArray(photos) && photos.some((p) => isDataUrlImage(p))
 
+function NumberInputWithSuffix({
+  value,
+  onChange,
+  step,
+  suffix,
+}: {
+  value: any
+  onChange: any
+  step?: string
+  suffix: string
+}) {
+  return (
+    <div className="relative">
+      <Input
+        type="number"
+        step={step}
+        value={value ?? ""}
+        onChange={onChange}
+        className="pr-12"
+      />
+      <div className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-xs text-muted-foreground">
+        {suffix}
+      </div>
+    </div>
+  )
+}
+
 
 async function createMosaicBlob(imageDataUrls: string[]) {
   // Mosaico 3x2 (6 fotos): mantém zoom normal ao abrir a imagem final
@@ -635,7 +662,7 @@ export default function TestEditPage() {
                     <FormItem>
                       <FormLabel>Média umidade</FormLabel>
                       <FormControl>
-                        <Input type="number" step="0.1" value={field.value ?? ""} onChange={field.onChange} />
+                        <NumberInputWithSuffix value={field.value} onChange={field.onChange} step="0.1" suffix="%" />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -646,9 +673,9 @@ export default function TestEditPage() {
                   name="bozo"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Bozo</FormLabel>
+                      <FormLabel>Bozo (min)</FormLabel>
                       <FormControl>
-                        <Input type="number" step="0.1" value={field.value ?? ""} onChange={field.onChange} />
+                        <NumberInputWithSuffix value={field.value} onChange={field.onChange} step="0.1" suffix="min" />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -661,7 +688,7 @@ export default function TestEditPage() {
                     <FormItem>
                       <FormLabel>Sensorial</FormLabel>
                       <FormControl>
-                        <Input type="number" step="0.1" value={field.value ?? ""} onChange={field.onChange} />
+                        <NumberInputWithSuffix value={field.value} onChange={field.onChange} step="0.1" suffix="pts" />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -672,9 +699,9 @@ export default function TestEditPage() {
                   name="quantity"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Quantidade</FormLabel>
+                      <FormLabel>Quantidade da Amostra (kg)</FormLabel>
                       <FormControl>
-                        <Input type="number" step="0.1" value={field.value ?? ""} onChange={field.onChange} />
+                        <NumberInputWithSuffix value={field.value} onChange={field.onChange} step="0.1" suffix="kg" />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -707,10 +734,10 @@ export default function TestEditPage() {
                     name="temp7Chamber"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>Temp 7 Câmara</FormLabel>
-                        <FormControl>
-                          <Input type="number" step="0.1" value={field.value ?? ""} onChange={field.onChange} />
-                        </FormControl>
+                      <FormLabel>Temp 7 Câmara (ºC)</FormLabel>
+                      <FormControl>
+                        <NumberInputWithSuffix value={field.value} onChange={field.onChange} step="0.1" suffix="ºC" />
+                      </FormControl>
                       </FormItem>
                     )}
                   />
@@ -719,10 +746,10 @@ export default function TestEditPage() {
                     name="temp7Rice"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>Temp 7 Arroz</FormLabel>
-                        <FormControl>
-                          <Input type="number" step="0.1" value={field.value ?? ""} onChange={field.onChange} />
-                        </FormControl>
+                      <FormLabel>Temp 7 Arroz (ºC)</FormLabel>
+                      <FormControl>
+                        <NumberInputWithSuffix value={field.value} onChange={field.onChange} step="0.1" suffix="ºC" />
+                      </FormControl>
                       </FormItem>
                     )}
                   />
@@ -754,33 +781,16 @@ export default function TestEditPage() {
                   )}
                 </Button>
 
-                {(existingMerged7Url || hasNewCapturedPhotos(photos7Day)) && (
-                  <div className="mt-3 space-y-2">
-                    <div className="text-xs text-muted-foreground">
-                      {hasNewCapturedPhotos(photos7Day)
-                        ? "Pré-visualização (ainda não salva)"
-                        : "Foto salva (mosaico)"}
-                    </div>
-                    <div className="overflow-hidden rounded-md border bg-black/10">
-                      <img
-                        src={(hasNewCapturedPhotos(photos7Day) ? photos7Day[0] : existingMerged7Url) || ""}
-                        alt="Foto 7º dia"
-                        className="w-full h-auto block"
-                      />
-                    </div>
-
-                    {Object.keys(annotations7Day || {}).length > 0 && (
-                      <div className="rounded-md border p-2">
-                        <div className="text-xs font-medium mb-1">Anotações (7º dia)</div>
-                        <ul className="text-xs text-muted-foreground space-y-1 list-disc pl-4">
-                          {Object.entries(annotations7Day).flatMap(([idx, anns]) =>
-                            (anns || []).map((a, j) => (
-                              <li key={`${idx}-${j}`}>Foto {Number(idx) + 1}: {a.caption}</li>
-                            )),
-                          )}
-                        </ul>
-                      </div>
-                    )}
+                {Object.keys(annotations7Day || {}).length > 0 && (
+                  <div className="mt-3 rounded-md border p-2">
+                    <div className="text-xs font-medium mb-1">Anotações (7º dia)</div>
+                    <ul className="text-xs text-muted-foreground space-y-1 list-disc pl-4">
+                      {Object.entries(annotations7Day).flatMap(([idx, anns]) =>
+                        (anns || []).map((a, j) => (
+                          <li key={`${idx}-${j}`}>Foto {Number(idx) + 1}: {a.caption}</li>
+                        )),
+                      )}
+                    </ul>
                   </div>
                 )}
               </div>
@@ -810,10 +820,10 @@ export default function TestEditPage() {
                     name="temp14Chamber"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>Temp 14 Câmara</FormLabel>
-                        <FormControl>
-                          <Input type="number" step="0.1" value={field.value ?? ""} onChange={field.onChange} />
-                        </FormControl>
+                      <FormLabel>Temp 14 Câmara (ºC)</FormLabel>
+                      <FormControl>
+                        <NumberInputWithSuffix value={field.value} onChange={field.onChange} step="0.1" suffix="ºC" />
+                      </FormControl>
                       </FormItem>
                     )}
                   />
@@ -822,10 +832,10 @@ export default function TestEditPage() {
                     name="temp14Rice"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>Temp 14 Arroz</FormLabel>
-                        <FormControl>
-                          <Input type="number" step="0.1" value={field.value ?? ""} onChange={field.onChange} />
-                        </FormControl>
+                      <FormLabel>Temp 14 Arroz (ºC)</FormLabel>
+                      <FormControl>
+                        <NumberInputWithSuffix value={field.value} onChange={field.onChange} step="0.1" suffix="ºC" />
+                      </FormControl>
                       </FormItem>
                     )}
                   />
@@ -855,33 +865,16 @@ export default function TestEditPage() {
                   )}
                 </Button>
 
-                {(existingMerged7Url || hasNewCapturedPhotos(photos7Day)) && (
-                  <div className="mt-3 space-y-2">
-                    <div className="text-xs text-muted-foreground">
-                      {hasNewCapturedPhotos(photos7Day)
-                        ? "Pré-visualização (ainda não salva)"
-                        : "Foto salva (mosaico)"}
-                    </div>
-                    <div className="overflow-hidden rounded-md border bg-black/10">
-                      <img
-                        src={(hasNewCapturedPhotos(photos7Day) ? photos7Day[0] : existingMerged7Url) || ""}
-                        alt="Foto 7º dia"
-                        className="w-full h-auto block"
-                      />
-                    </div>
-
-                    {Object.keys(annotations7Day || {}).length > 0 && (
-                      <div className="rounded-md border p-2">
-                        <div className="text-xs font-medium mb-1">Anotações (7º dia)</div>
-                        <ul className="text-xs text-muted-foreground space-y-1 list-disc pl-4">
-                          {Object.entries(annotations7Day).flatMap(([idx, anns]) =>
-                            (anns || []).map((a, j) => (
-                              <li key={`${idx}-${j}`}>Foto {Number(idx) + 1}: {a.caption}</li>
-                            )),
-                          )}
-                        </ul>
-                      </div>
-                    )}
+                {Object.keys(annotations14Day || {}).length > 0 && (
+                  <div className="mt-3 rounded-md border p-2">
+                    <div className="text-xs font-medium mb-1">Anotações (14º dia)</div>
+                    <ul className="text-xs text-muted-foreground space-y-1 list-disc pl-4">
+                      {Object.entries(annotations14Day).flatMap(([idx, anns]) =>
+                        (anns || []).map((a, j) => (
+                          <li key={`${idx}-${j}`}>Foto {Number(idx) + 1}: {a.caption}</li>
+                        )),
+                      )}
+                    </ul>
                   </div>
                 )}
               </div>
@@ -892,9 +885,9 @@ export default function TestEditPage() {
                   name="wetWeight"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Peso Úmido</FormLabel>
+                      <FormLabel>Peso Úmido (kg)</FormLabel>
                       <FormControl>
-                        <Input type="number" step="0.01" value={field.value ?? ""} onChange={field.onChange} />
+                        <NumberInputWithSuffix value={field.value} onChange={field.onChange} step="0.01" suffix="kg" />
                       </FormControl>
                     </FormItem>
                   )}
@@ -904,9 +897,9 @@ export default function TestEditPage() {
                   name="dryWeight"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Peso Seco</FormLabel>
+                      <FormLabel>Peso Seco (kg)</FormLabel>
                       <FormControl>
-                        <Input type="number" step="0.01" value={field.value ?? ""} onChange={field.onChange} />
+                        <NumberInputWithSuffix value={field.value} onChange={field.onChange} step="0.01" suffix="kg" />
                       </FormControl>
                     </FormItem>
                   )}
@@ -916,9 +909,9 @@ export default function TestEditPage() {
                   name="extractedConidiumWeight"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Peso conídio extraído</FormLabel>
+                      <FormLabel>Peso conídio extraído (kg)</FormLabel>
                       <FormControl>
-                        <Input type="number" step="0.01" value={field.value ?? ""} onChange={field.onChange} />
+                        <NumberInputWithSuffix value={field.value} onChange={field.onChange} step="0.01" suffix="kg" />
                       </FormControl>
                     </FormItem>
                   )}
@@ -937,36 +930,6 @@ export default function TestEditPage() {
                 <Button type="submit" disabled={saving}>
                   {saving ? "Salvando..." : "Salvar"}
                 </Button>
-
-                {(existingMerged7Url || hasNewCapturedPhotos(photos7Day)) && (
-                  <div className="mt-3 space-y-2">
-                    <div className="text-xs text-muted-foreground">
-                      {hasNewCapturedPhotos(photos7Day)
-                        ? "Pré-visualização (ainda não salva)"
-                        : "Foto salva (mosaico)"}
-                    </div>
-                    <div className="overflow-hidden rounded-md border bg-black/10">
-                      <img
-                        src={(hasNewCapturedPhotos(photos7Day) ? photos7Day[0] : existingMerged7Url) || ""}
-                        alt="Foto 7º dia"
-                        className="w-full h-auto block"
-                      />
-                    </div>
-
-                    {Object.keys(annotations7Day || {}).length > 0 && (
-                      <div className="rounded-md border p-2">
-                        <div className="text-xs font-medium mb-1">Anotações (7º dia)</div>
-                        <ul className="text-xs text-muted-foreground space-y-1 list-disc pl-4">
-                          {Object.entries(annotations7Day).flatMap(([idx, anns]) =>
-                            (anns || []).map((a, j) => (
-                              <li key={`${idx}-${j}`}>Foto {Number(idx) + 1}: {a.caption}</li>
-                            )),
-                          )}
-                        </ul>
-                      </div>
-                    )}
-                  </div>
-                )}
               </div>
             </form>
           </Form>

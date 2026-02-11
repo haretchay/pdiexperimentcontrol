@@ -247,17 +247,36 @@ export default function ExperimentDetailPage() {
 
     async function load() {
       try {
-        // 1) Experimento (sem test_types)
-        const { data: exp, error: expErr } = await supabase
-          .from("experiments")
-          .select("id, number, repetition_count, test_count, start_date, strain")
-          .eq("id", experimentId)
-          .single()
+        // IMPORTANT:
+        // This page is a client component. In production we may have a cookie-based session
+        // (server) but no localStorage session (browser), which makes direct Supabase client
+        // reads return 0 rows under RLS and `.single()` explodes with PGRST116.
+        // Solution: fetch initial data from a server route that reads cookies.
+        const res = await fetch(`/api/experiments/${experimentId}/detail`, {
+          method: "GET",
+          headers: { "Content-Type": "application/json" },
+          cache: "no-store",
+        })
 
-        if (expErr) throw expErr
-        if (!exp) throw new Error("Experimento não encontrado")
+        if (!res.ok) {
+          let msg = `Erro ao carregar experimento (${res.status})`
+          try {
+            const j = await res.json()
+            if (j?.error) msg = String(j.error)
+          } catch {
+            // ignore
+          }
+          throw new Error(msg)
+        }
 
-        const expRow = exp as DbExperimentRow
+        const payload = (await res.json()) as {
+          experiment: DbExperimentRow | null
+          tests: DbTestRow[]
+        }
+
+        if (!payload?.experiment) throw new Error("Experimento não encontrado")
+
+        const expRow = payload.experiment
 
         const expUI: ExperimentUI = {
           id: expRow.id,
@@ -271,46 +290,7 @@ export default function ExperimentDetailPage() {
         }
 
         // 2) Tests + fotos
-        const { data: tests, error: testsErr } = await supabase
-          .from("tests")
-          .select(
-            `
-            id,
-            experiment_id,
-            repetition_number,
-            test_number,
-            unit,
-            requisition,
-            test_type,
-            test_lot,
-            matrix_lot,
-            strain,
-            mp_lot,
-            average_humidity,
-            bozo,
-            sensorial,
-            quantity,
-            temp7_chamber,
-            temp14_chamber,
-            temp7_rice,
-            temp14_rice,
-            wet_weight,
-            dry_weight,
-            extracted_conidium_weight,
-            date_7_day,
-            date_14_day,
-            annotations_7_day,
-            annotations_14_day,
-            test_photos(day, storage_path)
-          `,
-          )
-          .eq("experiment_id", experimentId)
-          .order("repetition_number", { ascending: true })
-          .order("test_number", { ascending: true })
-
-        if (testsErr) throw testsErr
-
-        const rows = (tests ?? []) as DbTestRow[]
+        const rows = (payload.tests ?? []) as DbTestRow[]
 
         // 3) Map rep_test
         const map: Record<string, TestDataRecord> = {}

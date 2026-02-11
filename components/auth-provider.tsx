@@ -19,9 +19,15 @@ const AuthContext = createContext<AuthContextType>({
   signOut: async () => {},
 })
 
-export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const [user, setUser] = useState<User | null>(null)
-  const [loading, setLoading] = useState(true)
+export function AuthProvider({
+  children,
+  initialUser,
+}: {
+  children: React.ReactNode
+  initialUser?: User | null
+}) {
+  const [user, setUser] = useState<User | null>(initialUser ?? null)
+  const [loading, setLoading] = useState(initialUser ? false : true)
   const router = useRouter()
 
   // singleton client no browser
@@ -88,7 +94,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [supabase, router])
 
   const signOut = async () => {
-    await supabase.auth.signOut()
+    // Sempre derruba a sessão baseada em cookie (SSR)
+    try {
+      await fetch("/api/auth/logout", { method: "POST" })
+    } catch {
+      // ignore
+    }
+    // Também derruba a sessão do cliente (localStorage) se existir
+    try {
+      await supabase.auth.signOut()
+    } catch {
+      // ignore
+    }
+
     router.push("/auth/login")
     router.refresh()
   }

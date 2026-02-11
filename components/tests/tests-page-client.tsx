@@ -22,10 +22,10 @@ type UITestRow = {
 
 export function TestsPageClient({ initialTests }: { initialTests: UITestRow[] }) {
   return (
-    <div className="container mx-auto p-4">
+    <div className="w-full px-4 md:px-6 py-6 overflow-x-hidden">
       <PageTitle title="Testes" />
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+      <div className="grid gap-6 grid-cols-1 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
         {initialTests.map((t) => (
           <Card key={t.id}>
             <CardHeader>

@@ -2,12 +2,12 @@ import type React from "react"
 
 import { AppSidebar } from "@/components/app-sidebar"
 import { AuthProvider } from "@/components/auth-provider"
-import { DatabaseActions } from "@/components/database-actions"
 import { ThemeSelector } from "@/components/theme-selector"
 import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar"
 import { requireActiveUser } from "@/lib/supabase/auth"
 
 export const runtime = "nodejs"
+export const dynamic = "force-dynamic"
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   let res
@@ -40,9 +40,14 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   return (
     <AuthProvider>
       <SidebarProvider>
-        <div className="flex h-full">
+        <div className="flex h-full w-full min-w-0">
           <AppSidebar />
-          <div className="flex-1 flex flex-col min-h-screen w-full max-w-full overflow-hidden">
+          {/*
+            min-w-0 is critical in flex layouts to prevent the content area
+            from shrinking incorrectly (which can manifest as a large blank
+            area on the right on wide screens).
+          */}
+          <div className="flex-1 min-w-0 flex flex-col min-h-screen w-full max-w-full overflow-hidden">
             <header className="border-b bg-background sticky top-0 z-10">
               <div className="flex h-16 items-center px-4 justify-between">
                 <div className="flex items-center">
@@ -50,12 +55,12 @@ export default async function AppLayout({ children }: { children: React.ReactNod
                   <div id="page-title" className="ml-4 text-xl font-bold"></div>
                 </div>
                 <div className="flex items-center gap-2">
-                  <DatabaseActions />
+                  
                   <ThemeSelector />
                 </div>
               </div>
             </header>
-            <main className="flex-1 w-full max-w-full overflow-hidden">{children}</main>
+            <main className="flex-1 min-w-0 w-full max-w-full overflow-x-hidden overflow-y-auto">{children}</main>
           </div>
         </div>
       </SidebarProvider>

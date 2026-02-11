@@ -1,13 +1,20 @@
 import type { SupabaseClient } from "@supabase/supabase-js"
 
-export async function listExperiments(supabase: SupabaseClient) {
-  const { data, error } = await supabase
-    .from("experiments")
-    .select("*")
-    .order("id", { ascending: false })
+/**
+ * ATENÇÃO (legacy):
+ * Este arquivo existia com um schema antigo (user_id, start_date snake_case, etc.).
+ * Para evitar imports acidentais quebrando o sistema, mantemos wrappers compatíveis
+ * apontando para as funções oficiais em lib/supabase/experiments.ts.
+ */
 
-  if (error) throw error
-  return data ?? []
+import {
+  getExperiments,
+  createExperiment as createExperimentOfficial,
+  type Experiment,
+} from "@/lib/supabase/experiments"
+
+export async function listExperiments(supabase: SupabaseClient): Promise<Experiment[]> {
+  return await getExperiments(supabase)
 }
 
 export async function createExperiment(
@@ -18,18 +25,19 @@ export async function createExperiment(
     strain?: string
     repetition_count: number
     test_count: number
-    test_types?: string[]
-  }
+  },
 ) {
   const { data: auth } = await supabase.auth.getUser()
   if (!auth.user) throw new Error("Not authenticated")
 
-  const { data, error } = await supabase
-    .from("experiments")
-    .insert({ user_id: auth.user.id, ...input })
-    .select("*")
-    .single()
+  const startDate = input.start_date ?? new Date().toISOString().slice(0, 10)
 
-  if (error) throw error
-  return data
+  return await createExperimentOfficial(supabase, {
+    number: input.number,
+    strain: input.strain ?? "N/A",
+    startDate,
+    testCount: input.test_count,
+    repetitionCount: input.repetition_count,
+    createdBy: auth.user.id,
+  })
 }

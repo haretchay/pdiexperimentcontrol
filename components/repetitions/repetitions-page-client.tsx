@@ -7,7 +7,7 @@ import type { UIRepetition } from "@/app/(app)/repetitions/page"
 
 export function RepetitionsPageClient({ initialRepetitions }: { initialRepetitions: UIRepetition[] }) {
   return (
-    <div className="container mx-auto p-4">
+    <div className="w-full px-4 py-4 sm:px-6 lg:px-8">
       <PageTitle title="Repetições" />
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">

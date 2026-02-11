@@ -1,14 +1,17 @@
-// @ts-nocheck
 "use client"
 
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { ArrowLeft, Edit, Camera } from "lucide-react"
+import { ArrowLeft, Edit, Camera, Download } from "lucide-react"
 import Link from "next/link"
 import { useParams, useRouter } from "next/navigation"
 import { useEffect, useMemo, useState } from "react"
+import jsPDF from "jspdf"
+import QRCodeLib from "qrcode"
 import { PhotoGridDisplay } from "@/components/camera/photo-grid-display"
 import { createClient } from "@/lib/supabase/client"
+import { SignedUrlCache } from "@/lib/pdi/signed-url-cache"
+import { getSignedUrlsForPaths } from "@/lib/pdi/test-photos"
 
 type PhotoRow = {
   id: string
@@ -16,12 +19,15 @@ type PhotoRow = {
   day: 7 | 14
   storage_path: string
   created_at: string
+  kind?: "single" | "merged"
+  photo_index?: number | null
 }
 
 export default function TestViewPage() {
   const params = useParams()
   const router = useRouter()
   const supabase = useMemo(() => createClient(), [])
+  const signedUrlCache = useMemo(() => new SignedUrlCache(), [])
 
   const {
     id: experimentId,
@@ -45,16 +51,6 @@ export default function TestViewPage() {
     const pastDaysOfYear = (date.getTime() - firstDayOfYear.getTime()) / 86400000
     return Math.ceil((pastDaysOfYear + firstDayOfYear.getDay() + 1) / 7)
   }
-
-  async function storagePathToUrl(path: string) {
-    const { data, error } = await supabase.storage.from("test-photos").createSignedUrl(path, 60 * 60)
-    if (error || !data?.signedUrl) {
-      console.error("[v0] Erro ao criar signed URL:", error)
-      return ""
-    }
-    return data.signedUrl
-  }
-
   useEffect(() => {
     let cancelled = false
     ;(async () => {
@@ -81,21 +77,50 @@ export default function TestViewPage() {
 
         if (tErr) throw tErr
 
+        const ENABLE_INDIVIDUAL_PHOTOS = false
+
         const { data: photos, error: pErr } = await supabase
           .from("test_photos")
-          .select("id, test_id, day, storage_path, created_at")
+          .select("id, test_id, day, storage_path, created_at, kind, photo_index")
           .eq("test_id", t.id)
-          .order("created_at", { ascending: true })
+          .eq("kind", ENABLE_INDIVIDUAL_PHOTOS ? "single" : "merged")
+          .order("created_at", { ascending: false })
 
         if (pErr) throw pErr
 
-        const photos7 = (photos ?? []).filter((p: PhotoRow) => p.day === 7)
-        const photos14 = (photos ?? []).filter((p: PhotoRow) => p.day === 14)
+        let paths7: string[] = []
+        let paths14: string[] = []
 
-        const urls7 = await Promise.all(photos7.map((p: PhotoRow) => storagePathToUrl(p.storage_path)))
-        const urls14 = await Promise.all(photos14.map((p: PhotoRow) => storagePathToUrl(p.storage_path)))
+        if (ENABLE_INDIVIDUAL_PHOTOS) {
+          // modo antigo: 6 fotos individuais
+          const photos7 = (photos ?? []).filter((p: PhotoRow) => p.day === 7)
+          const photos14 = (photos ?? []).filter((p: PhotoRow) => p.day === 14)
 
-        const mapped = {
+          const ordered7 = [...photos7].sort(
+            (a: PhotoRow, b: PhotoRow) =>
+              (a.photo_index ?? 999) - (b.photo_index ?? 999) ||
+              new Date(a.created_at).getTime() - new Date(b.created_at).getTime(),
+          )
+          const ordered14 = [...photos14].sort(
+            (a: PhotoRow, b: PhotoRow) =>
+              (a.photo_index ?? 999) - (b.photo_index ?? 999) ||
+              new Date(a.created_at).getTime() - new Date(b.created_at).getTime(),
+          )
+
+          paths7 = ordered7.map((p: PhotoRow) => p.storage_path).filter(Boolean)
+          paths14 = ordered14.map((p: PhotoRow) => p.storage_path).filter(Boolean)
+        } else {
+          // modo econômico: apenas 1 mosaico por dia (pega o mais recente)
+          const merged7 = (photos ?? []).find((p: PhotoRow) => p.day === 7)
+          const merged14 = (photos ?? []).find((p: PhotoRow) => p.day === 14)
+          if (merged7?.storage_path) paths7 = [merged7.storage_path]
+          if (merged14?.storage_path) paths14 = [merged14.storage_path]
+        }
+
+        const urls7 = await getSignedUrlsForPaths(supabase, paths7, { cache: signedUrlCache })
+        const urls14 = await getSignedUrlsForPaths(supabase, paths14, { cache: signedUrlCache })
+
+const mapped = {
           unit: t.unit,
           requisition: t.requisition,
           testLot: t.test_lot,
@@ -140,6 +165,86 @@ export default function TestViewPage() {
   const currentDate = new Date()
   const weekNumber = getWeekNumber(currentDate)
 
+  // QR code (para esta página de view)
+  const pageUrl = useMemo(() => {
+    if (typeof window === "undefined") return ""
+    return window.location.href
+  }, [experimentId, repetitionId, testId])
+
+  const [qrDataUrl, setQrDataUrl] = useState<string | null>(null)
+  const [qrBusy, setQrBusy] = useState(false)
+
+  const fmt = (v: any, suffix?: string) => {
+    if (v === null || v === undefined || v === "") return "Não informado"
+    const n = typeof v === "number" ? v : Number(v)
+    if (Number.isFinite(n)) return `${n}${suffix ? ` ${suffix}` : ""}`
+    return `${String(v)}${suffix ? ` ${suffix}` : ""}`
+  }
+
+  useEffect(() => {
+    let cancelled = false
+
+    ;(async () => {
+      if (!pageUrl) return
+      try {
+        const dataUrl = await QRCodeLib.toDataURL(pageUrl, {
+          margin: 1,
+          width: 600,
+          errorCorrectionLevel: "M",
+        })
+        if (!cancelled) setQrDataUrl(dataUrl)
+      } catch (e) {
+        console.error("Erro ao gerar QR code", e)
+        if (!cancelled) setQrDataUrl(null)
+      }
+    })()
+
+    return () => {
+      cancelled = true
+    }
+  }, [pageUrl])
+
+  const handleDownloadQrPdf = async () => {
+    if (!qrDataUrl) return
+    try {
+      setQrBusy(true)
+
+      const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" })
+
+      const pageW = doc.internal.pageSize.getWidth()
+      const margin = 16
+      const qrSize = 90
+      const x = (pageW - qrSize) / 2
+      const y = 28
+
+      doc.setFontSize(14)
+      doc.text("QR Code do teste", margin, 18)
+
+      doc.addImage(qrDataUrl, "PNG", x, y, qrSize, qrSize)
+
+      doc.setFontSize(10)
+      const caption = [
+        `Experimento: ${experimentId}`,
+        `Repetição: ${repetitionId} | Teste: ${testId}`,
+        `Cepa: ${testData?.strain || "-"} | Lote: ${testData?.testLot || "-"}`,
+      ]
+
+      let cy = y + qrSize + 10
+      for (const line of caption) {
+        doc.text(line, margin, cy)
+        cy += 6
+      }
+
+      doc.setFontSize(8)
+      const urlLines = doc.splitTextToSize(pageUrl, pageW - margin * 2)
+      doc.text(urlLines, margin, cy + 4)
+
+      doc.save(`qr_teste_${String(testId)}_rep_${String(repetitionId)}.pdf`)
+    } finally {
+      setQrBusy(false)
+    }
+  }
+
   if (loading) return <div className="container mx-auto p-4">Carregando detalhes do teste...</div>
   if (!testData) return <div className="container mx-auto p-4">Teste não encontrado</div>
 
@@ -158,13 +263,25 @@ export default function TestViewPage() {
           </h1>
         </div>
 
-        <Button
-          onClick={() => router.push(`/experiments/${experimentId}/repetition/${repetitionId}/test/${testId}`)}
-          className="flex items-center gap-1 w-full sm:w-auto"
-        >
-          <Edit className="h-4 w-4" />
-          Editar Teste
-        </Button>
+        <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
+          <Button
+            onClick={() => router.push(`/experiments/${experimentId}/repetition/${repetitionId}/test/${testId}`)}
+            className="flex items-center gap-1 w-full sm:w-auto"
+          >
+            <Edit className="h-4 w-4" />
+            Editar Teste
+          </Button>
+
+          <Button
+            variant="secondary"
+            onClick={handleDownloadQrPdf}
+            disabled={!qrDataUrl || qrBusy}
+            className="flex items-center gap-1 w-full sm:w-auto"
+          >
+            <Download className="h-4 w-4" />
+            QR Code (PDF)
+          </Button>
+        </div>
       </div>
 
       <Card className="mb-6">
@@ -215,6 +332,25 @@ export default function TestViewPage() {
               <p className="font-medium">{testData.mpLot}</p>
             </div>
           </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+            <div>
+              <h3 className="text-sm font-medium text-muted-foreground">Quantidade da Amostra</h3>
+              <p className="font-medium">{fmt(testData.quantity, "kg")}</p>
+            </div>
+            <div>
+              <h3 className="text-sm font-medium text-muted-foreground">Bozo</h3>
+              <p className="font-medium">{fmt(testData.bozo, "min")}</p>
+            </div>
+            <div>
+              <h3 className="text-sm font-medium text-muted-foreground">Média umidade</h3>
+              <p className="font-medium">{fmt(testData.averageHumidity, "%")}</p>
+            </div>
+            <div>
+              <h3 className="text-sm font-medium text-muted-foreground">Sensorial</h3>
+              <p className="font-medium">{fmt(testData.sensorial, "pts")}</p>
+            </div>
+          </div>
         </CardContent>
       </Card>
 
@@ -233,11 +369,11 @@ export default function TestViewPage() {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
               <h3 className="text-sm font-medium text-muted-foreground">Temp 7º dia - Câmara</h3>
-              <p className="font-medium">{testData.temp7Chamber ? `${testData.temp7Chamber} ºC` : "Não informado"}</p>
+              <p className="font-medium">{testData.temp7Chamber === null || testData.temp7Chamber === undefined ? "Não informado" : `${testData.temp7Chamber} ºC`}</p>
             </div>
             <div>
               <h3 className="text-sm font-medium text-muted-foreground">Temp 7º dia - Arroz</h3>
-              <p className="font-medium">{testData.temp7Rice ? `${testData.temp7Rice} ºC` : "Não informado"}</p>
+              <p className="font-medium">{testData.temp7Rice === null || testData.temp7Rice === undefined ? "Não informado" : `${testData.temp7Rice} ºC`}</p>
             </div>
           </div>
 
@@ -284,11 +420,11 @@ export default function TestViewPage() {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
               <h3 className="text-sm font-medium text-muted-foreground">Temp 14º dia - Câmara</h3>
-              <p className="font-medium">{testData.temp14Chamber ? `${testData.temp14Chamber} ºC` : "Não informado"}</p>
+              <p className="font-medium">{testData.temp14Chamber === null || testData.temp14Chamber === undefined ? "Não informado" : `${testData.temp14Chamber} ºC`}</p>
             </div>
             <div>
               <h3 className="text-sm font-medium text-muted-foreground">Temp 14º dia - Arroz</h3>
-              <p className="font-medium">{testData.temp14Rice ? `${testData.temp14Rice} ºC` : "Não informado"}</p>
+              <p className="font-medium">{testData.temp14Rice === null || testData.temp14Rice === undefined ? "Não informado" : `${testData.temp14Rice} ºC`}</p>
             </div>
           </div>
 
@@ -328,16 +464,16 @@ export default function TestViewPage() {
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div>
               <h3 className="text-sm font-medium text-muted-foreground">Peso Úmido</h3>
-              <p className="font-medium">{testData.wetWeight ? `${testData.wetWeight} g` : "Não informado"}</p>
+              <p className="font-medium">{fmt(testData.wetWeight, "kg")}</p>
             </div>
             <div>
               <h3 className="text-sm font-medium text-muted-foreground">Peso Seco</h3>
-              <p className="font-medium">{testData.dryWeight ? `${testData.dryWeight} g` : "Não informado"}</p>
+              <p className="font-medium">{fmt(testData.dryWeight, "kg")}</p>
             </div>
             <div>
               <h3 className="text-sm font-medium text-muted-foreground">Peso Conídio Extraído</h3>
               <p className="font-medium">
-                {testData.extractedConidiumWeight ? `${testData.extractedConidiumWeight} g` : "Não informado"}
+                {fmt(testData.extractedConidiumWeight, "kg")}
               </p>
             </div>
           </div>

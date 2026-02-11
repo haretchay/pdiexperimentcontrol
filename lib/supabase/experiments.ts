@@ -108,6 +108,11 @@ export type Test = {
   updatedAt: string
 }
 
+export type ExperimentWithTests = Experiment & {
+  tests: Test[]
+}
+
+
 function mapExperiment(row: DbExperimentRow): Experiment {
   return {
     id: row.id,
@@ -271,7 +276,49 @@ export async function createExperiment(
 /**
  * Deleta experimento (admin-only no seu RLS)
  */
-export async function deleteExperiment(supabase: SupabaseClient, id: string): Promise<void> {
-  const { error } = await supabase.from("experiments").delete().eq("id", id)
+export async function deleteExperiment(supabase: SupabaseClient, experimentId: string) {
+  // No browser, usamos uma rota API que também remove as mídias do Storage.
+  if (typeof window !== "undefined") {
+    const res = await fetch(`/api/experiments/${experimentId}/delete`, { method: "POST" })
+    if (!res.ok) {
+      const msg = await res.text().catch(() => "")
+      throw new Error(msg || `Falha ao excluir experimento (${res.status})`)
+    }
+    return
+  }
+
+  // Fallback (server): apenas remove a linha do experimento.
+  const { error } = await supabase.from("experiments").delete().eq("id", experimentId)
   if (error) throw error
+}
+
+/**
+ * Lista experimentos já com os testes (1 chamada só).
+ * Útil para dashboard para evitar N+1 queries.
+ */
+export async function getExperimentsWithTests(supabase: SupabaseClient): Promise<ExperimentWithTests[]> {
+  try {
+    const { data, error } = await supabase
+      .from("experiments")
+      .select("id, number, strain, start_date, test_count, repetition_count, created_by, created_at, tests (*)")
+      .order("number", { ascending: false })
+
+    if (error) {
+      console.error("[Experiments] Error fetching experiments with tests:", error)
+      return []
+    }
+
+    const rows = (data ?? []) as any[]
+    return rows.map((row) => {
+      const exp = mapExperiment(row as any)
+      const tests = (row.tests ?? []) as any[]
+      return {
+        ...exp,
+        tests: tests.map(mapTest),
+      }
+    })
+  } catch (err) {
+    console.error("[Experiments] Exception fetching experiments with tests:", err)
+    return []
+  }
 }

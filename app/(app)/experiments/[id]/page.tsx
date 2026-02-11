@@ -9,6 +9,7 @@ import { ArrowLeft, Edit, Share2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { ExportExperimentQRCodesButton } from "@/components/experiments/qr-export-buttons"
 
 import { useCardColors } from "@/lib/color-utils"
 import { useIsMobile } from "@/hooks/use-mobile"
@@ -204,6 +205,42 @@ export default function ExperimentDetailPage() {
   const isMobile = useIsMobile()
   const { toast } = useToast()
   const [isSharing, setIsSharing] = useState(false)
+
+  // Backwards-compatible alias: some old bundles referenced `testInfoByKey`.
+  // Keeping this avoids runtime crashes if a stale chunk is served.
+  const testInfoByKey = useMemo(() => testData ?? {}, [testData])
+
+  // Lista achatada de testes (rep/test) para exportação de QR Codes do experimento.
+  // Ordem estável: Rep 1..N, Teste 1..N. Usa fallback para cepa/lotes quando faltarem dados no teste.
+  const qrTests = useMemo(() => {
+    if (!experiment) return []
+
+    const items: {
+      repetitionNumber: number
+      testNumber: number
+      strain: string | null
+      testLot: string | null
+      matrixLot: string | null
+    }[] = []
+
+    for (let rep = 1; rep <= experiment.repetitionCount; rep++) {
+      for (let test = 1; test <= experiment.testCount; test++) {
+        const key = `${rep}_${test}`
+        const info = testData[key]
+
+        items.push({
+          repetitionNumber: rep,
+          testNumber: test,
+          strain: (info?.strain ?? experiment.strain) ?? null,
+          testLot: info?.testLot ?? null,
+          matrixLot: info?.matrixLot ?? null,
+        })
+      }
+    }
+
+    return items
+  }, [experiment, testData])
+
 
   useEffect(() => {
     let cancelled = false
@@ -721,6 +758,22 @@ export default function ExperimentDetailPage() {
             Voltar
           </Button>
         </Link>
+      </div>
+
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between mb-6">
+        <div>
+          <h1 className="text-2xl sm:text-3xl font-bold">Experimento {experiment.number}</h1>
+          <p className="text-muted-foreground">{experiment.strain}</p>
+        </div>
+
+        <div className="flex flex-wrap gap-2">
+          <ExportExperimentQRCodesButton
+            experimentId={experiment.id}
+            experimentNumber={experiment.number}
+            experimentStrain={experiment.strain}
+            tests={qrTests}
+          />
+        </div>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">

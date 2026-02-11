@@ -1,18 +1,21 @@
-// @ts-nocheck
 "use client"
 
-import { useEffect, useMemo, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import { useParams, useRouter } from "next/navigation"
 import { z } from "zod"
 import { useForm } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
+import { saveMergedPhotosForDay } from "@/lib/pdi/merged-photos"
+
 
 import { createClient } from "@/lib/supabase/client"
-import { assertValidTestPhotoPath, buildTestPhotoPath } from "@/lib/pdi/storage-path"
+import { SignedUrlCache } from "@/lib/pdi/signed-url-cache"
+import { getSignedUrlsForPaths, replaceMergedDayPhoto } from "@/lib/pdi/test-photos"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form"
 import { Input } from "@/components/ui/input"
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { PhotoCaptureWorkflow } from "@/components/camera/photo-capture-workflow"
 import { Camera, Check } from "lucide-react"
@@ -34,6 +37,103 @@ const toNumberOrUndefined = (v: unknown) => {
 
 const isDataUrlImage = (s?: string) => typeof s === "string" && s.startsWith("data:image/")
 const hasNewCapturedPhotos = (photos: string[]) => Array.isArray(photos) && photos.some((p) => isDataUrlImage(p))
+
+function NumberInputWithSuffix({
+  value,
+  onChange,
+  step,
+  suffix,
+}: {
+  value: any
+  onChange: any
+  step?: string
+  suffix: string
+}) {
+  return (
+    <div className="relative">
+      <Input
+        type="number"
+        step={step}
+        value={value ?? ""}
+        onChange={onChange}
+        className="pr-12"
+      />
+      <div className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-xs text-muted-foreground">
+        {suffix}
+      </div>
+    </div>
+  )
+}
+
+
+async function createMosaicBlob(imageDataUrls: string[]) {
+  // Mosaico 3x2 (6 fotos): mantém zoom normal ao abrir a imagem final
+  const cols = 3
+  const rows = 2
+  const cellW = 1000
+  const cellH = 750
+  const gutter = 6
+  const quality = 0.9
+
+  const load = (src: string) =>
+    new Promise<HTMLImageElement>((resolve, reject) => {
+      const img = new Image()
+      img.crossOrigin = "anonymous"
+      img.onload = () => resolve(img)
+      img.onerror = () => reject(new Error("Falha ao carregar imagem para mosaico"))
+      img.src = src
+    })
+
+  const imgs = await Promise.all(imageDataUrls.slice(0, 6).map((u) => load(u)))
+
+  const canvas = document.createElement("canvas")
+  canvas.width = cols * cellW
+  canvas.height = rows * cellH
+
+  const ctx = canvas.getContext("2d")
+  if (!ctx) throw new Error("Canvas 2D indisponível")
+
+  // fundo escuro compatível com tema
+  ctx.fillStyle = "#111827"
+  ctx.fillRect(0, 0, canvas.width, canvas.height)
+  const drawContain = (img: HTMLImageElement, dx: number, dy: number, dw: number, dh: number) => {
+    const iw = img.naturalWidth || img.width
+    const ih = img.naturalHeight || img.height
+    const ir = iw / ih
+    const dr = dw / dh
+
+    let rw = dw
+    let rh = dh
+    if (ir > dr) {
+      rh = dw / ir
+    } else {
+      rw = dh * ir
+    }
+
+    const x = dx + (dw - rw) / 2
+    const y = dy + (dh - rh) / 2
+
+    ctx.fillStyle = "#111827"
+    ctx.fillRect(dx, dy, dw, dh)
+
+    ctx.drawImage(img, x, y, rw, rh)
+  }
+
+
+  imgs.forEach((img, i) => {
+    const col = i % cols
+    const row = Math.floor(i / cols)
+    const x = col * cellW
+    const y = row * cellH
+    drawContain(img, x + gutter, y + gutter, cellW - gutter * 2, cellH - gutter * 2)
+  })
+
+  const blob = await new Promise<Blob>((resolve, reject) => {
+    canvas.toBlob((b) => (b ? resolve(b) : reject(new Error("Falha ao gerar JPG do mosaico"))), "image/jpeg", quality)
+  })
+
+  return blob
+}
 
 const formSchema = z.object({
   unit: z.enum(["americana", "salto"]).optional(),
@@ -83,6 +183,7 @@ export default function TestEditPage() {
   const testNumber = Number(testId)
 
   const supabase = useMemo(() => createClient(), [])
+  const signedUrlCache = useMemo(() => new SignedUrlCache(), [])
 
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -98,6 +199,17 @@ export default function TestEditPage() {
   // Anotações (legendas) por índice de foto (0..n-1)
   const [annotations7Day, setAnnotations7Day] = useState<AnnotationsByPhotoIndex>({})
   const [annotations14Day, setAnnotations14Day] = useState<AnnotationsByPhotoIndex>({})
+
+  // Preview de fotos já salvas (mosaico) ao editar
+  const [existingMerged7Url, setExistingMerged7Url] = useState<string | null>(null)
+  const [existingMerged14Url, setExistingMerged14Url] = useState<string | null>(null)
+
+  // Modal para visualizar/decidir manter ou refazer
+  const [openDayPreview, setOpenDayPreview] = useState<7 | 14 | null>(null)
+
+  // Backup das fotos carregadas (URLs) caso o usuário clique em "Refazer" e depois cancele
+  const prevPhotos7Ref = useRef<string[] | null>(null)
+  const prevPhotos14Ref = useRef<string[] | null>(null)
 
   const [testDbId, setTestDbId] = useState<string | null>(null)
   const [experiment, setExperiment] = useState<any>(null)
@@ -127,17 +239,6 @@ export default function TestEditPage() {
       extractedConidiumWeight: undefined,
     },
   })
-
-  async function storagePathToUrl(path: string) {
-    // Preferir signed URL (funciona em bucket privado e público)
-    const { data, error } = await supabase.storage.from("test-photos").createSignedUrl(path, 60 * 60)
-    if (error || !data?.signedUrl) {
-      console.error("[v0] Erro ao criar signed URL:", error)
-      return ""
-    }
-    return data.signedUrl
-  }
-
   useEffect(() => {
     let cancelled = false
     ;(async () => {
@@ -200,22 +301,52 @@ export default function TestEditPage() {
 
         const { data: existingPhotos } = await supabase
           .from("test_photos")
-          .select("day, storage_path, created_at")
+          .select("day, storage_path, created_at, kind, photo_index")
           .eq("test_id", data.id)
           .order("created_at", { ascending: true })
 
         if (existingPhotos) {
-          const photos7 = existingPhotos.filter((p: any) => p.day === 7)
-          const photos14 = existingPhotos.filter((p: any) => p.day === 14)
+          const singles = existingPhotos.filter((p: any) => !p.kind || p.kind === "single")
+          const photos7 = singles.filter((p: any) => p.day === 7)
+          const photos14 = singles.filter((p: any) => p.day === 14)
 
           if (photos7.length > 0) {
-            const urls7 = await Promise.all(photos7.map((p: any) => storagePathToUrl(p.storage_path)))
-            setPhotos7Day(urls7.filter(Boolean))
+            const ordered7 = [...photos7].sort(
+              (a: any, b: any) =>
+                (a.photo_index ?? 999) - (b.photo_index ?? 999) ||
+                new Date(a.created_at).getTime() - new Date(b.created_at).getTime(),
+            )
+            const paths7 = ordered7.map((p: any) => p.storage_path).filter(Boolean)
+            const urls7 = await getSignedUrlsForPaths(supabase, paths7, { cache: signedUrlCache })
+            const clean7 = urls7.filter(Boolean)
+            setPhotos7Day(clean7)
+            // se existir merged (mosaico), normalmente vem como última ou como único item
+            const merged7 = ordered7.find((p: any) => p.kind === "merged")
+            if (merged7) {
+              const idx = ordered7.findIndex((p: any) => p.kind === "merged")
+              setExistingMerged7Url(clean7[idx] ?? clean7[clean7.length - 1] ?? null)
+            } else {
+              setExistingMerged7Url(clean7[clean7.length - 1] ?? null)
+            }
           }
 
           if (photos14.length > 0) {
-            const urls14 = await Promise.all(photos14.map((p: any) => storagePathToUrl(p.storage_path)))
-            setPhotos14Day(urls14.filter(Boolean))
+            const ordered14 = [...photos14].sort(
+              (a: any, b: any) =>
+                (a.photo_index ?? 999) - (b.photo_index ?? 999) ||
+                new Date(a.created_at).getTime() - new Date(b.created_at).getTime(),
+            )
+            const paths14 = ordered14.map((p: any) => p.storage_path).filter(Boolean)
+            const urls14 = await getSignedUrlsForPaths(supabase, paths14, { cache: signedUrlCache })
+            const clean14 = urls14.filter(Boolean)
+            setPhotos14Day(clean14)
+            const merged14 = ordered14.find((p: any) => p.kind === "merged")
+            if (merged14) {
+              const idx = ordered14.findIndex((p: any) => p.kind === "merged")
+              setExistingMerged14Url(clean14[idx] ?? clean14[clean14.length - 1] ?? null)
+            } else {
+              setExistingMerged14Url(clean14[clean14.length - 1] ?? null)
+            }
           }
         }
       } catch (e) {
@@ -229,66 +360,6 @@ export default function TestEditPage() {
       cancelled = true
     }
   }, [supabase, experimentId, repetitionNumber, testNumber, form])
-
-    async function savePhotosToStorage(photos: string[], day: 7 | 14, userId: string) {
-    if (!testDbId) return
-
-    // Segurança: só faz upload se forem fotos NOVAS (dataURL).
-    // Se forem URLs antigas, NÃO re-upar / NÃO deletar nada.
-    if (!hasNewCapturedPhotos(photos)) return
-
-    try {
-      // Deletar fotos antigas do dia específico (somente porque vamos substituir)
-      const { data: oldPhotos } = await supabase
-        .from("test_photos")
-        .select("storage_path")
-        .eq("test_id", testDbId)
-        .eq("day", day)
-
-      if (oldPhotos && oldPhotos.length > 0) {
-        const pathsToDelete = oldPhotos.map((p: any) => p.storage_path)
-        await supabase.storage.from("test-photos").remove(pathsToDelete)
-        await supabase.from("test_photos").delete().eq("test_id", testDbId).eq("day", day)
-      }
-
-      // Fazer upload das novas fotos (dataURL)
-      for (let i = 0; i < photos.length; i++) {
-        const photo = photos[i]
-        if (!isDataUrlImage(photo)) continue
-
-        const response = await fetch(photo)
-        const blob = await response.blob()
-
-        const fileName = `day${day}_photo${i + 1}_${Date.now()}.jpg`
-        const filePath = buildTestPhotoPath({
-        userId,
-        testId: testDbId,
-        day,
-        index: i + 1,
-        ext: "jpg",
-      })
-
-      assertValidTestPhotoPath(filePath, { userId, testId: testDbId })
-
-
-        const { error: uploadError } = await supabase.storage.from("test-photos").upload(filePath, blob, {
-          contentType: "image/jpeg",
-          upsert: true,
-        })
-        if (uploadError) throw uploadError
-
-        const { error: dbError } = await supabase.from("test_photos").insert({
-          test_id: testDbId,
-          day: day,
-          storage_path: filePath,
-        })
-        if (dbError) throw dbError
-      }
-    } catch (error) {
-      console.error(`Erro ao salvar fotos do ${day}º dia:`, error)
-      throw error
-    }
-  }
 
   async function onSubmit(values: FormValues) {
     setSaving(true)
@@ -348,11 +419,25 @@ export default function TestEditPage() {
       if (error) throw error
 
       // ✅ Só mexe no storage se tiver foto NOVA (dataURL)
-      if (photos7Day.length > 0 && hasNewCapturedPhotos(photos7Day)) {
-        await savePhotosToStorage(photos7Day, 7, user.id)
+      // ✅ Fotos: substitui o dia somente se o usuário recapturou (dataURL)
+      if (photos7Day.length > 0 && hasNewCapturedPhotos(photos7Day) && testDbId) {
+        // ✅ MODO ECONÔMICO: salva SOMENTE o mosaico (kind='merged') do 7º dia
+        // (as 6 fotos individuais continuam no código, mas o salvamento está desativado por enquanto)
+        if (photos7Day.every((p) => isDataUrlImage(p)) && photos7Day.length >= 6) {
+          const mosaicBlob = await createMosaicBlob(photos7Day.slice(0, 6))
+          await replaceMergedDayPhoto({ supabase, userId: user.id, testId: testDbId, day: 7, mosaicBlob })
+        } else {
+          throw new Error("Para salvar as fotos do 7º dia, capture as 6 fotos antes de salvar.")
+        }
       }
-      if (photos14Day.length > 0 && hasNewCapturedPhotos(photos14Day)) {
-        await savePhotosToStorage(photos14Day, 14, user.id)
+      if (photos14Day.length > 0 && hasNewCapturedPhotos(photos14Day) && testDbId) {
+        // ✅ MODO ECONÔMICO: salva SOMENTE o mosaico (kind='merged') do 14º dia
+        if (photos14Day.every((p) => isDataUrlImage(p)) && photos14Day.length >= 6) {
+          const mosaicBlob = await createMosaicBlob(photos14Day.slice(0, 6))
+          await replaceMergedDayPhoto({ supabase, userId: user.id, testId: testDbId, day: 14, mosaicBlob })
+        } else {
+          throw new Error("Para salvar as fotos do 14º dia, capture as 6 fotos antes de salvar.")
+        }
       }
 
       router.push(`/experiments/${experimentId}/repetition/${repetitionId}/test/${testId}/view`)
@@ -384,7 +469,14 @@ export default function TestEditPage() {
     return (
       <PhotoCaptureWorkflow
         onComplete={handleCapture7DayComplete}
-        onCancel={() => setIsCapturing7Day(false)}
+        onCancel={() => {
+          setIsCapturing7Day(false)
+          if (prevPhotos7Ref.current) {
+            setPhotos7Day(prevPhotos7Ref.current)
+            prevPhotos7Ref.current = null
+            setAnnotations7Day({})
+          }
+        }}
         testInfo={{
           experimentNumber: experiment?.number || experimentId,
           repetitionNumber: String(repetitionId),
@@ -405,7 +497,14 @@ export default function TestEditPage() {
     return (
       <PhotoCaptureWorkflow
         onComplete={handleCapture14DayComplete}
-        onCancel={() => setIsCapturing14Day(false)}
+        onCancel={() => {
+          setIsCapturing14Day(false)
+          if (prevPhotos14Ref.current) {
+            setPhotos14Day(prevPhotos14Ref.current)
+            prevPhotos14Ref.current = null
+            setAnnotations14Day({})
+          }
+        }}
         testInfo={{
           experimentNumber: experiment?.number || experimentId,
           repetitionNumber: String(repetitionId),
@@ -563,7 +662,7 @@ export default function TestEditPage() {
                     <FormItem>
                       <FormLabel>Média umidade</FormLabel>
                       <FormControl>
-                        <Input type="number" step="0.1" value={field.value ?? ""} onChange={field.onChange} />
+                        <NumberInputWithSuffix value={field.value} onChange={field.onChange} step="0.1" suffix="%" />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -574,9 +673,9 @@ export default function TestEditPage() {
                   name="bozo"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Bozo</FormLabel>
+                      <FormLabel>Bozo (min)</FormLabel>
                       <FormControl>
-                        <Input type="number" step="0.1" value={field.value ?? ""} onChange={field.onChange} />
+                        <NumberInputWithSuffix value={field.value} onChange={field.onChange} step="0.1" suffix="min" />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -589,7 +688,7 @@ export default function TestEditPage() {
                     <FormItem>
                       <FormLabel>Sensorial</FormLabel>
                       <FormControl>
-                        <Input type="number" step="0.1" value={field.value ?? ""} onChange={field.onChange} />
+                        <NumberInputWithSuffix value={field.value} onChange={field.onChange} step="0.1" suffix="pts" />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -600,9 +699,9 @@ export default function TestEditPage() {
                   name="quantity"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Quantidade</FormLabel>
+                      <FormLabel>Quantidade da Amostra (kg)</FormLabel>
                       <FormControl>
-                        <Input type="number" step="0.1" value={field.value ?? ""} onChange={field.onChange} />
+                        <NumberInputWithSuffix value={field.value} onChange={field.onChange} step="0.1" suffix="kg" />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -635,10 +734,10 @@ export default function TestEditPage() {
                     name="temp7Chamber"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>Temp 7 Câmara</FormLabel>
-                        <FormControl>
-                          <Input type="number" step="0.1" value={field.value ?? ""} onChange={field.onChange} />
-                        </FormControl>
+                      <FormLabel>Temp 7 Câmara (ºC)</FormLabel>
+                      <FormControl>
+                        <NumberInputWithSuffix value={field.value} onChange={field.onChange} step="0.1" suffix="ºC" />
+                      </FormControl>
                       </FormItem>
                     )}
                   />
@@ -647,10 +746,10 @@ export default function TestEditPage() {
                     name="temp7Rice"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>Temp 7 Arroz</FormLabel>
-                        <FormControl>
-                          <Input type="number" step="0.1" value={field.value ?? ""} onChange={field.onChange} />
-                        </FormControl>
+                      <FormLabel>Temp 7 Arroz (ºC)</FormLabel>
+                      <FormControl>
+                        <NumberInputWithSuffix value={field.value} onChange={field.onChange} step="0.1" suffix="ºC" />
+                      </FormControl>
                       </FormItem>
                     )}
                   />
@@ -659,7 +758,16 @@ export default function TestEditPage() {
                 <Button
                   type="button"
                   variant={photos7Day.length > 0 ? "default" : "outline"}
-                  onClick={() => setIsCapturing7Day(true)}
+                  onClick={() => {
+                    // Se já existe mosaico salvo e não há novas capturas (dataURL), abre modal para decidir
+                    if (existingMerged7Url && !hasNewCapturedPhotos(photos7Day)) {
+                      setOpenDayPreview(7)
+                      return
+                    }
+                    // caso contrário, captura normalmente
+                    prevPhotos7Ref.current = photos7Day?.length ? [...photos7Day] : null
+                    setIsCapturing7Day(true)
+                  }}
                   className="w-full"
                 >
                   <Camera className="h-4 w-4 mr-2" />
@@ -672,6 +780,19 @@ export default function TestEditPage() {
                     "Capturar Fotos do 7º dia"
                   )}
                 </Button>
+
+                {Object.keys(annotations7Day || {}).length > 0 && (
+                  <div className="mt-3 rounded-md border p-2">
+                    <div className="text-xs font-medium mb-1">Anotações (7º dia)</div>
+                    <ul className="text-xs text-muted-foreground space-y-1 list-disc pl-4">
+                      {Object.entries(annotations7Day).flatMap(([idx, anns]) =>
+                        (anns || []).map((a, j) => (
+                          <li key={`${idx}-${j}`}>Foto {Number(idx) + 1}: {a.caption}</li>
+                        )),
+                      )}
+                    </ul>
+                  </div>
+                )}
               </div>
 
               <div className="border rounded-lg p-4 space-y-3">
@@ -699,10 +820,10 @@ export default function TestEditPage() {
                     name="temp14Chamber"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>Temp 14 Câmara</FormLabel>
-                        <FormControl>
-                          <Input type="number" step="0.1" value={field.value ?? ""} onChange={field.onChange} />
-                        </FormControl>
+                      <FormLabel>Temp 14 Câmara (ºC)</FormLabel>
+                      <FormControl>
+                        <NumberInputWithSuffix value={field.value} onChange={field.onChange} step="0.1" suffix="ºC" />
+                      </FormControl>
                       </FormItem>
                     )}
                   />
@@ -711,10 +832,10 @@ export default function TestEditPage() {
                     name="temp14Rice"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>Temp 14 Arroz</FormLabel>
-                        <FormControl>
-                          <Input type="number" step="0.1" value={field.value ?? ""} onChange={field.onChange} />
-                        </FormControl>
+                      <FormLabel>Temp 14 Arroz (ºC)</FormLabel>
+                      <FormControl>
+                        <NumberInputWithSuffix value={field.value} onChange={field.onChange} step="0.1" suffix="ºC" />
+                      </FormControl>
                       </FormItem>
                     )}
                   />
@@ -723,7 +844,14 @@ export default function TestEditPage() {
                 <Button
                   type="button"
                   variant={photos14Day.length > 0 ? "default" : "outline"}
-                  onClick={() => setIsCapturing14Day(true)}
+                  onClick={() => {
+                    if (existingMerged14Url && !hasNewCapturedPhotos(photos14Day)) {
+                      setOpenDayPreview(14)
+                      return
+                    }
+                    prevPhotos14Ref.current = photos14Day?.length ? [...photos14Day] : null
+                    setIsCapturing14Day(true)
+                  }}
                   className="w-full"
                 >
                   <Camera className="h-4 w-4 mr-2" />
@@ -736,6 +864,19 @@ export default function TestEditPage() {
                     "Capturar Fotos do 14º dia"
                   )}
                 </Button>
+
+                {Object.keys(annotations14Day || {}).length > 0 && (
+                  <div className="mt-3 rounded-md border p-2">
+                    <div className="text-xs font-medium mb-1">Anotações (14º dia)</div>
+                    <ul className="text-xs text-muted-foreground space-y-1 list-disc pl-4">
+                      {Object.entries(annotations14Day).flatMap(([idx, anns]) =>
+                        (anns || []).map((a, j) => (
+                          <li key={`${idx}-${j}`}>Foto {Number(idx) + 1}: {a.caption}</li>
+                        )),
+                      )}
+                    </ul>
+                  </div>
+                )}
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -744,9 +885,9 @@ export default function TestEditPage() {
                   name="wetWeight"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Peso Úmido</FormLabel>
+                      <FormLabel>Peso Úmido (kg)</FormLabel>
                       <FormControl>
-                        <Input type="number" step="0.01" value={field.value ?? ""} onChange={field.onChange} />
+                        <NumberInputWithSuffix value={field.value} onChange={field.onChange} step="0.01" suffix="kg" />
                       </FormControl>
                     </FormItem>
                   )}
@@ -756,9 +897,9 @@ export default function TestEditPage() {
                   name="dryWeight"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Peso Seco</FormLabel>
+                      <FormLabel>Peso Seco (kg)</FormLabel>
                       <FormControl>
-                        <Input type="number" step="0.01" value={field.value ?? ""} onChange={field.onChange} />
+                        <NumberInputWithSuffix value={field.value} onChange={field.onChange} step="0.01" suffix="kg" />
                       </FormControl>
                     </FormItem>
                   )}
@@ -768,9 +909,9 @@ export default function TestEditPage() {
                   name="extractedConidiumWeight"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Peso conídio extraído</FormLabel>
+                      <FormLabel>Peso conídio extraído (kg)</FormLabel>
                       <FormControl>
-                        <Input type="number" step="0.01" value={field.value ?? ""} onChange={field.onChange} />
+                        <NumberInputWithSuffix value={field.value} onChange={field.onChange} step="0.01" suffix="kg" />
                       </FormControl>
                     </FormItem>
                   )}
@@ -794,6 +935,58 @@ export default function TestEditPage() {
           </Form>
         </CardContent>
       </Card>
+
+
+      <Dialog open={openDayPreview !== null} onOpenChange={(o) => setOpenDayPreview(o ? openDayPreview : null)}>
+        <DialogContent className="max-w-3xl">
+          <DialogHeader>
+            <DialogTitle>
+              {openDayPreview === 7 ? "Fotos do 7º dia" : "Fotos do 14º dia"}
+            </DialogTitle>
+          </DialogHeader>
+
+          <div className="space-y-3">
+            <div className="overflow-hidden rounded-md border bg-black/10">
+              <img
+                src={
+                  openDayPreview === 7
+                    ? existingMerged7Url || ""
+                    : existingMerged14Url || ""
+                }
+                alt={openDayPreview === 7 ? "Foto 7º dia" : "Foto 14º dia"}
+                className="w-full h-auto block"
+              />
+            </div>
+
+            <div className="flex flex-col sm:flex-row gap-2 justify-end">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setOpenDayPreview(null)}
+              >
+                Manter
+              </Button>
+              <Button
+                type="button"
+                onClick={() => {
+                  const day = openDayPreview
+                  setOpenDayPreview(null)
+                  if (day === 7) {
+                    prevPhotos7Ref.current = photos7Day?.length ? [...photos7Day] : null
+                    setIsCapturing7Day(true)
+                  } else if (day === 14) {
+                    prevPhotos14Ref.current = photos14Day?.length ? [...photos14Day] : null
+                    setIsCapturing14Day(true)
+                  }
+                }}
+              >
+                Refazer fotos
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
     </div>
   )
 }

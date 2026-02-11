@@ -257,7 +257,7 @@ export function ExperimentsPageClient({ initialExperiments }: { initialExperimen
   }
 
   return (
-    <div className="container mx-auto p-4 overflow-x-hidden">
+    <div className="w-full px-4 py-4 sm:px-6 lg:px-8 overflow-x-hidden">
       <PageTitle title="Experimentos" />
 
       <div className="mb-6">

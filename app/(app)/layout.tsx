@@ -38,7 +38,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   }
 
   return (
-    <AuthProvider>
+    <AuthProvider initialUser={res.ok ? res.user : null}>
       <SidebarProvider>
         <div className="flex h-full w-full min-w-0">
           <AppSidebar />

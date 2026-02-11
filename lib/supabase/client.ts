@@ -1,19 +1,47 @@
 import { createBrowserClient } from "@supabase/ssr"
 
 export function createClient() {
-  // Evita criar múltiplas instâncias do GoTrueClient (warning de excesso) e storms de refresh.
-  // No browser, podemos manter uma instância singleton segura.
-  if (typeof window === "undefined") {
-    throw new Error("createClient (browser) called on server. Use lib/supabase/server.ts instead.")
-  }
+  /**
+   * Evita criar múltiplas instâncias do GoTrueClient (warning de excesso) e storms de refresh.
+   *
+   * ⚠️ Importante (Next.js): componentes "use client" ainda são renderizados no servidor
+   * no primeiro HTML. Portanto, NÃO podemos dar throw quando `window` não existe,
+   * senão o preview quebra em qualquer rota que importe este client.
+   *
+   * Estratégia:
+   * - No browser: singleton com auth normal.
+   * - No servidor (apenas para SSR de componentes client): cria uma instância "safe"
+   *   sem persistência/refresh automático. Ela não deve ser usada para operações críticas
+   *   no servidor; serve apenas para não quebrar o SSR. As chamadas reais rodam no browser.
+   */
 
   const g = globalThis as any
-  if (!g.__pdi_supabase_browser_client) {
-    g.__pdi_supabase_browser_client = createBrowserClient(
+
+  // Browser singleton
+  if (typeof window !== "undefined") {
+    if (!g.__pdi_supabase_browser_client) {
+      g.__pdi_supabase_browser_client = createBrowserClient(
+        process.env.NEXT_PUBLIC_SUPABASE_URL!,
+        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+      )
+    }
+    return g.__pdi_supabase_browser_client
+  }
+
+  // SSR fallback (não persistir / não refreshar tokens)
+  if (!g.__pdi_supabase_ssr_fallback_client) {
+    g.__pdi_supabase_ssr_fallback_client = createBrowserClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
       process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+      {
+        auth: {
+          persistSession: false,
+          autoRefreshToken: false,
+          detectSessionInUrl: false,
+        },
+      } as any,
     )
   }
 
-  return g.__pdi_supabase_browser_client
+  return g.__pdi_supabase_ssr_fallback_client
 }

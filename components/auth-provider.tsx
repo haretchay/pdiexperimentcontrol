@@ -40,7 +40,25 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       })
       .catch((e) => {
         // AbortError pode acontecer em navegação/hot reload
+        const msg = String((e as any)?.message ?? e ?? "")
         if (e?.name !== "AbortError") console.error("[AuthProvider] getSession error:", e)
+
+        // Preview/domínios diferentes às vezes ficam com refresh_token antigo no storage.
+        // Se não limpamos, o supabase-js tenta refresh em loop e o preview vira "instável".
+        if (msg.includes("refresh_token_not_found") || msg.includes("Invalid Refresh Token")) {
+          supabase.auth
+            .signOut({ scope: "local" as any })
+            .catch(() => {})
+            .finally(() => {
+              if (!mounted) return
+              setUser(null)
+              setLoading(false)
+              router.push("/auth/login")
+              router.refresh()
+            })
+          return
+        }
+
         if (!mounted) return
         setUser(null)
         setLoading(false)
@@ -56,6 +74,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       // Só refresca em eventos relevantes (evita storm de requests)
       if (event === "SIGNED_IN" || event === "SIGNED_OUT" || event === "USER_UPDATED") {
         router.refresh()
+      }
+
+      if (event === "SIGNED_OUT") {
+        router.push("/auth/login")
       }
     })
 

@@ -1,5 +1,24 @@
 import { createBrowserClient } from "@supabase/ssr"
 
+// Normaliza respostas não-JSON de erro (ex: 429 "Too Many Requests")
+// para evitar SyntaxError no supabase-js.
+async function supabaseSafeFetch(input: RequestInfo | URL, init?: RequestInit) {
+  const res = await fetch(input as any, init)
+  const ct = res.headers.get("content-type") ?? ""
+
+  if (ct.includes("application/json") || res.status === 204) return res
+
+  if (res.status >= 400) {
+    const text = await res.text().catch(() => "")
+    return new Response(JSON.stringify({ message: text || res.statusText, status: res.status }), {
+      status: res.status,
+      headers: { "content-type": "application/json" },
+    })
+  }
+
+  return res
+}
+
 export function createClient() {
   /**
    * Evita criar múltiplas instâncias do GoTrueClient (warning de excesso) e storms de refresh.
@@ -23,6 +42,11 @@ export function createClient() {
       g.__pdi_supabase_browser_client = createBrowserClient(
         process.env.NEXT_PUBLIC_SUPABASE_URL!,
         process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+        {
+          global: {
+            fetch: supabaseSafeFetch as any,
+          },
+        } as any,
       )
     }
     return g.__pdi_supabase_browser_client
@@ -34,6 +58,9 @@ export function createClient() {
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
       process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
       {
+        global: {
+          fetch: supabaseSafeFetch as any,
+        },
         auth: {
           persistSession: false,
           autoRefreshToken: false,

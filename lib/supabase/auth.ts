@@ -46,6 +46,10 @@ export const getServerAuth = cache(async () => {
       .maybeSingle()
 
     if (profileError) {
+      // Se a API respondeu 429 ou algo não-JSON, tratamos como rate limit.
+      if (isRateLimitError(profileError)) {
+        return { supabase, user, profile: null, error: profileError as any, rateLimited: true }
+      }
       console.error("[auth] profile error:", profileError)
     }
 

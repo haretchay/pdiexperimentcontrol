@@ -2,7 +2,7 @@
 
 import { useRef, useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
-import { Slider } from "@/components/ui/slider.tsx"
+import { Slider } from "@/components/ui/slider"
 import { ZoomIn, ZoomOut, Zap, ZapOff, X, CameraIcon, RefreshCw } from "lucide-react"
 
 interface CameraInterfaceProps {

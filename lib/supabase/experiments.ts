@@ -207,12 +207,17 @@ export async function getExperiments(supabase: SupabaseClient): Promise<Experime
  */
 export async function getExperimentById(supabase: SupabaseClient, id: string): Promise<Experiment | null> {
   try {
-    const { data, error } = await supabase.from("experiments").select("*").eq("id", id).single()
+    // NOTE:
+    // `.single()` throws a 406 (PGRST116) when 0 rows are returned.
+    // That becomes a noisy "Cannot coerce the result to a single JSON object" error.
+    // `.maybeSingle()` returns `data=null` with `error=null` when 0 rows match.
+    const { data, error } = await supabase.from("experiments").select("*").eq("id", id).maybeSingle()
 
     if (error) {
       console.error("[Experiments] Error fetching experiment by id:", error)
       return null
     }
+    if (!data) return null
     return mapExperiment(data as unknown as DbExperimentRow)
   } catch (err) {
     console.error("[Experiments] Exception fetching experiment by id:", err)

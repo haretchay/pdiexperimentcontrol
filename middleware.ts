@@ -15,6 +15,8 @@ export const config = {
      * - imagens - .svg, .png, .jpg, .jpeg, .gif, .webp
      * Sinta-se livre para modificar este padrão para incluir mais caminhos.
      */
-    "/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)",
+    // Também exclui rotas de API para evitar chamadas extras ao Supabase no preview.
+    // As rotas /api já podem proteger/validar no handler.
+    "/((?!api|_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)",
   ],
 }

@@ -1,4 +1,4 @@
-// SUBSTITUIR ARQUIVO COMPLETO: app/(app)/media/page.tsx
+// SUBSTITUIR ARQUIVO COMPLET0: app/(app)/media/page.tsx
 
 import { MediaPageClient } from "@/components/media/media-page-client"
 

@@ -1,12 +1,12 @@
 import { NextResponse } from "next/server"
 import { createClient } from "@/lib/supabase/server"
 
-// POST /api/experiments/:experimentId/delete
+// POST /api/experiments/:id/delete
 // - apaga test_photos + tests + experiment
 // - remove arquivos do bucket test-photos (best-effort)
 
-export async function POST(_req: Request, ctx: { params: { experimentId: string } }) {
-  const experimentId = ctx.params.experimentId
+export async function POST(_req: Request, ctx: { params: { id: string } }) {
+  const id = ctx.params.id
   const supabase = await createClient()
 
   const {
@@ -23,7 +23,7 @@ export async function POST(_req: Request, ctx: { params: { experimentId: string 
     const { data: tests, error: testsErr } = await supabase
       .from("tests")
       .select("id, created_by")
-      .eq("experiment_id", experimentId)
+      .eq("experiment_id", id)
 
     if (testsErr) throw testsErr
 
@@ -55,10 +55,10 @@ export async function POST(_req: Request, ctx: { params: { experimentId: string 
       if (delPhotosErr) throw delPhotosErr
     }
 
-    const { error: delTestsErr } = await supabase.from("tests").delete().eq("experiment_id", experimentId)
+    const { error: delTestsErr } = await supabase.from("tests").delete().eq("experiment_id", id)
     if (delTestsErr) throw delTestsErr
 
-    const { error: delExpErr } = await supabase.from("experiments").delete().eq("id", experimentId)
+    const { error: delExpErr } = await supabase.from("experiments").delete().eq("id", id)
     if (delExpErr) throw delExpErr
 
     return NextResponse.json({ ok: true })

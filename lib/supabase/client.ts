@@ -39,12 +39,32 @@ export function createClient() {
   // Browser singleton
   if (typeof window !== "undefined") {
     if (!g.__pdi_supabase_browser_client) {
+      const ref = (() => {
+        try {
+          const u = new URL(process.env.NEXT_PUBLIC_SUPABASE_URL!)
+          return u.hostname.split(".")[0] || "supabase"
+        } catch {
+          return "supabase"
+        }
+      })()
+
+      // IMPORTANT:
+      // Preview e Produção podem compartilhar o mesmo projeto Supabase.
+      // Se o storageKey for o padrão, os tokens ficam no mesmo localStorage
+      // e um ambiente pode sobrescrever o refresh token do outro, causando:
+      // 400 refresh_token_not_found.
+      const hostKey = window.location.host.replace(/[^a-zA-Z0-9_-]/g, "_")
+      const storageKey = `sb-${ref}-${hostKey}-auth-token`
+
       g.__pdi_supabase_browser_client = createBrowserClient(
         process.env.NEXT_PUBLIC_SUPABASE_URL!,
         process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
         {
           global: {
             fetch: supabaseSafeFetch as any,
+          },
+          auth: {
+            storageKey,
           },
         } as any,
       )

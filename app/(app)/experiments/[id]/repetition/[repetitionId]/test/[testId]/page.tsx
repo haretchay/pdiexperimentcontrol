@@ -261,10 +261,18 @@ export default function TestEditPage() {
           .eq("experiment_id", experimentId)
           .eq("repetition_number", repetitionNumber)
           .eq("test_number", testNumber)
-          .single()
+          .maybeSingle()
 
+        // Quando o teste ainda não existe (criação), maybeSingle retorna data=null e error=null.
+        // NÃO devemos quebrar a página com 406 (PGRST116).
         if (error) throw error
         if (cancelled) return
+
+        if (!data) {
+          setTestDbId(null)
+          // Mantém o formulário em branco (modo criação)
+          return
+        }
 
         setTestDbId(data.id)
 

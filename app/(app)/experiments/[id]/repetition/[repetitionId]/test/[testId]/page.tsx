@@ -5,12 +5,10 @@ import { useParams, useRouter } from "next/navigation"
 import { z } from "zod"
 import { useForm } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
-import { saveMergedPhotosForDay } from "@/lib/pdi/merged-photos"
-
-
 import { createClient } from "@/lib/supabase/client"
 import { SignedUrlCache } from "@/lib/pdi/signed-url-cache"
 import { getSignedUrlsForPaths, replaceMergedDayPhoto } from "@/lib/pdi/test-photos"
+import { ensureTestRow } from "@/lib/pdi/tests"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form"
@@ -245,6 +243,17 @@ export default function TestEditPage() {
       try {
         setLoading(true)
 
+        const {
+          data: { user },
+          error: userError,
+        } = await supabase.auth.getUser()
+
+        if (userError) throw userError
+        if (!user) {
+          router.push("/auth/login")
+          return
+        }
+
         const { data: exp, error: expErr } = await supabase
           .from("experiments")
           .select("id, number, strain, start_date, test_count, repetition_count")
@@ -263,100 +272,104 @@ export default function TestEditPage() {
           .eq("test_number", testNumber)
           .maybeSingle()
 
-        // Quando o teste ainda não existe (criação), maybeSingle retorna data=null e error=null.
-        // NÃO devemos quebrar a página com 406 (PGRST116).
         if (error) throw error
         if (cancelled) return
 
-        if (!data) {
-          setTestDbId(null)
-          // Mantém o formulário em branco (modo criação)
-          return
-        }
+        const currentTest = data ?? (await ensureTestRow(supabase, {
+          experimentId,
+          repetitionNumber,
+          testNumber,
+          createdBy: user.id,
+          defaultStrain: exp?.strain ?? null,
+        }))
 
-        setTestDbId(data.id)
+        if (cancelled) return
+        setTestDbId(currentTest.id)
 
         // Carregar anotações que já existiam
-        setAnnotations7Day((data.annotations_7_day as any) ?? {})
-        setAnnotations14Day((data.annotations_14_day as any) ?? {})
+        setAnnotations7Day((currentTest.annotations_7_day as any) ?? {})
+        setAnnotations14Day((currentTest.annotations_14_day as any) ?? {})
 
         form.reset({
-          unit: (data.unit as any) ?? "americana",
-          requisition: (data.requisition as any) ?? "interna",
-          testLot: data.test_lot ?? "",
-          matrixLot: data.matrix_lot ?? "",
-          strain: data.strain ?? "",
-          mpLot: data.mp_lot ?? "",
-          testType: data.test_type ?? "",
+          unit: (currentTest.unit as any) ?? "americana",
+          requisition: (currentTest.requisition as any) ?? "interna",
+          testLot: currentTest.test_lot ?? "",
+          matrixLot: currentTest.matrix_lot ?? "",
+          strain: currentTest.strain ?? exp?.strain ?? "",
+          mpLot: currentTest.mp_lot ?? "",
+          testType: currentTest.test_type ?? "",
 
-          averageHumidity: data.average_humidity ?? undefined,
-          bozo: data.bozo ?? undefined,
-          sensorial: data.sensorial ?? undefined,
-          quantity: data.quantity ?? undefined,
+          averageHumidity: currentTest.average_humidity ?? undefined,
+          bozo: currentTest.bozo ?? undefined,
+          sensorial: currentTest.sensorial ?? undefined,
+          quantity: currentTest.quantity ?? undefined,
 
-          date7Day: data.date_7_day ? String(data.date_7_day).slice(0, 10) : "",
-          date14Day: data.date_14_day ? String(data.date_14_day).slice(0, 10) : "",
+          date7Day: currentTest.date_7_day ? String(currentTest.date_7_day).slice(0, 10) : "",
+          date14Day: currentTest.date_14_day ? String(currentTest.date_14_day).slice(0, 10) : "",
 
-          temp7Chamber: data.temp7_chamber ?? undefined,
-          temp7Rice: data.temp7_rice ?? undefined,
-          temp14Chamber: data.temp14_chamber ?? undefined,
-          temp14Rice: data.temp14_rice ?? undefined,
+          temp7Chamber: currentTest.temp7_chamber ?? undefined,
+          temp7Rice: currentTest.temp7_rice ?? undefined,
+          temp14Chamber: currentTest.temp14_chamber ?? undefined,
+          temp14Rice: currentTest.temp14_rice ?? undefined,
 
-          wetWeight: data.wet_weight ?? undefined,
-          dryWeight: data.dry_weight ?? undefined,
-          extractedConidiumWeight: data.extracted_conidium_weight ?? undefined,
+          wetWeight: currentTest.wet_weight ?? undefined,
+          dryWeight: currentTest.dry_weight ?? undefined,
+          extractedConidiumWeight: currentTest.extracted_conidium_weight ?? undefined,
         })
 
         const { data: existingPhotos } = await supabase
           .from("test_photos")
           .select("day, storage_path, created_at, kind, photo_index")
-          .eq("test_id", data.id)
+          .eq("test_id", currentTest.id)
           .order("created_at", { ascending: true })
 
         if (existingPhotos) {
-          const singles = existingPhotos.filter((p: any) => !p.kind || p.kind === "single")
-          const photos7 = singles.filter((p: any) => p.day === 7)
-          const photos14 = singles.filter((p: any) => p.day === 14)
+          const photosForDay = (day: 7 | 14) => {
+            const rows = (existingPhotos as any[]).filter((p: any) => p.day === day)
+            const merged = rows
+              .filter((p: any) => p.kind === "merged")
+              .sort((a: any, b: any) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
 
-          if (photos7.length > 0) {
-            const ordered7 = [...photos7].sort(
-              (a: any, b: any) =>
-                (a.photo_index ?? 999) - (b.photo_index ?? 999) ||
-                new Date(a.created_at).getTime() - new Date(b.created_at).getTime(),
-            )
-            const paths7 = ordered7.map((p: any) => p.storage_path).filter(Boolean)
+            if (merged.length > 0) {
+              return { rows: [merged[0]], hasMerged: true }
+            }
+
+            const singles = rows
+              .filter((p: any) => !p.kind || p.kind === "single")
+              .sort(
+                (a: any, b: any) =>
+                  (a.photo_index ?? 999) - (b.photo_index ?? 999) ||
+                  new Date(a.created_at).getTime() - new Date(b.created_at).getTime(),
+              )
+
+            return { rows: singles, hasMerged: false }
+          }
+
+          const day7 = photosForDay(7)
+          if (day7.rows.length > 0) {
+            const paths7 = day7.rows.map((p: any) => p.storage_path).filter(Boolean)
             const urls7 = await getSignedUrlsForPaths(supabase, paths7, { cache: signedUrlCache })
             const clean7 = urls7.filter(Boolean)
             setPhotos7Day(clean7)
-            // se existir merged (mosaico), normalmente vem como última ou como único item
-            const merged7 = ordered7.find((p: any) => p.kind === "merged")
-            if (merged7) {
-              const idx = ordered7.findIndex((p: any) => p.kind === "merged")
-              setExistingMerged7Url(clean7[idx] ?? clean7[clean7.length - 1] ?? null)
-            } else {
-              setExistingMerged7Url(clean7[clean7.length - 1] ?? null)
-            }
+            setExistingMerged7Url(day7.hasMerged ? clean7[0] ?? null : null)
+          } else {
+            setPhotos7Day([])
+            setExistingMerged7Url(null)
           }
 
-          if (photos14.length > 0) {
-            const ordered14 = [...photos14].sort(
-              (a: any, b: any) =>
-                (a.photo_index ?? 999) - (b.photo_index ?? 999) ||
-                new Date(a.created_at).getTime() - new Date(b.created_at).getTime(),
-            )
-            const paths14 = ordered14.map((p: any) => p.storage_path).filter(Boolean)
+          const day14 = photosForDay(14)
+          if (day14.rows.length > 0) {
+            const paths14 = day14.rows.map((p: any) => p.storage_path).filter(Boolean)
             const urls14 = await getSignedUrlsForPaths(supabase, paths14, { cache: signedUrlCache })
             const clean14 = urls14.filter(Boolean)
             setPhotos14Day(clean14)
-            const merged14 = ordered14.find((p: any) => p.kind === "merged")
-            if (merged14) {
-              const idx = ordered14.findIndex((p: any) => p.kind === "merged")
-              setExistingMerged14Url(clean14[idx] ?? clean14[clean14.length - 1] ?? null)
-            } else {
-              setExistingMerged14Url(clean14[clean14.length - 1] ?? null)
-            }
+            setExistingMerged14Url(day14.hasMerged ? clean14[0] ?? null : null)
+          } else {
+            setPhotos14Day([])
+            setExistingMerged14Url(null)
           }
         }
+
       } catch (e) {
         console.error(e)
       } finally {
@@ -367,7 +380,7 @@ export default function TestEditPage() {
     return () => {
       cancelled = true
     }
-  }, [supabase, experimentId, repetitionNumber, testNumber, form])
+  }, [supabase, experimentId, repetitionNumber, testNumber, form, router])
 
   async function onSubmit(values: FormValues) {
     setSaving(true)
@@ -382,6 +395,16 @@ export default function TestEditPage() {
         router.push("/auth/login")
         return
       }
+
+      const ensuredTest = await ensureTestRow(supabase, {
+        experimentId,
+        repetitionNumber,
+        testNumber,
+        createdBy: user.id,
+        defaultStrain: experiment?.strain ?? values.strain ?? null,
+      })
+
+      setTestDbId(ensuredTest.id)
 
       const payload = {
         unit: values.unit ?? null,
@@ -420,29 +443,27 @@ export default function TestEditPage() {
       const { error } = await supabase
         .from("tests")
         .update(payload)
-        .eq("experiment_id", experimentId)
-        .eq("repetition_number", repetitionNumber)
-        .eq("test_number", testNumber)
+        .eq("id", ensuredTest.id)
 
       if (error) throw error
 
       // ✅ Só mexe no storage se tiver foto NOVA (dataURL)
       // ✅ Fotos: substitui o dia somente se o usuário recapturou (dataURL)
-      if (photos7Day.length > 0 && hasNewCapturedPhotos(photos7Day) && testDbId) {
+      if (photos7Day.length > 0 && hasNewCapturedPhotos(photos7Day)) {
         // ✅ MODO ECONÔMICO: salva SOMENTE o mosaico (kind='merged') do 7º dia
         // (as 6 fotos individuais continuam no código, mas o salvamento está desativado por enquanto)
         if (photos7Day.every((p) => isDataUrlImage(p)) && photos7Day.length >= 6) {
           const mosaicBlob = await createMosaicBlob(photos7Day.slice(0, 6))
-          await replaceMergedDayPhoto({ supabase, userId: user.id, testId: testDbId, day: 7, mosaicBlob })
+          await replaceMergedDayPhoto({ supabase, userId: user.id, testId: ensuredTest.id, day: 7, mosaicBlob })
         } else {
           throw new Error("Para salvar as fotos do 7º dia, capture as 6 fotos antes de salvar.")
         }
       }
-      if (photos14Day.length > 0 && hasNewCapturedPhotos(photos14Day) && testDbId) {
+      if (photos14Day.length > 0 && hasNewCapturedPhotos(photos14Day)) {
         // ✅ MODO ECONÔMICO: salva SOMENTE o mosaico (kind='merged') do 14º dia
         if (photos14Day.every((p) => isDataUrlImage(p)) && photos14Day.length >= 6) {
           const mosaicBlob = await createMosaicBlob(photos14Day.slice(0, 6))
-          await replaceMergedDayPhoto({ supabase, userId: user.id, testId: testDbId, day: 14, mosaicBlob })
+          await replaceMergedDayPhoto({ supabase, userId: user.id, testId: ensuredTest.id, day: 14, mosaicBlob })
         } else {
           throw new Error("Para salvar as fotos do 14º dia, capture as 6 fotos antes de salvar.")
         }
@@ -794,7 +815,7 @@ export default function TestEditPage() {
                     <div className="text-xs font-medium mb-1">Anotações (7º dia)</div>
                     <ul className="text-xs text-muted-foreground space-y-1 list-disc pl-4">
                       {Object.entries(annotations7Day).flatMap(([idx, anns]) =>
-                        (anns || []).map((a, j) => (
+                        ((anns as Annotation[]) || []).map((a, j) => (
                           <li key={`${idx}-${j}`}>Foto {Number(idx) + 1}: {a.caption}</li>
                         )),
                       )}
@@ -878,7 +899,7 @@ export default function TestEditPage() {
                     <div className="text-xs font-medium mb-1">Anotações (14º dia)</div>
                     <ul className="text-xs text-muted-foreground space-y-1 list-disc pl-4">
                       {Object.entries(annotations14Day).flatMap(([idx, anns]) =>
-                        (anns || []).map((a, j) => (
+                        ((anns as Annotation[]) || []).map((a, j) => (
                           <li key={`${idx}-${j}`}>Foto {Number(idx) + 1}: {a.caption}</li>
                         )),
                       )}

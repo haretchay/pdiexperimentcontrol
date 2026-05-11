@@ -1,122 +1,190 @@
-import { buildTestPhotoPath } from "@/lib/pdi/storage-path"
+import { assertValidTestPhotoPath, buildTestPhotoPath } from "@/lib/pdi/storage-path"
+
+const TEST_PHOTOS_BUCKET = "test-photos"
+const MOSAIC_COLS = 3
+const MOSAIC_ROWS = 2
+const MOSAIC_CELL_WIDTH = 1000
+const MOSAIC_CELL_HEIGHT = 750
+const MOSAIC_GUTTER = 6
+const MOSAIC_BACKGROUND = "#111827"
+const MOSAIC_QUALITY = 0.9
+
+type Day = 7 | 14
 
 type SaveMergedInput = {
   supabase: any
   userId: string
   testId: string
-  day: 7 | 14
-  dataUrls: string[] // 6 imagens (data:image/...)
+  day: Day
+  dataUrls: string[]
 }
 
-/** cria mosaico 3x2 e devolve Blob jpg */
+type TestPhotoRow = {
+  id: string
+  storage_path: string | null
+  kind?: "single" | "merged" | null
+}
+
+const isDataUrlImage = (value: unknown): value is string => {
+  return typeof value === "string" && value.startsWith("data:image/")
+}
+
+function ensureBrowserCanvasAvailable() {
+  if (typeof window === "undefined" || typeof document === "undefined") {
+    throw new Error("A geração do mosaico de fotos precisa ser executada no navegador.")
+  }
+}
+
+function loadImage(src: string) {
+  return new Promise<HTMLImageElement>((resolve, reject) => {
+    const img = new Image()
+    img.crossOrigin = "anonymous"
+    img.onload = () => resolve(img)
+    img.onerror = () => reject(new Error("Falha ao carregar uma das imagens para gerar o mosaico."))
+    img.src = src
+  })
+}
+
+function drawContain(
+  ctx: CanvasRenderingContext2D,
+  img: HTMLImageElement,
+  dx: number,
+  dy: number,
+  dw: number,
+  dh: number,
+) {
+  const imageWidth = img.naturalWidth || img.width
+  const imageHeight = img.naturalHeight || img.height
+
+  if (!imageWidth || !imageHeight) {
+    throw new Error("Imagem inválida para geração do mosaico.")
+  }
+
+  const imageRatio = imageWidth / imageHeight
+  const destinationRatio = dw / dh
+
+  let renderWidth = dw
+  let renderHeight = dh
+
+  if (imageRatio > destinationRatio) {
+    renderHeight = dw / imageRatio
+  } else {
+    renderWidth = dh * imageRatio
+  }
+
+  const x = dx + (dw - renderWidth) / 2
+  const y = dy + (dh - renderHeight) / 2
+
+  ctx.fillStyle = MOSAIC_BACKGROUND
+  ctx.fillRect(dx, dy, dw, dh)
+  ctx.drawImage(img, x, y, renderWidth, renderHeight)
+}
+
+/**
+ * Cria um mosaico 3x2 com 6 fotos e devolve um Blob JPG.
+ * As imagens são desenhadas no modo "contain", sem cortar bordas/legendas.
+ */
 export async function createMosaicBlob(imageDataUrls: string[]) {
-  const cols = 3
-  const rows = 2
-  const cellW = 1000
-  const cellH = 750
-  const quality = 0.9
+  ensureBrowserCanvasAvailable()
 
-  const load = (src: string) =>
-    new Promise<HTMLImageElement>((resolve, reject) => {
-      const img = new Image()
-      img.onload = () => resolve(img)
-      img.onerror = reject
-      img.src = src
-    })
+  const validImages = imageDataUrls.filter(isDataUrlImage).slice(0, MOSAIC_COLS * MOSAIC_ROWS)
 
-  const imgs = await Promise.all(imageDataUrls.slice(0, 6).map((u) => load(u)))
+  if (validImages.length !== MOSAIC_COLS * MOSAIC_ROWS) {
+    throw new Error("São necessárias exatamente 6 fotos válidas para gerar o mosaico.")
+  }
+
+  const images = await Promise.all(validImages.map(loadImage))
 
   const canvas = document.createElement("canvas")
-  canvas.width = cols * cellW
-  canvas.height = rows * cellH
+  canvas.width = MOSAIC_COLS * MOSAIC_CELL_WIDTH
+  canvas.height = MOSAIC_ROWS * MOSAIC_CELL_HEIGHT
+
   const ctx = canvas.getContext("2d")
-  if (!ctx) throw new Error("Canvas 2D indisponível")
+  if (!ctx) throw new Error("Canvas 2D indisponível.")
 
-  ctx.fillStyle = "#111827"
+  ctx.fillStyle = MOSAIC_BACKGROUND
   ctx.fillRect(0, 0, canvas.width, canvas.height)
-  const drawContain = (img: HTMLImageElement, dx: number, dy: number, dw: number, dh: number) => {
-    // "contain": não corta bordas/legendas; adiciona letterbox quando necessário
-    const iw = img.naturalWidth || img.width
-    const ih = img.naturalHeight || img.height
-    const ir = iw / ih
-    const dr = dw / dh
 
-    let rw = dw
-    let rh = dh
-    if (ir > dr) {
-      // imagem mais "larga": limita pela largura
-      rh = dw / ir
-    } else {
-      // imagem mais "alta": limita pela altura
-      rw = dh * ir
-    }
+  images.forEach((img, index) => {
+    const col = index % MOSAIC_COLS
+    const row = Math.floor(index / MOSAIC_COLS)
+    const x = col * MOSAIC_CELL_WIDTH
+    const y = row * MOSAIC_CELL_HEIGHT
 
-    const x = dx + (dw - rw) / 2
-    const y = dy + (dh - rh) / 2
-
-    // fundo do slot para letterbox
-    ctx.fillStyle = "#111827"
-    ctx.fillRect(dx, dy, dw, dh)
-
-    ctx.drawImage(img, x, y, rw, rh)
-  }
-
-    ctx.drawImage(img, sx, sy, sw, sh, dx, dy, dw, dh)
-  }
-
-  imgs.forEach((img, i) => {
-    const col = i % cols
-    const row = Math.floor(i / cols)
-    const x = col * cellW
-    const y = row * cellH
-    const gutter = 6
-    drawContain(img, x + gutter, y + gutter, cellW - gutter * 2, cellH - gutter * 2)
+    drawContain(
+      ctx,
+      img,
+      x + MOSAIC_GUTTER,
+      y + MOSAIC_GUTTER,
+      MOSAIC_CELL_WIDTH - MOSAIC_GUTTER * 2,
+      MOSAIC_CELL_HEIGHT - MOSAIC_GUTTER * 2,
+    )
   })
 
-  const blob = await new Promise<Blob>((resolve, reject) => {
-    canvas.toBlob((b) => (b ? resolve(b) : reject(new Error("Falha ao gerar JPG"))), "image/jpeg", quality)
-  })
+  return new Promise<Blob>((resolve, reject) => {
+    canvas.toBlob(
+      (blob) => {
+        if (blob) {
+          resolve(blob)
+          return
+        }
 
-  return blob
+        reject(new Error("Falha ao gerar JPG do mosaico."))
+      },
+      "image/jpeg",
+      MOSAIC_QUALITY,
+    )
+  })
 }
 
-async function listDayFiles(supabase: any, userId: string, testId: string, day: 7 | 14) {
+async function listDayStorageFiles(supabase: any, userId: string, testId: string, day: Day) {
   const folder = `${userId}/${testId}`
-  const { data, error } = await supabase.storage.from("test-photos").list(folder, { limit: 1000 })
-  if (error) return { folder, paths: [] as string[] }
+  const { data, error } = await supabase.storage.from(TEST_PHOTOS_BUCKET).list(folder, { limit: 1000 })
 
-  const paths =
-    (data ?? [])
-      .filter((o: any) => typeof o?.name === "string" && o.name.startsWith(`day${day}_`))
-      .map((o: any) => `${folder}/${o.name}`)
+  if (error) {
+    console.warn("[merged-photos] Não foi possível listar arquivos antigos do dia:", error)
+    return [] as string[]
+  }
 
-  return { folder, paths }
+  return (data ?? [])
+    .filter((object: any) => typeof object?.name === "string" && object.name.startsWith(`day${day}_`))
+    .map((object: any) => `${folder}/${object.name}`)
 }
 
+async function listDayDatabaseRows(supabase: any, testId: string, day: Day) {
+  const { data, error } = await supabase
+    .from("test_photos")
+    .select("id, storage_path, kind")
+    .eq("test_id", testId)
+    .eq("day", day)
+
+  if (error) throw error
+  return (data ?? []) as TestPhotoRow[]
+}
+
+/**
+ * Salva somente o mosaico final de um dia (kind='merged') no bucket test-photos.
+ *
+ * Fluxo seguro:
+ * 1. gera o novo mosaico;
+ * 2. faz upload do novo arquivo;
+ * 3. grava o novo registro no banco;
+ * 4. só depois remove registros/arquivos antigos do mesmo dia.
+ *
+ * Isso evita perda das fotos antigas caso o upload ou insert falhe no meio do processo.
+ */
 export async function saveMergedPhotosForDay({ supabase, userId, testId, day, dataUrls }: SaveMergedInput) {
-  const valid = dataUrls.filter((p) => typeof p === "string" && p.startsWith("data:image/")).slice(0, 6)
-  if (valid.length !== 6) {
+  const validImages = dataUrls.filter(isDataUrlImage).slice(0, MOSAIC_COLS * MOSAIC_ROWS)
+
+  if (validImages.length !== MOSAIC_COLS * MOSAIC_ROWS) {
     throw new Error(`Você precisa capturar 6 fotos do dia ${day} antes de salvar.`)
   }
 
-  // candidatos a apagar (arquivos antigos do dia) – só apaga depois do sucesso
-  const existingDayFiles = await listDayFiles(supabase, userId, testId, day)
+  const oldStoragePaths = await listDayStorageFiles(supabase, userId, testId, day)
+  const oldDatabaseRows = await listDayDatabaseRows(supabase, testId, day)
 
-  // também pega o merged atual no DB (para segurança)
-  const { data: currentMerged } = await supabase
-    .from("test_photos")
-    .select("id, storage_path")
-    .eq("test_id", testId)
-    .eq("day", day)
-    .eq("kind", "merged")
-    .order("created_at", { ascending: false })
-    .maybeSingle()
-
-  const oldMergedPath = currentMerged?.storage_path ?? null
-
-  // 1) gera mosaico
-  const mosaicBlob = await createMosaicBlob(valid)
-  const newPath = buildTestPhotoPath({
+  const mosaicBlob = await createMosaicBlob(validImages)
+  const mergedPath = buildTestPhotoPath({
     userId,
     testId,
     day,
@@ -125,46 +193,58 @@ export async function saveMergedPhotosForDay({ supabase, userId, testId, day, da
     timestamp: Date.now(),
   })
 
-  // 2) upload do novo mosaico
-  const { error: upError } = await supabase.storage.from("test-photos").upload(newPath, mosaicBlob, {
+  assertValidTestPhotoPath(mergedPath, { userId, testId })
+
+  const { error: uploadError } = await supabase.storage.from(TEST_PHOTOS_BUCKET).upload(mergedPath, mosaicBlob, {
     contentType: "image/jpeg",
     upsert: true,
   })
-  if (upError) throw upError
 
-  // 3) upsert DB (1 registro merged por dia)
-  const { error: dbError } = await supabase.from("test_photos").upsert(
-    {
+  if (uploadError) throw uploadError
+
+  const { data: insertedRows, error: insertError } = await supabase
+    .from("test_photos")
+    .insert({
       test_id: testId,
       day,
-      storage_path: newPath,
+      storage_path: mergedPath,
       kind: "merged",
       photo_index: null,
-    },
-    { onConflict: "test_id,day,kind" } // funciona com o unique index parcial quando kind='merged'
-  )
-  if (dbError) {
-    // rollback best-effort
-    await supabase.storage.from("test-photos").remove([newPath])
-    throw dbError
+    })
+    .select("id")
+
+  if (insertError) {
+    await supabase.storage.from(TEST_PHOTOS_BUCKET).remove([mergedPath])
+    throw insertError
   }
 
-  // 4) agora sim apaga arquivos antigos do dia (inclui singles antigos e merged antigo)
-  const toDelete = new Set<string>()
+  const insertedId = insertedRows?.[0]?.id as string | undefined
+  const oldRowIds = oldDatabaseRows.map((row) => row.id).filter(Boolean)
 
-  for (const p of existingDayFiles.paths) {
-    if (p !== newPath) toDelete.add(p)
+  if (oldRowIds.length) {
+    const deleteQuery = supabase.from("test_photos").delete().in("id", oldRowIds)
+
+    if (insertedId) {
+      await deleteQuery.neq("id", insertedId)
+    } else {
+      await deleteQuery
+    }
   }
 
-  if (oldMergedPath && oldMergedPath !== newPath) {
-    toDelete.add(oldMergedPath)
+  const pathsToRemove = new Set<string>()
+
+  for (const path of oldStoragePaths) {
+    if (path && path !== mergedPath) pathsToRemove.add(path)
   }
 
-  if (toDelete.size) {
-    await supabase.storage.from("test-photos").remove(Array.from(toDelete))
+  for (const row of oldDatabaseRows) {
+    const path = row.storage_path
+    if (path && path !== mergedPath) pathsToRemove.add(path)
   }
 
-  // 5) limpa registros antigos do DB do mesmo dia (mantém só merged)
-  // (se você tiver singles antigos no banco de versões anteriores)
-  await supabase.from("test_photos").delete().eq("test_id", testId).eq("day", day).neq("kind", "merged")
+  if (pathsToRemove.size) {
+    await supabase.storage.from(TEST_PHOTOS_BUCKET).remove(Array.from(pathsToRemove))
+  }
+
+  return { uploaded: 1, mergedPath }
 }

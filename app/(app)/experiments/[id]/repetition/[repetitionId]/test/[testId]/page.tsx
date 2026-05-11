@@ -161,7 +161,8 @@ const formSchema = z.object({
   extractedConidiumWeight: z.preprocess(toNumberOrUndefined, z.number().optional()),
 })
 
-type FormValues = z.infer<typeof formSchema>
+type FormInputValues = z.input<typeof formSchema>
+type FormValues = z.output<typeof formSchema>
 
 export default function TestEditPage() {
   const router = useRouter()
@@ -212,7 +213,7 @@ export default function TestEditPage() {
   const [testDbId, setTestDbId] = useState<string | null>(null)
   const [experiment, setExperiment] = useState<any>(null)
 
-  const form = useForm<FormValues>({
+  const form = useForm<FormInputValues, any, FormValues>({
     resolver: zodResolver(formSchema),
     defaultValues: {
       unit: "americana",

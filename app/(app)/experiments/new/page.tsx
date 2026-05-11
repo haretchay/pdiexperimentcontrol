@@ -7,6 +7,7 @@ import { useForm } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
 
 import { createClient } from "@/lib/supabase/client"
+import { createMissingTestsForExperiment } from "@/lib/pdi/tests"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form"
@@ -84,7 +85,8 @@ export default function NewExperimentPage() {
         return
       }
 
-      // cria experimento (o trigger do banco vai gerar os tests automaticamente)
+      // Cria o experimento e, em seguida, garante as linhas dos testes no app.
+      // Assim o sistema não depende de trigger invisível no banco para funcionar.
       const payload = {
         number: nextNumber,
         strain: values.strain,
@@ -97,6 +99,14 @@ export default function NewExperimentPage() {
       const { data: exp, error } = await supabase.from("experiments").insert(payload).select("id").single()
       if (error) throw error
       if (!exp?.id) throw new Error("Falha ao criar experimento (id não retornou).")
+
+      await createMissingTestsForExperiment(supabase, {
+        experimentId: exp.id,
+        repetitionCount: values.repetitionCount,
+        testCount: values.testCount,
+        createdBy: user.id,
+        defaultStrain: values.strain,
+      })
 
       router.push(`/experiments/${exp.id}`)
     } catch (e: any) {
@@ -112,7 +122,7 @@ export default function NewExperimentPage() {
       <Card>
         <CardHeader>
           <CardTitle>Novo Experimento</CardTitle>
-          <CardDescription>Crie um experimento e os testes serão gerados automaticamente no Supabase</CardDescription>
+          <CardDescription>Crie um experimento e gere automaticamente as linhas de testes/repetições</CardDescription>
         </CardHeader>
         <CardContent>
           <div className="mb-4 text-sm text-muted-foreground">

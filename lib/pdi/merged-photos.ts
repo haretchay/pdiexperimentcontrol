@@ -8,6 +8,7 @@ const MOSAIC_CELL_HEIGHT = 750
 const MOSAIC_GUTTER = 6
 const MOSAIC_BACKGROUND = "#111827"
 const MOSAIC_QUALITY = 0.9
+const MERGED_PHOTO_INDEX = 0
 
 type Day = 7 | 14
 
@@ -202,34 +203,24 @@ export async function saveMergedPhotosForDay({ supabase, userId, testId, day, da
 
   if (uploadError) throw uploadError
 
-  const { data: insertedRows, error: insertError } = await supabase
-    .from("test_photos")
-    .insert({
+  const { error: upsertError } = await supabase.from("test_photos").upsert(
+    {
       test_id: testId,
       day,
       storage_path: mergedPath,
       kind: "merged",
-      photo_index: null,
-    })
-    .select("id")
+      photo_index: MERGED_PHOTO_INDEX,
+    },
+    { onConflict: "test_id,day,kind,photo_index" },
+  )
 
-  if (insertError) {
+  if (upsertError) {
     await supabase.storage.from(TEST_PHOTOS_BUCKET).remove([mergedPath])
-    throw insertError
+    throw upsertError
   }
 
-  const insertedId = insertedRows?.[0]?.id as string | undefined
-  const oldRowIds = oldDatabaseRows.map((row) => row.id).filter(Boolean)
-
-  if (oldRowIds.length) {
-    const deleteQuery = supabase.from("test_photos").delete().in("id", oldRowIds)
-
-    if (insertedId) {
-      await deleteQuery.neq("id", insertedId)
-    } else {
-      await deleteQuery
-    }
-  }
+  // Modo econômico: mantemos somente o mosaico final do dia no banco.
+  await supabase.from("test_photos").delete().eq("test_id", testId).eq("day", day).neq("kind", "merged")
 
   const pathsToRemove = new Set<string>()
 

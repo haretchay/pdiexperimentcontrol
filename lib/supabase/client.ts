@@ -23,15 +23,18 @@ export function createClient() {
   /**
    * Evita criar múltiplas instâncias do GoTrueClient (warning de excesso) e storms de refresh.
    *
-   * ⚠️ Importante (Next.js): componentes "use client" ainda são renderizados no servidor
-   * no primeiro HTML. Portanto, NÃO podemos dar throw quando `window` não existe,
-   * senão o preview quebra em qualquer rota que importe este client.
+   * ⚠️ Importante:
+   * O client do navegador precisa usar a MESMA chave/cookie padrão que o client do servidor
+   * em lib/supabase/server.ts. Antes havia um storageKey baseado no host da página,
+   * enquanto o login via /api/auth/login gravava a sessão no cookie padrão do Supabase SSR.
    *
-   * Estratégia:
-   * - No browser: singleton com auth normal.
-   * - No servidor (apenas para SSR de componentes client): cria uma instância "safe"
-   *   sem persistência/refresh automático. Ela não deve ser usada para operações críticas
-   *   no servidor; serve apenas para não quebrar o SSR. As chamadas reais rodam no browser.
+   * Resultado do conflito:
+   * - o layout/servidor reconhecia o usuário logado;
+   * - mas páginas client-side, ao chamar supabase.auth.getUser(), não encontravam sessão;
+   * - o Supabase retornava: "Auth session missing!".
+   *
+   * Por isso, não defina auth.storageKey aqui. Deixe o @supabase/ssr usar o padrão
+   * sb-<project-ref>-auth-token, igual ao servidor.
    */
 
   const g = globalThis as any
@@ -39,23 +42,6 @@ export function createClient() {
   // Browser singleton
   if (typeof window !== "undefined") {
     if (!g.__pdi_supabase_browser_client) {
-      const ref = (() => {
-        try {
-          const u = new URL(process.env.NEXT_PUBLIC_SUPABASE_URL!)
-          return u.hostname.split(".")[0] || "supabase"
-        } catch {
-          return "supabase"
-        }
-      })()
-
-      // IMPORTANT:
-      // Preview e Produção podem compartilhar o mesmo projeto Supabase.
-      // Se o storageKey for o padrão, os tokens ficam no mesmo localStorage
-      // e um ambiente pode sobrescrever o refresh token do outro, causando:
-      // 400 refresh_token_not_found.
-      const hostKey = window.location.host.replace(/[^a-zA-Z0-9_-]/g, "_")
-      const storageKey = `sb-${ref}-${hostKey}-auth-token`
-
       g.__pdi_supabase_browser_client = createBrowserClient(
         process.env.NEXT_PUBLIC_SUPABASE_URL!,
         process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
@@ -63,12 +49,10 @@ export function createClient() {
           global: {
             fetch: supabaseSafeFetch as any,
           },
-          auth: {
-            storageKey,
-          },
         } as any,
       )
     }
+
     return g.__pdi_supabase_browser_client
   }
 

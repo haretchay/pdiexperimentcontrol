@@ -3,7 +3,7 @@ import { SignedUrlCache } from "@/lib/pdi/signed-url-cache"
 import { assertValidTestPhotoPath, buildTestPhotoPath } from "@/lib/pdi/storage-path"
 
 const ENABLE_INDIVIDUAL_PHOTOS = false
-
+const MERGED_PHOTO_INDEX = 0
 
 export type TestPhotoRow = {
   id: string
@@ -138,7 +138,8 @@ export async function replaceDayPhotos(params: {
       uploadedPaths.push(filePath)
     }
 
-    // Gravar banco (1 insert)
+    // Gravar banco por slot (test_id, day, kind, photo_index).
+    // Isso evita duplicidade ao substituir fotos do mesmo dia.
     const payload = uploadedPaths.map((p, idx) => ({
       test_id: testId,
       day,
@@ -146,18 +147,26 @@ export async function replaceDayPhotos(params: {
       kind: "single",
       photo_index: idx + 1,
     }))
-    const { error: insErr } = await supabase.from("test_photos").insert(payload)
+
+    const { error: insErr } = await supabase.from("test_photos").upsert(payload, {
+      onConflict: "test_id,day,kind,photo_index",
+    })
     if (insErr) throw insErr
 
-    // Remover antigas somente após novo insert
-    if (oldRows.length) {
-      const oldIds = oldRows.map((r) => r.id).filter(Boolean)
-      if (oldIds.length) {
-        await supabase.from("test_photos").delete().in("id", oldIds)
-      }
-      if (oldPaths.length) {
-        await supabase.storage.from("test-photos").remove(oldPaths)
-      }
+    // Remove apenas registros antigos que não possuem mais posição correspondente.
+    const newPhotoIndexes = new Set(payload.map((item) => item.photo_index))
+    const staleRows = oldRows.filter((row) => !newPhotoIndexes.has(Number(row.photo_index)))
+    const staleIds = staleRows.map((row) => row.id).filter(Boolean)
+
+    if (staleIds.length) {
+      await supabase.from("test_photos").delete().in("id", staleIds)
+    }
+
+    // Remove arquivos antigos somente depois do banco apontar para os arquivos novos.
+    const newPaths = new Set(uploadedPaths)
+    const oldPathsToRemove = oldPaths.filter((path) => path && !newPaths.has(path))
+    if (oldPathsToRemove.length) {
+      await supabase.storage.from("test-photos").remove(oldPathsToRemove)
     }
 
     return { uploaded: uploadedPaths.length }
@@ -227,16 +236,17 @@ export async function replaceMergedDayPhoto(params: {
   if (upErr) throw upErr
 
   // 2) UPSERT no DB (1 registro merged por dia)
-  // Requer UNIQUE/INDEX em (test_id, day, kind) — caso seu schema já tenha esse índice, evita deletes recursivos.
+  // Requer UNIQUE/INDEX em (test_id, day, kind, photo_index).
+  // Para mosaico, usamos photo_index=0.
   const { error: upDbErr } = await supabase.from("test_photos").upsert(
     {
       test_id: testId,
       day,
       storage_path: mergedPath,
       kind: "merged",
-      photo_index: null,
+      photo_index: MERGED_PHOTO_INDEX,
     },
-    { onConflict: "test_id,day,kind" },
+    { onConflict: "test_id,day,kind,photo_index" },
   )
 
   if (upDbErr) {

@@ -1,9 +1,11 @@
+export type TestPhotoExtension = "jpg" | "jpeg" | "png" | "webp"
+
 export type BuildTestPhotoPathArgs = {
   userId: string
   testId: string
   day: 7 | 14
   index: number
-  ext?: "jpg" | "jpeg" | "png" | "webp"
+  ext?: TestPhotoExtension
   timestamp?: number
 }
 
@@ -12,14 +14,19 @@ type AssertArgs = {
   testId?: string
 }
 
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 const FILE_RE = /^day(7|14)_photo\d+_\d+\.(jpg|jpeg|png|webp)$/i
+const ALLOWED_EXTENSIONS = ["jpg", "jpeg", "png", "webp"] as const
 
-function normalize(s: unknown) {
+function normalize(s: unknown): string {
   return String(s ?? "").trim()
 }
 
-function assertLooksLikeUuid(value: string, label: string) {
+function isTestPhotoExtension(value: string): value is TestPhotoExtension {
+  return ALLOWED_EXTENSIONS.some((extension) => extension === value)
+}
+
+function assertLooksLikeUuid(value: string, label: string): void {
   if (!UUID_RE.test(value)) {
     // Erro mais informativo pra você debugar rápido
     throw new Error(`${label} invalido (esperado UUID). Recebido: "${value}"`)
@@ -39,8 +46,9 @@ export function buildTestPhotoPath(args: BuildTestPhotoPathArgs): string {
   const index = Number(args.index)
   if (!Number.isFinite(index) || index < 1) throw new Error("buildTestPhotoPath: index deve ser >= 1")
 
-  const ext = (args.ext ?? "jpg").toLowerCase() as BuildTestPhotoPathArgs["ext"]
-  if (!["jpg", "jpeg", "png", "webp"].includes(ext)) throw new Error("buildTestPhotoPath: ext invalida")
+  const rawExt = normalize(args.ext ?? "jpg").toLowerCase()
+  if (!isTestPhotoExtension(rawExt)) throw new Error("buildTestPhotoPath: ext invalida")
+  const ext: TestPhotoExtension = rawExt
 
   const timestamp = Number(args.timestamp ?? Date.now())
   if (!Number.isFinite(timestamp) || timestamp <= 0) throw new Error("buildTestPhotoPath: timestamp invalido")

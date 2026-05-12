@@ -14,6 +14,16 @@ type DbExperimentRow = {
   created_at: string
 }
 
+type DbTestPhotoRow = {
+  id: string
+  test_id: string
+  day: number
+  storage_path: string
+  created_at: string
+  kind: "single" | "merged" | string | null
+  photo_index: number | null
+}
+
 type DbTestRow = {
   id: string
   experiment_id: string
@@ -52,6 +62,8 @@ type DbTestRow = {
   created_by: string | null
   created_at: string
   updated_at: string
+
+  test_photos?: DbTestPhotoRow[] | null
 }
 
 /**
@@ -66,6 +78,16 @@ export type Experiment = {
   repetitionCount: number
   createdBy: string | null
   createdAt: string
+}
+
+export type TestPhoto = {
+  id: string
+  testId: string
+  day: number
+  storagePath: string
+  createdAt: string
+  kind: "single" | "merged" | string | null
+  photoIndex: number | null
 }
 
 export type Test = {
@@ -106,6 +128,8 @@ export type Test = {
   createdBy: string | null
   createdAt: string
   updatedAt: string
+
+  testPhotos: TestPhoto[]
 }
 
 export type ExperimentWithTests = Experiment & {
@@ -165,6 +189,16 @@ function mapTest(row: DbTestRow): Test {
     createdBy: row.created_by,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
+
+    testPhotos: (row.test_photos ?? []).map((photo) => ({
+      id: photo.id,
+      testId: photo.test_id,
+      day: photo.day,
+      storagePath: photo.storage_path,
+      createdAt: photo.created_at,
+      kind: photo.kind,
+      photoIndex: photo.photo_index,
+    })),
   }
 }
 
@@ -305,7 +339,28 @@ export async function getExperimentsWithTests(supabase: SupabaseClient): Promise
   try {
     const { data, error } = await supabase
       .from("experiments")
-      .select("id, number, strain, start_date, test_count, repetition_count, created_by, created_at, tests (*)")
+      .select(`
+        id,
+        number,
+        strain,
+        start_date,
+        test_count,
+        repetition_count,
+        created_by,
+        created_at,
+        tests (
+          *,
+          test_photos (
+            id,
+            test_id,
+            day,
+            storage_path,
+            created_at,
+            kind,
+            photo_index
+          )
+        )
+      `)
       .order("number", { ascending: false })
 
     if (error) {

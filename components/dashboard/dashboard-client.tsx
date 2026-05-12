@@ -24,6 +24,7 @@ type UITest = {
   id: string
   repetitionNumber?: number
   testNumber?: number
+  status?: "Pendente" | "Inserir Fotos" | "Em andamento" | "Concluído"
   averageHumidity?: number
   bozo?: number
   sensorial?: number
@@ -49,8 +50,14 @@ interface DashboardClientProps {
 }
 
 export function DashboardClient({ experiments, experimentData }: DashboardClientProps) {
-  const totalTests = experiments.reduce((sum, exp) => sum + (exp.totalTests ?? exp.testCount * exp.repetitionCount), 0)
+  const activeTests = experimentData.flatMap((exp) => exp.testsData ?? [])
+  const totalTests = activeTests.length
   const completedTests = experimentData.reduce((sum, exp) => sum + (exp.completedTests ?? 0), 0)
+  const temperatureSamples = activeTests.flatMap((test) =>
+    [test.temp7Chamber, test.temp14Chamber].filter((value): value is number =>
+      typeof value === "number" && Number.isFinite(value),
+    ),
+  )
 
   const stats = {
     totalExperiments: experiments.length,
@@ -59,17 +66,9 @@ export function DashboardClient({ experiments, experimentData }: DashboardClient
     completionRate: totalTests > 0 ? Math.round((completedTests / totalTests) * 100) : 0,
     uniqueStrains: [...new Set(experiments.map((exp) => exp.strain))].length,
     avgTemperature:
-      experimentData.reduce((sum, exp) => {
-        const testsData = exp.testsData || []
-        const denom = testsData.length || 1
-        const expTemp =
-          testsData.reduce((tSum: number, test: UITest) => {
-            const t7 = test.temp7Chamber ?? 0
-            const t14 = test.temp14Chamber ?? 0
-            return tSum + (t7 + t14) / 2
-          }, 0) / denom
-        return sum + expTemp
-      }, 0) / (experimentData.length || 1),
+      temperatureSamples.length > 0
+        ? temperatureSamples.reduce((sum, value) => sum + value, 0) / temperatureSamples.length
+        : 0,
   }
 
   const recentActivities = generateRecentActivities(experimentData)
@@ -100,11 +99,10 @@ export function DashboardClient({ experiments, experimentData }: DashboardClient
               description={`Com ${stats.uniqueStrains} cepas diferentes`}
             />
             <StatsCard
-              title="Testes Realizados"
+              title="Testes Concluídos"
               value={stats.completedTests}
               icon={TestTube}
-              description={`${stats.completionRate}% de conclusão`}
-              trend={{ value: 12, label: "em relação ao mês anterior", positive: true }}
+              description={`${stats.completionRate}% dos testes com dados`}
             />
             <StatsCard
               title="Temperatura Média"
@@ -189,13 +187,14 @@ function generateRecentActivities(data: ExperimentData[]) {
         const testId = test.id || `${experiment.id}-idx-${testIndex}`
         const repNum = test.repetitionNumber ?? testIndex + 1
         const testNum = test.testNumber ?? testIndex + 1
+        const isCompleted = test.status === "Concluído"
 
         activities.push({
           id: `test-${testId}`,
           type: "test",
-          description: `Teste #${testNum} da Repetição #${repNum} do Experimento #${experiment.number} foi concluído`,
+          description: `Teste #${testNum} da Repetição #${repNum} do Experimento #${experiment.number} está ${isCompleted ? "concluído" : "em andamento"}`,
           date: new Date(experiment.startDate).toLocaleDateString("pt-BR"),
-          status: "completed",
+          status: isCompleted ? "completed" : "in-progress",
         })
       })
     }

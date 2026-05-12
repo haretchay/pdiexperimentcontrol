@@ -18,11 +18,11 @@ export function ExperimentProgressChart({ totalTests, completedTests }: Experime
   const safeCompleted = Number.isFinite(completedTests) ? completedTests : 0
 
   const done = Math.min(safeCompleted, safeTotal)
-  const pending = Math.max(safeTotal - done, 0)
+  const inProgress = Math.max(safeTotal - done, 0)
 
   const chartData = [
     { name: "Concluídos", value: done },
-    { name: "Pendentes", value: pending },
+    { name: "Em andamento / inserir fotos", value: inProgress },
   ]
 
   const CustomTooltip = ({ active, payload }: TooltipLike) => {
@@ -44,7 +44,7 @@ export function ExperimentProgressChart({ totalTests, completedTests }: Experime
     <Card className="col-span-1">
       <CardHeader>
         <CardTitle>Progresso</CardTitle>
-        <CardDescription>Concluídos vs pendentes</CardDescription>
+        <CardDescription>Pendentes sem dados não entram neste gráfico</CardDescription>
       </CardHeader>
 
       <CardContent>

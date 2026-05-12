@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation"
 import { PlusCircle, Calendar, CalendarDays, Download, Trash } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { PeriodGroup } from "@/components/period-group"
 import { PageTitle } from "@/components/page-title"
 import { useCardColors } from "@/lib/color-utils"
@@ -319,13 +319,19 @@ export function ExperimentsPageClient({ initialExperiments }: { initialExperimen
                 onKeyDown={(e) => {
                   if (e.key === "Enter" || e.key === " ") router.push(`/experiments/${experiment.id}`)
                 }}
-                className={`${getCardBackground("default")} ${getCardBorder(
-                  "default",
+                className={`${getCardBackground(experiment.number)} ${getCardBorder(
+                  experiment.number,
                 )} cursor-pointer transition-transform hover:scale-[1.01]`}
               >
-                <CardHeader>
+                <CardHeader className="space-y-3">
                   <CardTitle>Experimento #{experiment.number}</CardTitle>
-                  <CardDescription>{experiment.strain}</CardDescription>
+
+                  <div className="rounded-lg border border-blue-200/70 bg-white/70 px-3 py-2 shadow-sm dark:border-blue-900/50 dark:bg-background/40">
+                    <div className="mb-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Cepa</div>
+                    <div className="text-2xl font-semibold leading-none tracking-tight text-foreground">
+                      {experiment.strain}
+                    </div>
+                  </div>
                 </CardHeader>
 
                 <CardContent className="space-y-2">
@@ -341,17 +347,54 @@ export function ExperimentsPageClient({ initialExperiments }: { initialExperimen
                   </div>
                 </CardContent>
 
-                <div className="px-6 pb-6 flex justify-end">
-                  <Button
-                    variant="destructive"
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      setExperimentToDelete(experiment)
-                      setShowDeleteDialog(true)
-                    }}
-                  >
-                    <Trash className="h-4 w-4" />
-                  </Button>
+                <div className="px-6 pb-6 space-y-3">
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between text-xs text-muted-foreground">
+                      <span>Progresso do experimento</span>
+                      <span className="font-semibold text-foreground">{experiment.progressActivePct}%</span>
+                    </div>
+
+                    <div className="flex h-3 w-full overflow-hidden rounded-full border bg-muted/70">
+                      {experiment.progressCompletedPct > 0 && (
+                        <div
+                          className="h-full bg-green-500 transition-all"
+                          style={{ width: `${experiment.progressCompletedPct}%` }}
+                          title={`Concluídos: ${experiment.progressCompletedPct}%`}
+                        />
+                      )}
+                      {experiment.progressInProgressPct > 0 && (
+                        <div
+                          className="h-full bg-blue-500 transition-all"
+                          style={{ width: `${experiment.progressInProgressPct}%` }}
+                          title={`Em andamento: ${experiment.progressInProgressPct}%`}
+                        />
+                      )}
+                    </div>
+
+                    <div className="grid grid-cols-1 gap-1 text-[11px] text-muted-foreground sm:grid-cols-2">
+                      <span className="inline-flex items-center gap-1">
+                        <span className="h-2 w-2 rounded-full bg-green-500" />
+                        Concluídos: {experiment.completedTests}/{experiment.totalTests}
+                      </span>
+                      <span className="inline-flex items-center gap-1">
+                        <span className="h-2 w-2 rounded-full bg-blue-500" />
+                        Em andamento: {experiment.inProgressTests}/{experiment.totalTests}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="flex justify-end">
+                    <Button
+                      variant="destructive"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        setExperimentToDelete(experiment)
+                        setShowDeleteDialog(true)
+                      }}
+                    >
+                      <Trash className="h-4 w-4" />
+                    </Button>
+                  </div>
                 </div>
               </Card>
             ))}

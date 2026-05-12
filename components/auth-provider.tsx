@@ -3,7 +3,7 @@
 import type React from "react"
 import { useRouter } from "next/navigation"
 import { createContext, useContext, useEffect, useMemo, useState } from "react"
-import type { User } from "@supabase/supabase-js"
+import type { AuthChangeEvent, Session, User } from "@supabase/supabase-js"
 
 import { createClient } from "@/lib/supabase/client"
 
@@ -39,15 +39,18 @@ export function AuthProvider({
     // Sessão inicial (1x)
     supabase.auth
       .getSession()
-      .then(({ data: { session } }) => {
+      .then(({ data }: { data: { session: Session | null } }) => {
+        const session = data.session
         if (!mounted) return
         setUser(session?.user ?? null)
         setLoading(false)
       })
-      .catch((e) => {
+      .catch((e: unknown) => {
         // AbortError pode acontecer em navegação/hot reload
-        const msg = String((e as any)?.message ?? e ?? "")
-        if (e?.name !== "AbortError") console.error("[AuthProvider] getSession error:", e)
+        const errorName = e instanceof Error ? e.name : ""
+        const errorMessage = e instanceof Error ? e.message : String(e ?? "")
+        const msg = String(errorMessage)
+        if (errorName !== "AbortError") console.error("[AuthProvider] getSession error:", e)
 
         // Preview/domínios diferentes às vezes ficam com refresh_token antigo no storage.
         // Se não limpamos, o supabase-js tenta refresh em loop e o preview vira "instável".
@@ -71,7 +74,7 @@ export function AuthProvider({
       })
 
     // Mudanças de auth (filtrar eventos para não dar refresh toda hora)
-    const { data } = supabase.auth.onAuthStateChange((event, session) => {
+    const { data } = supabase.auth.onAuthStateChange((event: AuthChangeEvent, session: Session | null) => {
       if (!mounted) return
 
       setUser(session?.user ?? null)

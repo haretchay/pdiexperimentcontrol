@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server"
 
+import { createAdminClient } from "@/lib/supabase/admin"
 import { createClient } from "@/lib/supabase/server"
 
 // This route must be dynamic because it relies on cookies for auth.
@@ -7,14 +8,24 @@ export const dynamic = "force-dynamic"
 
 export async function GET(
   _req: Request,
-  { params }: { params: { id: string } }
+  { params }: { params: { id: string } },
 ) {
   try {
     const supabase = await createClient()
 
+    const {
+      data: { user },
+      error: authError,
+    } = await supabase.auth.getUser()
+
+    if (authError || !user) {
+      return NextResponse.json({ error: "not_authenticated" }, { status: 401 })
+    }
+
+    const dbClient = createAdminClient() ?? supabase
     const experimentId = params.id
 
-    const { data: experiment, error: expErr } = await supabase
+    const { data: experiment, error: expErr } = await dbClient
       .from("experiments")
       .select("id, number, repetition_count, test_count, start_date, strain")
       .eq("id", experimentId)
@@ -31,9 +42,18 @@ export async function GET(
       return NextResponse.json({ error: "not_found" }, { status: 404 })
     }
 
-    const { data: tests, error: testsErr } = await supabase
+    const { data: tests, error: testsErr } = await dbClient
       .from("tests")
-      .select("*")
+      .select(`
+        *,
+        test_photos (
+          day,
+          storage_path,
+          created_at,
+          kind,
+          photo_index
+        )
+      `)
       .eq("experiment_id", experimentId)
       .order("repetition_number", { ascending: true })
       .order("test_number", { ascending: true })

@@ -30,6 +30,9 @@ type DbExperimentRow = {
 type DbTestPhotoRow = {
   day: number
   storage_path: string
+  created_at?: string | null
+  kind?: "single" | "merged" | null
+  photo_index?: number | null
 }
 
 type DbTestRow = {
@@ -140,47 +143,43 @@ function isFieldFilled(testData: TestDataRecord, field: keyof TestDataRecord): b
   return value !== undefined && value !== null
 }
 
-const getTestStatus = (
-  testData: TestDataRecord | null | undefined,
-  allTestsInRepetition: boolean,
-  allRepetitionsCompleted: boolean,
-): { status: string; variant: StatusVariant } => {
+const REQUIRED_TEST_FIELDS: (keyof TestDataRecord)[] = [
+  "unit",
+  "requisition",
+  "testLot",
+  "matrixLot",
+  "strain",
+  "mpLot",
+  "averageHumidity",
+  "bozo",
+  "sensorial",
+  "quantity",
+  "testType",
+  "date7Day",
+  "date14Day",
+  "temp7Chamber",
+  "temp7Rice",
+  "temp14Chamber",
+  "temp14Rice",
+  "wetWeight",
+  "dryWeight",
+  "extractedConidiumWeight",
+]
+
+const getTestStatus = (testData: TestDataRecord | null | undefined): { status: string; variant: StatusVariant } => {
   if (!testData) return { status: "Pendente", variant: "warning" }
 
-  if (allRepetitionsCompleted) return { status: "Encerrado", variant: "destructive" }
-  if (allTestsInRepetition) return { status: "Concluído", variant: "default" }
+  const allFieldsFilled = REQUIRED_TEST_FIELDS.every((field) => isFieldFilled(testData, field))
+  const activityFields = REQUIRED_TEST_FIELDS.filter((field) => field !== "strain")
+  const hasAnyFieldFilled = activityFields.some((field) => isFieldFilled(testData, field))
+  const hasPhoto7 = Array.isArray(testData.photos7DayPaths) && testData.photos7DayPaths.length > 0
+  const hasPhoto14 = Array.isArray(testData.photos14DayPaths) && testData.photos14DayPaths.length > 0
+  const hasAnyPhoto = hasPhoto7 || hasPhoto14
+  const hasBothPhotos = hasPhoto7 && hasPhoto14
 
-  const allFields: (keyof TestDataRecord)[] = [
-    "unit",
-    "requisition",
-    "testLot",
-    "matrixLot",
-    "strain",
-    "mpLot",
-    "averageHumidity",
-    "bozo",
-    "sensorial",
-    "quantity",
-    "testType",
-    "date7Day",
-    "date14Day",
-    "temp7Chamber",
-    "temp7Rice",
-    "temp14Chamber",
-    "temp14Rice",
-    "wetWeight",
-    "dryWeight",
-    "extractedConidiumWeight",
-  ]
-
-  const allFieldsFilled = allFields.every((field) => isFieldFilled(testData, field))
-
-  const hasPhotos =
-    (Array.isArray(testData.photos7DayPaths) && testData.photos7DayPaths.length > 0) ||
-    (Array.isArray(testData.photos14DayPaths) && testData.photos14DayPaths.length > 0)
-
-  if (!allFieldsFilled) return { status: "Pendente", variant: "warning" }
-  if (!hasPhotos) return { status: "Inserir fotos", variant: "warning" }
+  if (!hasAnyFieldFilled && !hasAnyPhoto) return { status: "Pendente", variant: "warning" }
+  if (allFieldsFilled && hasBothPhotos) return { status: "Concluído", variant: "default" }
+  if (!hasAnyPhoto) return { status: "Inserir Fotos", variant: "warning" }
 
   return { status: "Em andamento", variant: "info" }
 }
@@ -308,7 +307,7 @@ export default function ExperimentDetailPage() {
             requisition: t.requisition ?? undefined,
             testLot: t.test_lot ?? undefined,
             matrixLot: t.matrix_lot ?? undefined,
-            strain: (t.strain ?? expUI.strain) ?? undefined,
+            strain: t.strain ?? undefined,
             mpLot: t.mp_lot ?? undefined,
 
             averageHumidity: safeNumber(t.average_humidity),
@@ -335,7 +334,9 @@ export default function ExperimentDetailPage() {
           }
         }
 
-        // 4) Calcula status por repetição
+        // 4) Calcula status por repetição com as mesmas regras dos cartões:
+        // Pendente = sem dados e sem fotos; Inserir Fotos = dados sem fotos;
+        // Em andamento = possui foto parcial; Concluído = todos os campos + fotos 7º e 14º dia.
         const repetitionsWithAllTestsDone: number[] = []
 
         for (let rep = 1; rep <= expUI.repetitionCount; rep++) {
@@ -344,31 +345,9 @@ export default function ExperimentDetailPage() {
           for (let test = 1; test <= expUI.testCount; test++) {
             const key = `${rep}_${test}`
             const info = map[key]
+            const status = getTestStatus(info).status
 
-            if (!info) {
-              allDone = false
-              break
-            }
-
-            const requiredFields: (keyof TestDataRecord)[] = [
-              "unit",
-              "requisition",
-              "testLot",
-              "matrixLot",
-              "strain",
-              "mpLot",
-              "averageHumidity",
-              "bozo",
-              "sensorial",
-              "quantity",
-              "testType",
-            ]
-
-            const allFieldsFilled = requiredFields.every((f) => isFieldFilled(info, f))
-            const hasPhotos =
-              (info.photos7DayPaths?.length ?? 0) > 0 || (info.photos14DayPaths?.length ?? 0) > 0
-
-            if (!allFieldsFilled || !hasPhotos) {
+            if (status !== "Concluído") {
               allDone = false
               break
             }
@@ -376,8 +355,6 @@ export default function ExperimentDetailPage() {
 
           if (allDone) repetitionsWithAllTestsDone.push(rep)
         }
-
-        const allRepetitionsCompleted = repetitionsWithAllTestsDone.length === expUI.repetitionCount
 
         const reps: Repetition[] = []
         for (let rep = 1; rep <= expUI.repetitionCount; rep++) {
@@ -391,12 +368,12 @@ export default function ExperimentDetailPage() {
             // prioridade: tests.test_type
             const label = info?.testType ? info.testType : `Teste #${test}`
 
-            const { status, variant } = getTestStatus(info, isRepCompleted, allRepetitionsCompleted)
+            const { status, variant } = getTestStatus(info)
 
             testsForRep.push({
               id: test,
               number: test,
-              completed: status !== "Pendente" && status !== "Inserir fotos",
+              completed: status === "Concluído",
               testType: label,
               status,
               variant,
@@ -445,8 +422,8 @@ export default function ExperimentDetailPage() {
       return
     }
 
-    const { status } = getTestStatus(info, false, false)
-    if (status === "Pendente" || status === "Inserir fotos") {
+    const { status } = getTestStatus(info)
+    if (status !== "Concluído") {
       router.push(`/experiments/${experimentId}/repetition/${repetitionId}/test/${testId}`)
       return
     }

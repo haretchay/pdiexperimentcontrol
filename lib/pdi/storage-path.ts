@@ -14,7 +14,7 @@ type AssertArgs = {
   testId?: string
 }
 
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 const FILE_RE = /^day(7|14)_photo\d+_\d+\.(jpg|jpeg|png|webp)$/i
 const ALLOWED_EXTENSIONS = ["jpg", "jpeg", "png", "webp"] as const
 
@@ -28,7 +28,6 @@ function isTestPhotoExtension(value: string): value is TestPhotoExtension {
 
 function assertLooksLikeUuid(value: string, label: string): void {
   if (!UUID_RE.test(value)) {
-    // Erro mais informativo pra você debugar rápido
     throw new Error(`${label} invalido (esperado UUID). Recebido: "${value}"`)
   }
 }

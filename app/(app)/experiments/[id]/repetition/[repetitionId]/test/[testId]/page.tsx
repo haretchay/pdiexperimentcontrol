@@ -22,9 +22,27 @@ type Annotation = { x: number; y: number; size: string; caption: string; color?:
 type AnnotationsByPhotoIndex = Record<number, Annotation[]>
 
 const TEMPERATURE_DAYS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14] as const
+const RICE_PERIODS = [
+  { key: "Morning", column: "morning", label: "Manhã", shortLabel: "M" },
+  { key: "Afternoon", column: "afternoon", label: "Tarde", shortLabel: "T" },
+] as const
+const RICE_SLOTS = [1, 2, 3] as const
+
+const DISCARD_OPTIONS = [
+  { key: "penic", label: "Penic.", className: "border-cyan-700 bg-cyan-700 text-white hover:bg-cyan-800", inactiveClassName: "border-cyan-200 bg-cyan-50 text-cyan-800 hover:bg-cyan-100 dark:border-cyan-900 dark:bg-cyan-950/30 dark:text-cyan-200" },
+  { key: "tri", label: "Tri.", className: "border-emerald-700 bg-emerald-700 text-white hover:bg-emerald-800", inactiveClassName: "border-emerald-200 bg-emerald-50 text-emerald-800 hover:bg-emerald-100 dark:border-emerald-900 dark:bg-emerald-950/30 dark:text-emerald-200" },
+  { key: "bac", label: "Bac.", className: "border-fuchsia-700 bg-fuchsia-700 text-white hover:bg-fuchsia-800", inactiveClassName: "border-fuchsia-200 bg-fuchsia-50 text-fuchsia-800 hover:bg-fuchsia-100 dark:border-fuchsia-900 dark:bg-fuchsia-950/30 dark:text-fuchsia-200" },
+  { key: "others", label: "Outros", className: "border-sky-700 bg-sky-700 text-white hover:bg-sky-800", inactiveClassName: "border-sky-200 bg-sky-50 text-sky-800 hover:bg-sky-100 dark:border-sky-900 dark:bg-sky-950/30 dark:text-sky-200" },
+] as const
+
 type TemperatureDay = (typeof TEMPERATURE_DAYS)[number]
-type TemperatureKind = "Chamber" | "Rice"
-type TemperatureFieldName = `temp${TemperatureDay}${TemperatureKind}`
+type RicePeriod = (typeof RICE_PERIODS)[number]["key"]
+type RiceSlot = (typeof RICE_SLOTS)[number]
+type DiscardKind = (typeof DISCARD_OPTIONS)[number]["key"]
+type ChamberFieldName = `temp${TemperatureDay}Chamber`
+type RiceMeasurementFieldName = `temp${TemperatureDay}Rice${RicePeriod}T${RiceSlot}`
+type TemperatureFieldName = ChamberFieldName | RiceMeasurementFieldName
+type DiscardContaminations = Record<string, Partial<Record<DiscardKind, boolean>>>
 
 const toNumberOrUndefined = (v: unknown) => {
   if (v === "" || v === null || v === undefined) return undefined
@@ -37,6 +55,18 @@ const toNumberOrUndefined = (v: unknown) => {
   }
   return undefined
 }
+
+const temperatureSchemaFields = Object.fromEntries(
+  TEMPERATURE_DAYS.flatMap((day) => [
+    [`temp${day}Chamber`, z.preprocess(toNumberOrUndefined, z.number().optional())],
+    ...RICE_PERIODS.flatMap((period) =>
+      RICE_SLOTS.map((slot) => [
+        `temp${day}Rice${period.key}T${slot}`,
+        z.preprocess(toNumberOrUndefined, z.number().optional()),
+      ]),
+    ),
+  ]),
+) as Record<TemperatureFieldName, z.ZodTypeAny>
 
 const isDataUrlImage = (s?: string) => typeof s === "string" && s.startsWith("data:image/")
 const hasNewCapturedPhotos = (photos: string[]) => Array.isArray(photos) && photos.some((p) => isDataUrlImage(p))
@@ -73,38 +103,105 @@ function NumberInputWithSuffix({
   )
 }
 
-function getTemperatureFieldName(day: TemperatureDay, kind: TemperatureKind): TemperatureFieldName {
-  return `temp${day}${kind}` as TemperatureFieldName
+function getChamberFieldName(day: TemperatureDay): ChamberFieldName {
+  return `temp${day}Chamber` as ChamberFieldName
 }
 
-function getTemperatureColumnName(day: TemperatureDay, kind: TemperatureKind) {
-  return `temp${day}_${kind === "Chamber" ? "chamber" : "rice"}`
+function getRiceMeasurementFieldName(day: TemperatureDay, period: RicePeriod, slot: RiceSlot): RiceMeasurementFieldName {
+  return `temp${day}Rice${period}T${slot}` as RiceMeasurementFieldName
+}
+
+function getChamberColumnName(day: TemperatureDay) {
+  return `temp${day}_chamber`
+}
+
+function getRiceMeasurementColumnName(day: TemperatureDay, period: RicePeriod, slot: RiceSlot) {
+  const periodColumn = period === "Morning" ? "morning" : "afternoon"
+  return `temp${day}_rice_${periodColumn}_t${slot}`
+}
+
+function getRiceGeneralColumnName(day: TemperatureDay) {
+  return `temp${day}_rice`
 }
 
 function getTemperatureDefaults(row?: any) {
   const values: Partial<Record<TemperatureFieldName, number | undefined>> = {}
 
   for (const day of TEMPERATURE_DAYS) {
-    const chamberField = getTemperatureFieldName(day, "Chamber")
-    const riceField = getTemperatureFieldName(day, "Rice")
-    values[chamberField] = row?.[getTemperatureColumnName(day, "Chamber")] ?? undefined
-    values[riceField] = row?.[getTemperatureColumnName(day, "Rice")] ?? undefined
+    values[getChamberFieldName(day)] = row?.[getChamberColumnName(day)] ?? undefined
+
+    for (const period of RICE_PERIODS) {
+      for (const slot of RICE_SLOTS) {
+        const field = getRiceMeasurementFieldName(day, period.key, slot)
+        values[field] = row?.[getRiceMeasurementColumnName(day, period.key, slot)] ?? undefined
+      }
+    }
   }
 
   return values as Record<TemperatureFieldName, number | undefined>
 }
 
+function averageTemperature(values: unknown[]) {
+  const numbers = values.map(toNumberOrUndefined)
+  if (numbers.some((value) => value === undefined)) return undefined
+  const total = numbers.reduce((sum, value) => sum + (value ?? 0), 0)
+  return Math.round((total / numbers.length) * 10) / 10
+}
+
+function getRicePeriodAverage(values: Partial<Record<TemperatureFieldName, unknown>>, day: TemperatureDay, period: RicePeriod) {
+  return averageTemperature(RICE_SLOTS.map((slot) => values[getRiceMeasurementFieldName(day, period, slot)]))
+}
+
+function getRiceGeneralAverage(values: Partial<Record<TemperatureFieldName, unknown>>, day: TemperatureDay) {
+  const morning = getRicePeriodAverage(values, day, "Morning")
+  const afternoon = getRicePeriodAverage(values, day, "Afternoon")
+  return averageTemperature([morning, afternoon])
+}
+
+function formatComputedTemperature(value: number | undefined) {
+  if (value === undefined || !Number.isFinite(value)) return ""
+  return String(value).replace(".", ",")
+}
+
 function getTemperaturePayload(values: FormValues) {
   const payload: Record<string, number | null> = {}
+  const temperatureValues = values as unknown as Partial<Record<TemperatureFieldName, unknown>>
 
   for (const day of TEMPERATURE_DAYS) {
-    const chamberField = getTemperatureFieldName(day, "Chamber")
-    const riceField = getTemperatureFieldName(day, "Rice")
-    payload[getTemperatureColumnName(day, "Chamber")] = (values as any)[chamberField] ?? null
-    payload[getTemperatureColumnName(day, "Rice")] = (values as any)[riceField] ?? null
+    const chamberField = getChamberFieldName(day)
+    const generalAverage = getRiceGeneralAverage(temperatureValues, day)
+
+    payload[getChamberColumnName(day)] = toNumberOrUndefined((values as any)[chamberField]) ?? null
+    payload[getRiceGeneralColumnName(day)] = generalAverage ?? null
+
+    for (const period of RICE_PERIODS) {
+      for (const slot of RICE_SLOTS) {
+        const field = getRiceMeasurementFieldName(day, period.key, slot)
+        payload[getRiceMeasurementColumnName(day, period.key, slot)] = toNumberOrUndefined((values as any)[field]) ?? null
+      }
+    }
   }
 
   return payload
+}
+
+function normalizeDiscardContaminations(value: unknown): DiscardContaminations {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {}
+  const result: DiscardContaminations = {}
+
+  for (const day of TEMPERATURE_DAYS) {
+    const row = (value as any)[String(day)]
+    if (!row || typeof row !== "object" || Array.isArray(row)) continue
+
+    const normalized: Partial<Record<DiscardKind, boolean>> = {}
+    for (const option of DISCARD_OPTIONS) {
+      if (Boolean(row[option.key])) normalized[option.key] = true
+    }
+
+    if (Object.keys(normalized).length > 0) result[String(day)] = normalized
+  }
+
+  return result
 }
 
 function getExperimentDayDate(startDate: string | null | undefined, day: number) {
@@ -220,34 +317,7 @@ const formSchema = z.object({
   date7Day: z.string().optional(),
   date14Day: z.string().optional(),
 
-  temp1Chamber: z.preprocess(toNumberOrUndefined, z.number().optional()),
-  temp1Rice: z.preprocess(toNumberOrUndefined, z.number().optional()),
-  temp2Chamber: z.preprocess(toNumberOrUndefined, z.number().optional()),
-  temp2Rice: z.preprocess(toNumberOrUndefined, z.number().optional()),
-  temp3Chamber: z.preprocess(toNumberOrUndefined, z.number().optional()),
-  temp3Rice: z.preprocess(toNumberOrUndefined, z.number().optional()),
-  temp4Chamber: z.preprocess(toNumberOrUndefined, z.number().optional()),
-  temp4Rice: z.preprocess(toNumberOrUndefined, z.number().optional()),
-  temp5Chamber: z.preprocess(toNumberOrUndefined, z.number().optional()),
-  temp5Rice: z.preprocess(toNumberOrUndefined, z.number().optional()),
-  temp6Chamber: z.preprocess(toNumberOrUndefined, z.number().optional()),
-  temp6Rice: z.preprocess(toNumberOrUndefined, z.number().optional()),
-  temp7Chamber: z.preprocess(toNumberOrUndefined, z.number().optional()),
-  temp7Rice: z.preprocess(toNumberOrUndefined, z.number().optional()),
-  temp8Chamber: z.preprocess(toNumberOrUndefined, z.number().optional()),
-  temp8Rice: z.preprocess(toNumberOrUndefined, z.number().optional()),
-  temp9Chamber: z.preprocess(toNumberOrUndefined, z.number().optional()),
-  temp9Rice: z.preprocess(toNumberOrUndefined, z.number().optional()),
-  temp10Chamber: z.preprocess(toNumberOrUndefined, z.number().optional()),
-  temp10Rice: z.preprocess(toNumberOrUndefined, z.number().optional()),
-  temp11Chamber: z.preprocess(toNumberOrUndefined, z.number().optional()),
-  temp11Rice: z.preprocess(toNumberOrUndefined, z.number().optional()),
-  temp12Chamber: z.preprocess(toNumberOrUndefined, z.number().optional()),
-  temp12Rice: z.preprocess(toNumberOrUndefined, z.number().optional()),
-  temp13Chamber: z.preprocess(toNumberOrUndefined, z.number().optional()),
-  temp13Rice: z.preprocess(toNumberOrUndefined, z.number().optional()),
-  temp14Chamber: z.preprocess(toNumberOrUndefined, z.number().optional()),
-  temp14Rice: z.preprocess(toNumberOrUndefined, z.number().optional()),
+  ...temperatureSchemaFields,
 
   wetWeight: z.preprocess(toNumberOrUndefined, z.number().optional()),
   dryWeight: z.preprocess(toNumberOrUndefined, z.number().optional()),
@@ -304,6 +374,7 @@ export default function TestEditPage() {
 
   const [testDbId, setTestDbId] = useState<string | null>(null)
   const [experiment, setExperiment] = useState<any>(null)
+  const [discardContaminations, setDiscardContaminations] = useState<DiscardContaminations>({})
 
   const form = useForm<FormValues>({
     resolver: zodResolver(formSchema) as any,
@@ -380,9 +451,10 @@ export default function TestEditPage() {
         if (cancelled) return
         setTestDbId(currentTest.id)
 
-        // Carregar anotações que já existiam
+        // Carregar anotações e descartes que já existiam
         setAnnotations7Day((currentTest.annotations_7_day as any) ?? {})
         setAnnotations14Day((currentTest.annotations_14_day as any) ?? {})
+        setDiscardContaminations(normalizeDiscardContaminations((currentTest as any).discard_contaminations))
 
         const derivedDate7 = getExperimentDayDate(exp?.start_date, 7)
         const derivedDate14 = getExperimentDayDate(exp?.start_date, 14)
@@ -529,6 +601,7 @@ export default function TestEditPage() {
         // ✅ AGORA SALVA AS ANOTAÇÕES NO TESTE (jsonb)
         annotations_7_day: annotations7Day && Object.keys(annotations7Day).length ? annotations7Day : null,
         annotations_14_day: annotations14Day && Object.keys(annotations14Day).length ? annotations14Day : null,
+        discard_contaminations: discardContaminations ?? {},
 
         updated_at: new Date().toISOString(),
       }
@@ -617,6 +690,43 @@ export default function TestEditPage() {
           )}
         </ul>
       </div>
+    )
+  }
+
+  const toggleDiscardContamination = (day: TemperatureDay, kind: DiscardKind) => {
+    setDiscardContaminations((current) => {
+      const dayKey = String(day)
+      const currentDay = current[dayKey] ?? {}
+      const nextDay = { ...currentDay, [kind]: !currentDay[kind] }
+
+      if (!nextDay[kind]) delete nextDay[kind]
+
+      const next = { ...current }
+      if (Object.keys(nextDay).length === 0) {
+        delete next[dayKey]
+      } else {
+        next[dayKey] = nextDay
+      }
+
+      return next
+    })
+  }
+
+  const renderDiscardButton = (day: TemperatureDay, option: (typeof DISCARD_OPTIONS)[number]) => {
+    const selected = Boolean(discardContaminations[String(day)]?.[option.key])
+
+    return (
+      <Button
+        key={`${day}-${option.key}`}
+        type="button"
+        variant="outline"
+        onClick={() => toggleDiscardContamination(day, option.key)}
+        className={`h-7 min-w-[68px] rounded-md px-2 text-[11px] font-bold shadow-sm transition ${
+          selected ? option.className : option.inactiveClassName
+        }`}
+      >
+        {option.label}
+      </Button>
     )
   }
 
@@ -728,6 +838,8 @@ export default function TestEditPage() {
       />
     )
   }
+
+  const watchedTemperatureValues = form.watch() as unknown as Partial<Record<TemperatureFieldName, unknown>>
 
   return (
     <div className="container mx-auto w-full max-w-7xl px-4 py-6">
@@ -936,44 +1048,61 @@ export default function TestEditPage() {
                 </div>
               </section>
 
-              <div className="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(430px,0.92fr)_minmax(520px,1.08fr)]">
-                <section className="rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-950/30">
-                  <div className="flex items-center gap-3 border-b px-4 py-3 dark:border-slate-800">
-                    <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-orange-50 text-orange-600 dark:bg-orange-950/40 dark:text-orange-300">
-                      <Thermometer className="h-5 w-5" />
-                    </div>
-                    <div>
-                      <h3 className="text-base font-semibold">Temperatura</h3>
-                      <p className="text-xs text-muted-foreground">Datas sequenciais a partir do início do experimento.</p>
-                    </div>
+              <section className="rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-950/30">
+                <div className="flex items-center gap-3 border-b px-4 py-3 dark:border-slate-800">
+                  <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-orange-50 text-orange-600 dark:bg-orange-950/40 dark:text-orange-300">
+                    <Thermometer className="h-5 w-5" />
                   </div>
+                  <div>
+                    <h3 className="text-base font-semibold">Temperaturas</h3>
+                    <p className="text-xs text-muted-foreground">
+                      Temp. Câmara diária e Temp. Arroz aferida de manhã e à tarde com média automática.
+                    </p>
+                  </div>
+                </div>
 
-                  <div className="overflow-x-auto p-3">
-                    <div className="min-w-[420px] overflow-hidden rounded-xl border border-slate-200 dark:border-slate-800">
-                      <div className="grid grid-cols-[1.15fr_0.85fr_0.85fr] bg-slate-100 text-xs font-semibold text-slate-700 dark:bg-slate-900 dark:text-slate-200">
-                        <div className="border-r px-3 py-2 dark:border-slate-800">Dia</div>
-                        <div className="border-r px-2 py-2 text-center dark:border-slate-800">Temp. Câmara</div>
-                        <div className="px-2 py-2 text-center">Temp. Arroz</div>
-                      </div>
-
+                <div className="overflow-x-auto p-3">
+                  <table className="min-w-[1240px] w-full border-collapse overflow-hidden rounded-xl text-sm">
+                    <thead>
+                      <tr className="bg-slate-100 text-xs font-semibold text-slate-700 dark:bg-slate-900 dark:text-slate-200">
+                        <th rowSpan={2} className="w-[150px] border border-slate-200 px-2 py-2 text-left align-middle dark:border-slate-800">Dia</th>
+                        <th rowSpan={2} className="w-[96px] border border-slate-200 px-2 py-2 text-center align-middle dark:border-slate-800">Temp. Câmara</th>
+                        <th colSpan={4} className="border border-slate-200 px-2 py-2 text-center dark:border-slate-800">Temp. Arroz (Manhã)</th>
+                        <th colSpan={4} className="border border-slate-200 px-2 py-2 text-center dark:border-slate-800">Temp. Arroz (Tarde)</th>
+                        <th rowSpan={2} className="w-[82px] border border-slate-200 px-2 py-2 text-center align-middle dark:border-slate-800">Média Geral</th>
+                        <th colSpan={4} className="border border-slate-200 px-2 py-2 text-center dark:border-slate-800">Descarte (contaminações)</th>
+                      </tr>
+                      <tr className="bg-slate-50 text-[11px] font-semibold text-slate-600 dark:bg-slate-900/70 dark:text-slate-300">
+                        <th className="w-[72px] border border-slate-200 px-1.5 py-1.5 text-center dark:border-slate-800">T1</th>
+                        <th className="w-[72px] border border-slate-200 px-1.5 py-1.5 text-center dark:border-slate-800">T2</th>
+                        <th className="w-[72px] border border-slate-200 px-1.5 py-1.5 text-center dark:border-slate-800">T3</th>
+                        <th className="w-[76px] border border-slate-200 px-1.5 py-1.5 text-center dark:border-slate-800">Média</th>
+                        <th className="w-[72px] border border-slate-200 px-1.5 py-1.5 text-center dark:border-slate-800">T1</th>
+                        <th className="w-[72px] border border-slate-200 px-1.5 py-1.5 text-center dark:border-slate-800">T2</th>
+                        <th className="w-[72px] border border-slate-200 px-1.5 py-1.5 text-center dark:border-slate-800">T3</th>
+                        <th className="w-[76px] border border-slate-200 px-1.5 py-1.5 text-center dark:border-slate-800">Média</th>
+                        <th className="w-[72px] border border-slate-200 px-1.5 py-1.5 text-center dark:border-slate-800">Penic.</th>
+                        <th className="w-[72px] border border-slate-200 px-1.5 py-1.5 text-center dark:border-slate-800">Tri.</th>
+                        <th className="w-[72px] border border-slate-200 px-1.5 py-1.5 text-center dark:border-slate-800">Bac.</th>
+                        <th className="w-[76px] border border-slate-200 px-1.5 py-1.5 text-center dark:border-slate-800">Outros</th>
+                      </tr>
+                    </thead>
+                    <tbody>
                       {TEMPERATURE_DAYS.map((day) => {
                         const dayDate = getExperimentDayDate(experiment?.start_date, day)
-                        const chamberName = getTemperatureFieldName(day, "Chamber")
-                        const riceName = getTemperatureFieldName(day, "Rice")
+                        const chamberName = getChamberFieldName(day)
+                        const morningAverage = getRicePeriodAverage(watchedTemperatureValues, day, "Morning")
+                        const afternoonAverage = getRicePeriodAverage(watchedTemperatureValues, day, "Afternoon")
+                        const generalAverage = getRiceGeneralAverage(watchedTemperatureValues, day)
 
                         return (
-                          <div
-                            key={day}
-                            className="grid grid-cols-[1.15fr_0.85fr_0.85fr] border-t border-slate-200 text-sm odd:bg-white even:bg-slate-50/70 dark:border-slate-800 dark:odd:bg-slate-950/10 dark:even:bg-slate-900/30"
-                          >
-                            <div className="flex min-h-[42px] items-center border-r px-3 dark:border-slate-800">
-                              <div>
-                                <div className="font-semibold text-slate-800 dark:text-slate-100">{day}º dia</div>
-                                <div className="text-[11px] text-muted-foreground">{formatShortDate(dayDate)}</div>
-                              </div>
-                            </div>
+                          <tr key={day} className="odd:bg-white even:bg-slate-50/70 dark:odd:bg-slate-950/10 dark:even:bg-slate-900/30">
+                            <td className="border border-slate-200 px-2 py-1.5 align-middle dark:border-slate-800">
+                              <div className="font-semibold text-slate-800 dark:text-slate-100">{day}º dia</div>
+                              <div className="text-[11px] text-muted-foreground">{formatShortDate(dayDate)}</div>
+                            </td>
 
-                            <div className="border-r p-1.5 dark:border-slate-800">
+                            <td className="border border-slate-200 p-1 align-middle dark:border-slate-800">
                               <FormField
                                 control={form.control}
                                 name={chamberName as any}
@@ -985,57 +1114,96 @@ export default function TestEditPage() {
                                         onChange={field.onChange}
                                         step="0.1"
                                         suffix="ºC"
-                                        inputClassName="h-8 text-center text-sm"
+                                        inputClassName="h-8 text-center text-xs"
                                       />
                                     </FormControl>
                                   </FormItem>
                                 )}
                               />
-                            </div>
+                            </td>
 
-                            <div className="p-1.5">
-                              <FormField
-                                control={form.control}
-                                name={riceName as any}
-                                render={({ field }) => (
-                                  <FormItem>
-                                    <FormControl>
-                                      <NumberInputWithSuffix
-                                        value={field.value}
-                                        onChange={field.onChange}
-                                        step="0.1"
-                                        suffix="ºC"
-                                        inputClassName="h-8 text-center text-sm"
+                            {RICE_PERIODS.flatMap((period) => {
+                              const periodAverage = period.key === "Morning" ? morningAverage : afternoonAverage
+                              return [
+                                ...RICE_SLOTS.map((slot) => {
+                                  const fieldName = getRiceMeasurementFieldName(day, period.key, slot)
+                                  return (
+                                    <td key={`${day}-${period.key}-${slot}`} className="border border-slate-200 p-1 align-middle dark:border-slate-800">
+                                      <FormField
+                                        control={form.control}
+                                        name={fieldName as any}
+                                        render={({ field }) => (
+                                          <FormItem>
+                                            <FormControl>
+                                              <NumberInputWithSuffix
+                                                value={field.value}
+                                                onChange={field.onChange}
+                                                step="0.1"
+                                                suffix="ºC"
+                                                inputClassName="h-8 text-center text-xs"
+                                              />
+                                            </FormControl>
+                                          </FormItem>
+                                        )}
                                       />
-                                    </FormControl>
-                                  </FormItem>
-                                )}
-                              />
-                            </div>
-                          </div>
+                                    </td>
+                                  )
+                                }),
+                                <td key={`${day}-${period.key}-avg`} className="border border-slate-200 bg-sky-50/70 p-1 align-middle dark:border-slate-800 dark:bg-sky-950/20">
+                                  <div className="relative">
+                                    <Input
+                                      value={formatComputedTemperature(periodAverage)}
+                                      readOnly
+                                      tabIndex={-1}
+                                      className="h-8 bg-white/70 pr-10 text-center text-xs font-semibold dark:bg-slate-950/40"
+                                    />
+                                    <div className="pointer-events-none absolute inset-y-0 right-2 flex items-center text-[11px] text-muted-foreground">ºC</div>
+                                  </div>
+                                </td>,
+                              ]
+                            })}
+
+                            <td className="border border-slate-200 bg-blue-50/80 p-1 align-middle dark:border-slate-800 dark:bg-blue-950/20">
+                              <div className="relative">
+                                <Input
+                                  value={formatComputedTemperature(generalAverage)}
+                                  readOnly
+                                  tabIndex={-1}
+                                  className="h-8 bg-white/70 pr-10 text-center text-xs font-bold dark:bg-slate-950/40"
+                                />
+                                <div className="pointer-events-none absolute inset-y-0 right-2 flex items-center text-[11px] text-muted-foreground">ºC</div>
+                              </div>
+                            </td>
+
+                            {DISCARD_OPTIONS.map((option) => (
+                              <td key={`${day}-${option.key}`} className="border border-slate-200 p-1 text-center align-middle dark:border-slate-800">
+                                {renderDiscardButton(day, option)}
+                              </td>
+                            ))}
+                          </tr>
                         )
                       })}
-                    </div>
-                  </div>
-                </section>
+                    </tbody>
+                  </table>
+                </div>
+              </section>
 
-                <section className="rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-950/30">
-                  <div className="flex items-center gap-3 border-b px-4 py-3 dark:border-slate-800">
-                    <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-sky-50 text-sky-600 dark:bg-sky-950/40 dark:text-sky-300">
-                      <Images className="h-5 w-5" />
-                    </div>
-                    <div>
-                      <h3 className="text-base font-semibold">Mídias</h3>
-                      <p className="text-xs text-muted-foreground">Capture ou refaça os mosaicos do 7º e 14º dia.</p>
-                    </div>
+              <section className="rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-950/30">
+                <div className="flex items-center gap-3 border-b px-4 py-3 dark:border-slate-800">
+                  <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-sky-50 text-sky-600 dark:bg-sky-950/40 dark:text-sky-300">
+                    <Images className="h-5 w-5" />
                   </div>
+                  <div>
+                    <h3 className="text-base font-semibold">Mídias</h3>
+                    <p className="text-xs text-muted-foreground">Capture ou refaça os mosaicos do 7º e 14º dia.</p>
+                  </div>
+                </div>
 
-                  <div className="grid gap-4 p-3 sm:p-4">
-                    {renderMediaBlock(7)}
-                    {renderMediaBlock(14)}
-                  </div>
-                </section>
-              </div>
+                <div className="grid gap-4 p-3 sm:p-4 xl:grid-cols-2">
+                  {renderMediaBlock(7)}
+                  {renderMediaBlock(14)}
+                </div>
+              </section>
 
               <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-950/30">
                 <div className="mb-4">

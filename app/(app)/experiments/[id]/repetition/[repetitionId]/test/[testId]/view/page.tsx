@@ -23,6 +23,93 @@ type PhotoRow = {
   photo_index?: number | null
 }
 
+const TEMPERATURE_DAYS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14] as const
+const RICE_PERIODS = [
+  { key: "morning", label: "Manhã" },
+  { key: "afternoon", label: "Tarde" },
+] as const
+const RICE_SLOTS = [1, 2, 3] as const
+const DISCARD_OPTIONS = [
+  { key: "penic", label: "Penic.", className: "bg-cyan-700 text-white" },
+  { key: "tri", label: "Tri.", className: "bg-emerald-700 text-white" },
+  { key: "bac", label: "Bac.", className: "bg-fuchsia-700 text-white" },
+  { key: "others", label: "Outros", className: "bg-sky-700 text-white" },
+] as const
+
+type TemperatureDay = (typeof TEMPERATURE_DAYS)[number]
+type RicePeriod = (typeof RICE_PERIODS)[number]["key"]
+type RiceSlot = (typeof RICE_SLOTS)[number]
+type DiscardKind = (typeof DISCARD_OPTIONS)[number]["key"]
+type DiscardContaminations = Record<string, Partial<Record<DiscardKind, boolean>>>
+
+function toNumberOrUndefined(v: unknown) {
+  if (v === "" || v === null || v === undefined) return undefined
+  if (typeof v === "number") return Number.isNaN(v) ? undefined : v
+  const n = Number(String(v).replace(",", "."))
+  return Number.isNaN(n) ? undefined : n
+}
+
+function averageTemperature(values: unknown[]) {
+  const numbers: number[] = []
+
+  for (const value of values) {
+    const numberValue = toNumberOrUndefined(value)
+    if (numberValue === undefined) return undefined
+    numbers.push(numberValue)
+  }
+
+  if (numbers.length === 0) return undefined
+
+  const total = numbers.reduce((sum, value) => sum + value, 0)
+  return Math.round((total / numbers.length) * 10) / 10
+}
+
+function riceMeasurementColumn(day: TemperatureDay, period: RicePeriod, slot: RiceSlot) {
+  return `temp${day}_rice_${period}_t${slot}`
+}
+
+function normalizeDiscardContaminations(value: unknown): DiscardContaminations {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {}
+  const result: DiscardContaminations = {}
+
+  for (const day of TEMPERATURE_DAYS) {
+    const row = (value as any)[String(day)]
+    if (!row || typeof row !== "object" || Array.isArray(row)) continue
+
+    const normalized: Partial<Record<DiscardKind, boolean>> = {}
+    for (const option of DISCARD_OPTIONS) {
+      if (Boolean(row[option.key])) normalized[option.key] = true
+    }
+
+    if (Object.keys(normalized).length > 0) result[String(day)] = normalized
+  }
+
+  return result
+}
+
+function getExperimentDayDate(startDate: string | null | undefined, day: number) {
+  if (!startDate) return ""
+  const [year, month, date] = String(startDate).slice(0, 10).split("-").map(Number)
+  if (!year || !month || !date) return ""
+  const d = new Date(year, month - 1, date)
+  d.setDate(d.getDate() + day - 1)
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`
+}
+
+function formatShortDate(dateString: string) {
+  if (!dateString) return "--/--/--"
+  const [year, month, date] = dateString.slice(0, 10).split("-")
+  if (!year || !month || !date) return "--/--/--"
+  return `${date}/${month}/${year.slice(-2)}`
+}
+
+function formatTemperatureValue(value: any) {
+  if (value === null || value === undefined || value === "") return "-"
+  const n = Number(value)
+  if (!Number.isFinite(n)) return "-"
+  return `${n} ºC`
+}
+
 export default function TestViewPage() {
   const params = useParams()
   const router = useRouter()
@@ -138,6 +225,25 @@ const mapped = {
           temp7Rice: t.temp7_rice,
           temp14Chamber: t.temp14_chamber,
           temp14Rice: t.temp14_rice,
+          temperatures: TEMPERATURE_DAYS.map((day) => {
+            const morningValues = RICE_SLOTS.map((slot) => (t as any)[riceMeasurementColumn(day, "morning", slot)])
+            const afternoonValues = RICE_SLOTS.map((slot) => (t as any)[riceMeasurementColumn(day, "afternoon", slot)])
+            const morningAverage = averageTemperature(morningValues)
+            const afternoonAverage = averageTemperature(afternoonValues)
+            const generalAverage = toNumberOrUndefined((t as any)[`temp${day}_rice`]) ?? averageTemperature([morningAverage, afternoonAverage])
+
+            return {
+              day,
+              date: getExperimentDayDate(exp?.start_date, day),
+              chamber: (t as any)[`temp${day}_chamber`],
+              morningValues,
+              afternoonValues,
+              morningAverage,
+              afternoonAverage,
+              rice: generalAverage,
+            }
+          }),
+          discardContaminations: normalizeDiscardContaminations((t as any).discard_contaminations),
           wetWeight: t.wet_weight,
           dryWeight: t.dry_weight,
           extractedConidiumWeight: t.extracted_conidium_weight,
@@ -249,7 +355,7 @@ const mapped = {
   if (!testData) return <div className="container mx-auto p-4">Teste não encontrado</div>
 
   return (
-    <div className="container mx-auto p-4 max-w-3xl overflow-x-hidden">
+    <div className="container mx-auto w-full max-w-7xl p-4">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-6 gap-2">
         <div className="flex items-center">
           <Link href={`/experiments/${experimentId}`}>
@@ -350,6 +456,71 @@ const mapped = {
               <h3 className="text-sm font-medium text-muted-foreground">Sensorial</h3>
               <p className="font-medium">{fmt(testData.sensorial, "pts")}</p>
             </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card className="mb-6 overflow-hidden border-slate-200 shadow-sm dark:border-slate-800">
+        <CardHeader className="border-b bg-gradient-to-r from-slate-50 to-slate-100 dark:from-slate-950 dark:to-slate-900">
+          <CardTitle>Temperaturas</CardTitle>
+        </CardHeader>
+        <CardContent className="p-3 sm:p-4">
+          <div className="overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-800">
+            <table className="min-w-[1240px] w-full border-collapse text-sm">
+              <thead>
+                <tr className="bg-slate-100 text-xs font-semibold text-slate-700 dark:bg-slate-900 dark:text-slate-200">
+                  <th rowSpan={2} className="w-[150px] border border-slate-200 px-2 py-2 text-left align-middle dark:border-slate-800">Dia</th>
+                  <th rowSpan={2} className="w-[96px] border border-slate-200 px-2 py-2 text-center align-middle dark:border-slate-800">Temp. Câmara</th>
+                  <th colSpan={4} className="border border-slate-200 px-2 py-2 text-center dark:border-slate-800">Temp. Arroz (Manhã)</th>
+                  <th colSpan={4} className="border border-slate-200 px-2 py-2 text-center dark:border-slate-800">Temp. Arroz (Tarde)</th>
+                  <th rowSpan={2} className="w-[82px] border border-slate-200 px-2 py-2 text-center align-middle dark:border-slate-800">Média Geral</th>
+                  <th colSpan={4} className="border border-slate-200 px-2 py-2 text-center dark:border-slate-800">Descarte (contaminações)</th>
+                </tr>
+                <tr className="bg-slate-50 text-[11px] font-semibold text-slate-600 dark:bg-slate-900/70 dark:text-slate-300">
+                  <th className="w-[72px] border border-slate-200 px-1.5 py-1.5 text-center dark:border-slate-800">T1</th>
+                  <th className="w-[72px] border border-slate-200 px-1.5 py-1.5 text-center dark:border-slate-800">T2</th>
+                  <th className="w-[72px] border border-slate-200 px-1.5 py-1.5 text-center dark:border-slate-800">T3</th>
+                  <th className="w-[76px] border border-slate-200 px-1.5 py-1.5 text-center dark:border-slate-800">Média</th>
+                  <th className="w-[72px] border border-slate-200 px-1.5 py-1.5 text-center dark:border-slate-800">T1</th>
+                  <th className="w-[72px] border border-slate-200 px-1.5 py-1.5 text-center dark:border-slate-800">T2</th>
+                  <th className="w-[72px] border border-slate-200 px-1.5 py-1.5 text-center dark:border-slate-800">T3</th>
+                  <th className="w-[76px] border border-slate-200 px-1.5 py-1.5 text-center dark:border-slate-800">Média</th>
+                  <th className="w-[72px] border border-slate-200 px-1.5 py-1.5 text-center dark:border-slate-800">Penic.</th>
+                  <th className="w-[72px] border border-slate-200 px-1.5 py-1.5 text-center dark:border-slate-800">Tri.</th>
+                  <th className="w-[72px] border border-slate-200 px-1.5 py-1.5 text-center dark:border-slate-800">Bac.</th>
+                  <th className="w-[76px] border border-slate-200 px-1.5 py-1.5 text-center dark:border-slate-800">Outros</th>
+                </tr>
+              </thead>
+              <tbody>
+                {(testData.temperatures ?? []).map((row: any) => (
+                  <tr key={row.day} className="odd:bg-background even:bg-muted/30">
+                    <td className="border border-slate-200 px-2 py-1.5 font-medium dark:border-slate-800">
+                      {row.day}º dia <span className="text-xs font-normal text-muted-foreground">({formatShortDate(row.date)})</span>
+                    </td>
+                    <td className="border border-slate-200 px-2 py-1.5 text-center dark:border-slate-800">{formatTemperatureValue(row.chamber)}</td>
+                    {row.morningValues.map((value: any, index: number) => (
+                      <td key={`m-${row.day}-${index}`} className="border border-slate-200 px-2 py-1.5 text-center dark:border-slate-800">{formatTemperatureValue(value)}</td>
+                    ))}
+                    <td className="border border-slate-200 bg-sky-50/70 px-2 py-1.5 text-center font-semibold dark:border-slate-800 dark:bg-sky-950/20">{formatTemperatureValue(row.morningAverage)}</td>
+                    {row.afternoonValues.map((value: any, index: number) => (
+                      <td key={`t-${row.day}-${index}`} className="border border-slate-200 px-2 py-1.5 text-center dark:border-slate-800">{formatTemperatureValue(value)}</td>
+                    ))}
+                    <td className="border border-slate-200 bg-sky-50/70 px-2 py-1.5 text-center font-semibold dark:border-slate-800 dark:bg-sky-950/20">{formatTemperatureValue(row.afternoonAverage)}</td>
+                    <td className="border border-slate-200 bg-blue-50/80 px-2 py-1.5 text-center font-bold dark:border-slate-800 dark:bg-blue-950/20">{formatTemperatureValue(row.rice)}</td>
+                    {DISCARD_OPTIONS.map((option) => {
+                      const active = Boolean(testData.discardContaminations?.[String(row.day)]?.[option.key])
+                      return (
+                        <td key={`${row.day}-${option.key}`} className="border border-slate-200 px-1.5 py-1.5 text-center dark:border-slate-800">
+                          <span className={`inline-flex h-7 min-w-[64px] items-center justify-center rounded-md border px-2 text-[11px] font-bold ${active ? option.className : "border-slate-200 bg-slate-50 text-slate-400 dark:border-slate-800 dark:bg-slate-950/40"}`}>
+                            {option.label}
+                          </span>
+                        </td>
+                      )
+                    })}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         </CardContent>
       </Card>

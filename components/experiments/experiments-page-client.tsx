@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { PlusCircle, Calendar, CalendarDays, Download, Trash } from "lucide-react"
@@ -17,7 +17,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 
 import { createClient } from "@/lib/supabase/client"
 import { deleteExperiment, getTestsByExperiment, type Test as DbTest } from "@/lib/supabase/experiments"
-import type { UIExperiment } from "@/app/(app)/experiments/page"
+import type { ExperimentUnitFilter, UIExperiment } from "@/app/(app)/experiments/page"
 
 // Função auxiliar para obter a semana do ano
 function getWeekNumber(date: Date) {
@@ -114,12 +114,22 @@ export function ExperimentsPageClient({ initialExperiments }: { initialExperimen
   const [showDeleteDialog, setShowDeleteDialog] = useState(false)
   const [experimentToDelete, setExperimentToDelete] = useState<UIExperiment | null>(null)
   const isMobile = useIsMobile()
+  const [unitFilter, setUnitFilter] = useState<ExperimentUnitFilter | "all">("all")
+
+  const filteredExperiments = useMemo(() => {
+    if (unitFilter === "all") return experiments
+    return experiments.filter((experiment) => (experiment.units ?? []).includes(unitFilter))
+  }, [experiments, unitFilter])
+
+  const handleUnitFilterClick = (unit: ExperimentUnitFilter) => {
+    setUnitFilter((current) => (current === unit ? "all" : unit))
+  }
 
   // Agrupar experimentos por período
   useEffect(() => {
     const grouped: Record<string, UIExperiment[]> = {}
 
-    experiments.forEach((experiment) => {
+    filteredExperiments.forEach((experiment) => {
       const startDate = new Date(experiment.startDate)
       let periodKey: string
 
@@ -136,7 +146,7 @@ export function ExperimentsPageClient({ initialExperiments }: { initialExperimen
     })
 
     setGroupedExperiments(grouped)
-  }, [experiments, periodMode])
+  }, [filteredExperiments, periodMode])
 
   async function loadTestDataFromSupabase(experimentId: string) {
     const supabase = createClient()
@@ -278,7 +288,7 @@ export function ExperimentsPageClient({ initialExperiments }: { initialExperimen
                   </SelectContent>
                 </Select>
 
-                <div className="flex gap-2">
+                <div className="flex flex-wrap gap-2">
                   <Button variant="outline" onClick={() => setPeriodMode("week")}>
                     <Calendar className="h-4 w-4 mr-2" />
                     Semanas
@@ -286,6 +296,23 @@ export function ExperimentsPageClient({ initialExperiments }: { initialExperimen
                   <Button variant="outline" onClick={() => setPeriodMode("month")}>
                     <CalendarDays className="h-4 w-4 mr-2" />
                     Meses
+                  </Button>
+
+                  <div className="mx-1 hidden h-9 w-px bg-border sm:block" aria-hidden="true" />
+
+                  <Button
+                    variant={unitFilter === "Salto" ? "default" : "outline"}
+                    onClick={() => handleUnitFilterClick("Salto")}
+                    className={unitFilter === "Salto" ? "bg-gradient-to-r from-blue-600 to-purple-600 text-white hover:from-blue-700 hover:to-purple-700" : undefined}
+                  >
+                    Salto
+                  </Button>
+                  <Button
+                    variant={unitFilter === "Americana" ? "default" : "outline"}
+                    onClick={() => handleUnitFilterClick("Americana")}
+                    className={unitFilter === "Americana" ? "bg-gradient-to-r from-blue-600 to-purple-600 text-white hover:from-blue-700 hover:to-purple-700" : undefined}
+                  >
+                    Americana
                   </Button>
                 </div>
               </div>
@@ -306,6 +333,14 @@ export function ExperimentsPageClient({ initialExperiments }: { initialExperimen
           </CardContent>
         </Card>
       </div>
+
+      {filteredExperiments.length === 0 && (
+        <Card className="border-dashed">
+          <CardContent className="p-8 text-center text-sm text-muted-foreground">
+            Nenhum experimento encontrado para o filtro selecionado.
+          </CardContent>
+        </Card>
+      )}
 
       {Object.entries(groupedExperiments).map(([periodTitle, exps]) => (
         <PeriodGroup key={periodTitle} title={periodTitle}>

@@ -2,6 +2,8 @@ import { createClient } from "@/lib/supabase/server"
 import { getExperimentsWithTests, type ExperimentWithTests, type Test } from "@/lib/supabase/experiments"
 import { ExperimentsPageClient } from "@/components/experiments/experiments-page-client"
 
+export type ExperimentUnitFilter = "Salto" | "Americana"
+
 export type UIExperiment = {
   id: string
   number: string
@@ -18,11 +20,14 @@ export type UIExperiment = {
   progressInProgressPct: number
   progressActivePct: number
   testTypes?: string[]
+  units?: string[]
 }
 
 type TestStatus = "Pendente" | "Inserir Fotos" | "Em andamento" | "Concluído"
 
 type TestStatusRecord = {
+  [key: string]: unknown
+
   unit?: string | null
   requisition?: string | null
   testLot?: string | null
@@ -40,11 +45,6 @@ type TestStatusRecord = {
   date7Day?: string | null
   date14Day?: string | null
 
-  temp7Chamber?: number | null
-  temp7Rice?: number | null
-  temp14Chamber?: number | null
-  temp14Rice?: number | null
-
   wetWeight?: number | null
   dryWeight?: number | null
   extractedConidiumWeight?: number | null
@@ -53,7 +53,16 @@ type TestStatusRecord = {
   photos14DayPaths?: string[]
 }
 
-const REQUIRED_TEST_FIELDS: (keyof TestStatusRecord)[] = [
+const TEMPERATURE_DAYS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14] as const
+const RICE_PERIODS = ["Morning", "Afternoon"] as const
+const RICE_SLOTS = [1, 2, 3] as const
+
+const REQUIRED_TEMPERATURE_FIELDS = TEMPERATURE_DAYS.flatMap((day) => [
+  `temp${day}Chamber`,
+  ...RICE_PERIODS.flatMap((period) => RICE_SLOTS.map((slot) => `temp${day}Rice${period}T${slot}`)),
+])
+
+const REQUIRED_TEST_FIELDS = [
   "unit",
   "requisition",
   "testLot",
@@ -67,16 +76,13 @@ const REQUIRED_TEST_FIELDS: (keyof TestStatusRecord)[] = [
   "testType",
   "date7Day",
   "date14Day",
-  "temp7Chamber",
-  "temp7Rice",
-  "temp14Chamber",
-  "temp14Rice",
+  ...REQUIRED_TEMPERATURE_FIELDS,
   "wetWeight",
   "dryWeight",
   "extractedConidiumWeight",
 ]
 
-function isFieldFilled(testData: TestStatusRecord, field: keyof TestStatusRecord): boolean {
+function isFieldFilled(testData: TestStatusRecord, field: string): boolean {
   const value = testData[field]
 
   if (typeof value === "number") return !Number.isNaN(value)
@@ -104,6 +110,22 @@ function getTestStatus(testData: TestStatusRecord | null | undefined): TestStatu
   return "Em andamento"
 }
 
+function mapTemperatureFields(test: Test): Record<string, unknown> {
+  const temperatures: Record<string, unknown> = {}
+
+  for (const day of TEMPERATURE_DAYS) {
+    temperatures[`temp${day}Chamber`] = test[`temp${day}Chamber`]
+
+    for (const period of RICE_PERIODS) {
+      for (const slot of RICE_SLOTS) {
+        temperatures[`temp${day}Rice${period}T${slot}`] = test[`temp${day}Rice${period}T${slot}`]
+      }
+    }
+  }
+
+  return temperatures
+}
+
 function mapTestToStatusRecord(test: Test | null | undefined): TestStatusRecord | null {
   if (!test) return null
 
@@ -121,10 +143,7 @@ function mapTestToStatusRecord(test: Test | null | undefined): TestStatusRecord 
     testType: test.testType,
     date7Day: test.date7Day,
     date14Day: test.date14Day,
-    temp7Chamber: test.temp7Chamber,
-    temp7Rice: test.temp7Rice,
-    temp14Chamber: test.temp14Chamber,
-    temp14Rice: test.temp14Rice,
+    ...mapTemperatureFields(test),
     wetWeight: test.wetWeight,
     dryWeight: test.dryWeight,
     extractedConidiumWeight: test.extractedConidiumWeight,
@@ -136,6 +155,25 @@ function mapTestToStatusRecord(test: Test | null | undefined): TestStatusRecord 
 function pct(count: number, total: number): number {
   if (!Number.isFinite(count) || !Number.isFinite(total) || total <= 0) return 0
   return Math.max(0, Math.min(100, Math.round((count / total) * 100)))
+}
+
+function normalizeExperimentUnit(value: string | null | undefined): ExperimentUnitFilter | null {
+  const normalized = String(value ?? "").trim().toLowerCase()
+  if (!normalized) return null
+  if (normalized.includes("salto")) return "Salto"
+  if (normalized.includes("americana")) return "Americana"
+  return null
+}
+
+function getExperimentUnits(tests: Test[]): ExperimentUnitFilter[] {
+  const units = new Set<ExperimentUnitFilter>()
+
+  for (const test of tests ?? []) {
+    const unit = normalizeExperimentUnit(test.unit)
+    if (unit) units.add(unit)
+  }
+
+  return Array.from(units)
 }
 
 function mapDbToUI(exp: ExperimentWithTests): UIExperiment {
@@ -184,6 +222,7 @@ function mapDbToUI(exp: ExperimentWithTests): UIExperiment {
     progressInProgressPct,
     progressActivePct: Math.min(100, progressCompletedPct + progressInProgressPct),
     testTypes: [],
+    units: getExperimentUnits(exp.tests ?? []),
   }
 }
 

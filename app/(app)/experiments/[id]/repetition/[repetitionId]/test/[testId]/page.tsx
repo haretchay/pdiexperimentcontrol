@@ -142,9 +142,17 @@ function getTemperatureDefaults(row?: any) {
 }
 
 function averageTemperature(values: unknown[]) {
-  const numbers = values.map(toNumberOrUndefined)
-  if (numbers.some((value) => value === undefined)) return undefined
-  const total = numbers.reduce((sum, value) => sum + (value ?? 0), 0)
+  const numbers: number[] = []
+
+  for (const value of values) {
+    const numberValue = toNumberOrUndefined(value)
+    if (numberValue === undefined) return undefined
+    numbers.push(numberValue)
+  }
+
+  if (numbers.length === 0) return undefined
+
+  const total = numbers.reduce((sum, value) => sum + value, 0)
   return Math.round((total / numbers.length) * 10) / 10
 }
 

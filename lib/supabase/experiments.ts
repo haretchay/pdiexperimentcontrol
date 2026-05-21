@@ -25,6 +25,7 @@ type DbTestPhotoRow = {
 }
 
 type DbTestRow = {
+  [key: string]: any
   id: string
   experiment_id: string
   repetition_number: number
@@ -44,9 +45,33 @@ type DbTestRow = {
   sensorial: number | null
   quantity: number | null
 
+  temp1_chamber: number | null
+  temp1_rice: number | null
+  temp2_chamber: number | null
+  temp2_rice: number | null
+  temp3_chamber: number | null
+  temp3_rice: number | null
+  temp4_chamber: number | null
+  temp4_rice: number | null
+  temp5_chamber: number | null
+  temp5_rice: number | null
+  temp6_chamber: number | null
+  temp6_rice: number | null
   temp7_chamber: number | null
-  temp14_chamber: number | null
   temp7_rice: number | null
+  temp8_chamber: number | null
+  temp8_rice: number | null
+  temp9_chamber: number | null
+  temp9_rice: number | null
+  temp10_chamber: number | null
+  temp10_rice: number | null
+  temp11_chamber: number | null
+  temp11_rice: number | null
+  temp12_chamber: number | null
+  temp12_rice: number | null
+  temp13_chamber: number | null
+  temp13_rice: number | null
+  temp14_chamber: number | null
   temp14_rice: number | null
 
   wet_weight: number | null
@@ -58,6 +83,7 @@ type DbTestRow = {
 
   annotations_7_day: Record<string, unknown> | null
   annotations_14_day: Record<string, unknown> | null
+  discard_contaminations?: Record<string, unknown> | null
 
   created_by: string | null
   created_at: string
@@ -91,6 +117,7 @@ export type TestPhoto = {
 }
 
 export type Test = {
+  [key: string]: any
   id: string
   experimentId: string
   repetitionNumber: number
@@ -136,6 +163,28 @@ export type ExperimentWithTests = Experiment & {
   tests: Test[]
 }
 
+const TEMPERATURE_DAYS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14] as const
+const RICE_PERIODS = ["Morning", "Afternoon"] as const
+const RICE_SLOTS = [1, 2, 3] as const
+
+function mapTemperatureFields(row: DbTestRow): Record<string, number | null> {
+  const values: Record<string, number | null> = {}
+
+  for (const day of TEMPERATURE_DAYS) {
+    values[`temp${day}Chamber`] = row[`temp${day}_chamber`] ?? null
+    values[`temp${day}Rice`] = row[`temp${day}_rice`] ?? null
+
+    for (const period of RICE_PERIODS) {
+      const periodColumn = period === "Morning" ? "morning" : "afternoon"
+
+      for (const slot of RICE_SLOTS) {
+        values[`temp${day}Rice${period}T${slot}`] = row[`temp${day}_rice_${periodColumn}_t${slot}`] ?? null
+      }
+    }
+  }
+
+  return values
+}
 
 function mapExperiment(row: DbExperimentRow): Experiment {
   return {
@@ -189,6 +238,8 @@ function mapTest(row: DbTestRow): Test {
     createdBy: row.created_by,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
+
+    ...mapTemperatureFields(row),
 
     testPhotos: (row.test_photos ?? []).map((photo) => ({
       id: photo.id,

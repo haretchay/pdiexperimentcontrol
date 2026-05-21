@@ -16,16 +16,21 @@ import { Input } from "@/components/ui/input"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { PhotoCaptureWorkflow } from "@/components/camera/photo-capture-workflow"
-import { Camera, Check } from "lucide-react"
+import { Camera, Check, Images, Thermometer } from "lucide-react"
 
 type Annotation = { x: number; y: number; size: string; caption: string; color?: string }
 type AnnotationsByPhotoIndex = Record<number, Annotation[]>
+
+const TEMPERATURE_DAYS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14] as const
+type TemperatureDay = (typeof TEMPERATURE_DAYS)[number]
+type TemperatureKind = "Chamber" | "Rice"
+type TemperatureFieldName = `temp${TemperatureDay}${TemperatureKind}`
 
 const toNumberOrUndefined = (v: unknown) => {
   if (v === "" || v === null || v === undefined) return undefined
   if (typeof v === "number") return Number.isNaN(v) ? undefined : v
   if (typeof v === "string") {
-    const s = v.trim()
+    const s = v.trim().replace(",", ".")
     if (!s) return undefined
     const n = Number(s)
     return Number.isNaN(n) ? undefined : n
@@ -41,28 +46,93 @@ function NumberInputWithSuffix({
   onChange,
   step,
   suffix,
+  className,
+  inputClassName,
 }: {
   value: any
   onChange: any
   step?: string
   suffix: string
+  className?: string
+  inputClassName?: string
 }) {
   return (
-    <div className="relative">
+    <div className={`relative ${className ?? ""}`}>
       <Input
         type="number"
         step={step}
         value={value ?? ""}
         onChange={onChange}
-        className="pr-12"
+        onWheel={(e) => e.currentTarget.blur()}
+        className={`pr-10 ${inputClassName ?? ""}`}
       />
-      <div className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-xs text-muted-foreground">
+      <div className="pointer-events-none absolute inset-y-0 right-2 flex items-center text-[11px] text-muted-foreground">
         {suffix}
       </div>
     </div>
   )
 }
 
+function getTemperatureFieldName(day: TemperatureDay, kind: TemperatureKind): TemperatureFieldName {
+  return `temp${day}${kind}` as TemperatureFieldName
+}
+
+function getTemperatureColumnName(day: TemperatureDay, kind: TemperatureKind) {
+  return `temp${day}_${kind === "Chamber" ? "chamber" : "rice"}`
+}
+
+function getTemperatureDefaults(row?: any) {
+  const values: Partial<Record<TemperatureFieldName, number | undefined>> = {}
+
+  for (const day of TEMPERATURE_DAYS) {
+    const chamberField = getTemperatureFieldName(day, "Chamber")
+    const riceField = getTemperatureFieldName(day, "Rice")
+    values[chamberField] = row?.[getTemperatureColumnName(day, "Chamber")] ?? undefined
+    values[riceField] = row?.[getTemperatureColumnName(day, "Rice")] ?? undefined
+  }
+
+  return values as Record<TemperatureFieldName, number | undefined>
+}
+
+function getTemperaturePayload(values: FormValues) {
+  const payload: Record<string, number | null> = {}
+
+  for (const day of TEMPERATURE_DAYS) {
+    const chamberField = getTemperatureFieldName(day, "Chamber")
+    const riceField = getTemperatureFieldName(day, "Rice")
+    payload[getTemperatureColumnName(day, "Chamber")] = (values as any)[chamberField] ?? null
+    payload[getTemperatureColumnName(day, "Rice")] = (values as any)[riceField] ?? null
+  }
+
+  return payload
+}
+
+function getExperimentDayDate(startDate: string | null | undefined, day: number) {
+  if (!startDate) return ""
+
+  const [year, month, date] = String(startDate).slice(0, 10).split("-").map(Number)
+  if (!year || !month || !date) return ""
+
+  const d = new Date(year, month - 1, date)
+  d.setDate(d.getDate() + day - 1)
+
+  const yyyy = d.getFullYear()
+  const mm = String(d.getMonth() + 1).padStart(2, "0")
+  const dd = String(d.getDate()).padStart(2, "0")
+  return `${yyyy}-${mm}-${dd}`
+}
+
+function formatShortDate(dateString: string) {
+  if (!dateString) return "--/--/--"
+  const [year, month, date] = dateString.slice(0, 10).split("-")
+  if (!year || !month || !date) return "--/--/--"
+  return `${date}/${month}/${year.slice(-2)}`
+}
+
+function toStoredDateIso(dateString?: string | null) {
+  if (!dateString) return null
+  return new Date(`${String(dateString).slice(0, 10)}T12:00:00`).toISOString()
+}
 
 async function createMosaicBlob(imageDataUrls: string[]) {
   // Mosaico 3x2 (6 fotos): mantém zoom normal ao abrir a imagem final
@@ -117,7 +187,6 @@ async function createMosaicBlob(imageDataUrls: string[]) {
     ctx.drawImage(img, x, y, rw, rh)
   }
 
-
   imgs.forEach((img, i) => {
     const col = i % cols
     const row = Math.floor(i / cols)
@@ -151,8 +220,32 @@ const formSchema = z.object({
   date7Day: z.string().optional(),
   date14Day: z.string().optional(),
 
+  temp1Chamber: z.preprocess(toNumberOrUndefined, z.number().optional()),
+  temp1Rice: z.preprocess(toNumberOrUndefined, z.number().optional()),
+  temp2Chamber: z.preprocess(toNumberOrUndefined, z.number().optional()),
+  temp2Rice: z.preprocess(toNumberOrUndefined, z.number().optional()),
+  temp3Chamber: z.preprocess(toNumberOrUndefined, z.number().optional()),
+  temp3Rice: z.preprocess(toNumberOrUndefined, z.number().optional()),
+  temp4Chamber: z.preprocess(toNumberOrUndefined, z.number().optional()),
+  temp4Rice: z.preprocess(toNumberOrUndefined, z.number().optional()),
+  temp5Chamber: z.preprocess(toNumberOrUndefined, z.number().optional()),
+  temp5Rice: z.preprocess(toNumberOrUndefined, z.number().optional()),
+  temp6Chamber: z.preprocess(toNumberOrUndefined, z.number().optional()),
+  temp6Rice: z.preprocess(toNumberOrUndefined, z.number().optional()),
   temp7Chamber: z.preprocess(toNumberOrUndefined, z.number().optional()),
   temp7Rice: z.preprocess(toNumberOrUndefined, z.number().optional()),
+  temp8Chamber: z.preprocess(toNumberOrUndefined, z.number().optional()),
+  temp8Rice: z.preprocess(toNumberOrUndefined, z.number().optional()),
+  temp9Chamber: z.preprocess(toNumberOrUndefined, z.number().optional()),
+  temp9Rice: z.preprocess(toNumberOrUndefined, z.number().optional()),
+  temp10Chamber: z.preprocess(toNumberOrUndefined, z.number().optional()),
+  temp10Rice: z.preprocess(toNumberOrUndefined, z.number().optional()),
+  temp11Chamber: z.preprocess(toNumberOrUndefined, z.number().optional()),
+  temp11Rice: z.preprocess(toNumberOrUndefined, z.number().optional()),
+  temp12Chamber: z.preprocess(toNumberOrUndefined, z.number().optional()),
+  temp12Rice: z.preprocess(toNumberOrUndefined, z.number().optional()),
+  temp13Chamber: z.preprocess(toNumberOrUndefined, z.number().optional()),
+  temp13Rice: z.preprocess(toNumberOrUndefined, z.number().optional()),
   temp14Chamber: z.preprocess(toNumberOrUndefined, z.number().optional()),
   temp14Rice: z.preprocess(toNumberOrUndefined, z.number().optional()),
 
@@ -228,15 +321,16 @@ export default function TestEditPage() {
       quantity: undefined,
       date7Day: "",
       date14Day: "",
-      temp7Chamber: undefined,
-      temp7Rice: undefined,
-      temp14Chamber: undefined,
-      temp14Rice: undefined,
+      ...getTemperatureDefaults(),
       wetWeight: undefined,
       dryWeight: undefined,
       extractedConidiumWeight: undefined,
     },
   })
+
+  const date7FromExperiment = useMemo(() => getExperimentDayDate(experiment?.start_date, 7), [experiment?.start_date])
+  const date14FromExperiment = useMemo(() => getExperimentDayDate(experiment?.start_date, 14), [experiment?.start_date])
+
   useEffect(() => {
     let cancelled = false
     ;(async () => {
@@ -290,6 +384,9 @@ export default function TestEditPage() {
         setAnnotations7Day((currentTest.annotations_7_day as any) ?? {})
         setAnnotations14Day((currentTest.annotations_14_day as any) ?? {})
 
+        const derivedDate7 = getExperimentDayDate(exp?.start_date, 7)
+        const derivedDate14 = getExperimentDayDate(exp?.start_date, 14)
+
         form.reset({
           unit: (currentTest.unit as any) ?? "americana",
           requisition: (currentTest.requisition as any) ?? "interna",
@@ -304,13 +401,10 @@ export default function TestEditPage() {
           sensorial: currentTest.sensorial ?? undefined,
           quantity: currentTest.quantity ?? undefined,
 
-          date7Day: currentTest.date_7_day ? String(currentTest.date_7_day).slice(0, 10) : "",
-          date14Day: currentTest.date_14_day ? String(currentTest.date_14_day).slice(0, 10) : "",
+          date7Day: derivedDate7 || (currentTest.date_7_day ? String(currentTest.date_7_day).slice(0, 10) : ""),
+          date14Day: derivedDate14 || (currentTest.date_14_day ? String(currentTest.date_14_day).slice(0, 10) : ""),
 
-          temp7Chamber: currentTest.temp7_chamber ?? undefined,
-          temp7Rice: currentTest.temp7_rice ?? undefined,
-          temp14Chamber: currentTest.temp14_chamber ?? undefined,
-          temp14Rice: currentTest.temp14_rice ?? undefined,
+          ...getTemperatureDefaults(currentTest),
 
           wetWeight: currentTest.wet_weight ?? undefined,
           dryWeight: currentTest.dry_weight ?? undefined,
@@ -369,7 +463,6 @@ export default function TestEditPage() {
             setExistingMerged14Url(null)
           }
         }
-
       } catch (e) {
         console.error(e)
       } finally {
@@ -406,6 +499,9 @@ export default function TestEditPage() {
 
       setTestDbId(ensuredTest.id)
 
+      const derivedDate7 = getExperimentDayDate(experiment?.start_date, 7) || values.date7Day
+      const derivedDate14 = getExperimentDayDate(experiment?.start_date, 14) || values.date14Day
+
       const payload = {
         unit: values.unit ?? null,
         requisition: values.requisition ?? null,
@@ -421,13 +517,10 @@ export default function TestEditPage() {
         sensorial: values.sensorial ?? null,
         quantity: values.quantity ?? null,
 
-        date_7_day: values.date7Day ? new Date(values.date7Day).toISOString() : null,
-        date_14_day: values.date14Day ? new Date(values.date14Day).toISOString() : null,
+        date_7_day: toStoredDateIso(derivedDate7),
+        date_14_day: toStoredDateIso(derivedDate14),
 
-        temp7_chamber: values.temp7Chamber ?? null,
-        temp7_rice: values.temp7Rice ?? null,
-        temp14_chamber: values.temp14Chamber ?? null,
-        temp14_rice: values.temp14Rice ?? null,
+        ...getTemperaturePayload(values),
 
         wet_weight: values.wetWeight ?? null,
         dry_weight: values.dryWeight ?? null,
@@ -490,6 +583,92 @@ export default function TestEditPage() {
     setIsCapturing14Day(false)
   }
 
+  const startPhotoCapture = (day: 7 | 14) => {
+    if (day === 7) {
+      if (existingMerged7Url && !hasNewCapturedPhotos(photos7Day)) {
+        setOpenDayPreview(7)
+        return
+      }
+      prevPhotos7Ref.current = photos7Day?.length ? [...photos7Day] : null
+      setIsCapturing7Day(true)
+      return
+    }
+
+    if (existingMerged14Url && !hasNewCapturedPhotos(photos14Day)) {
+      setOpenDayPreview(14)
+      return
+    }
+    prevPhotos14Ref.current = photos14Day?.length ? [...photos14Day] : null
+    setIsCapturing14Day(true)
+  }
+
+  const renderAnnotationSummary = (day: 7 | 14) => {
+    const annotations = day === 7 ? annotations7Day : annotations14Day
+    if (!Object.keys(annotations || {}).length) return null
+
+    return (
+      <div className="mt-3 rounded-xl border border-slate-200 bg-white/70 p-3 shadow-sm dark:border-slate-800 dark:bg-slate-950/40">
+        <div className="text-xs font-semibold text-slate-700 dark:text-slate-200">Anotações ({day}º dia)</div>
+        <ul className="mt-1 max-h-24 space-y-1 overflow-auto pl-4 text-xs text-muted-foreground list-disc">
+          {Object.entries(annotations).flatMap(([idx, anns]) =>
+            ((anns as Annotation[]) || []).map((a, j) => (
+              <li key={`${day}-${idx}-${j}`}>Foto {Number(idx) + 1}: {a.caption}</li>
+            )),
+          )}
+        </ul>
+      </div>
+    )
+  }
+
+  const renderMediaBlock = (day: 7 | 14) => {
+    const photos = day === 7 ? photos7Day : photos14Day
+    const hasPhotos = photos.length > 0
+    const isExistingMerged = day === 7 ? Boolean(existingMerged7Url && !hasNewCapturedPhotos(photos7Day)) : Boolean(existingMerged14Url && !hasNewCapturedPhotos(photos14Day))
+    const statusText = hasPhotos
+      ? isExistingMerged
+        ? "Mosaico salvo"
+        : `Fotos capturadas (${photos.length})`
+      : "Pendente"
+
+    return (
+      <div className="overflow-hidden rounded-2xl border border-slate-200 bg-slate-50/70 shadow-sm dark:border-slate-800 dark:bg-slate-950/30">
+        <Button
+          type="button"
+          variant={hasPhotos ? "default" : "outline"}
+          onClick={() => startPhotoCapture(day)}
+          className="h-auto w-full justify-between rounded-none border-0 px-4 py-3 text-left"
+        >
+          <span className="flex items-center gap-2">
+            <Camera className="h-4 w-4" />
+            <span className="font-semibold">Fotos do {day}º dia</span>
+          </span>
+          <span className="flex items-center gap-2 text-xs font-medium opacity-90">
+            {hasPhotos && <Check className="h-4 w-4" />}
+            {statusText}
+          </span>
+        </Button>
+
+        <div className="grid grid-cols-3 border-t border-slate-200 dark:border-slate-800">
+          {Array.from({ length: 6 }, (_, i) => {
+            const filled = isExistingMerged || photos.length > i
+            return (
+              <div
+                key={`${day}-${i}`}
+                className={`flex aspect-[4/2.15] items-center justify-center border-r border-b border-slate-200 text-sm font-semibold last:border-r-0 dark:border-slate-800 ${
+                  filled ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-300" : "bg-white text-slate-500 dark:bg-slate-950/30"
+                }`}
+              >
+                {i + 1}
+              </div>
+            )
+          })}
+        </div>
+
+        {renderAnnotationSummary(day)}
+      </div>
+    )
+  }
+
   if (loading) {
     return <div className="container mx-auto p-4">Carregando formulário...</div>
   }
@@ -512,7 +691,7 @@ export default function TestEditPage() {
           testNumber: String(testId),
           strain: form.getValues("strain") || experiment?.strain || "",
           day: 7,
-          date: form.getValues("date7Day"),
+          date: date7FromExperiment || form.getValues("date7Day"),
           unit: form.getValues("unit"),
           testLot: form.getValues("testLot"),
           matrixLot: form.getValues("matrixLot"),
@@ -540,7 +719,7 @@ export default function TestEditPage() {
           testNumber: String(testId),
           strain: form.getValues("strain") || experiment?.strain || "",
           day: 14,
-          date: form.getValues("date14Day"),
+          date: date14FromExperiment || form.getValues("date14Day"),
           unit: form.getValues("unit"),
           testLot: form.getValues("testLot"),
           matrixLot: form.getValues("matrixLot"),
@@ -551,412 +730,369 @@ export default function TestEditPage() {
   }
 
   return (
-    <div className="container mx-auto max-w-3xl py-6">
-      <Card>
-        <CardHeader>
-          <CardTitle>Editar Teste</CardTitle>
-          <CardDescription>
-            Experimento: {experimentId} • Repetição {repetitionId} • Teste {testId}
-          </CardDescription>
+    <div className="container mx-auto w-full max-w-7xl px-4 py-6">
+      <Card className="overflow-hidden border-slate-200 shadow-sm dark:border-slate-800">
+        <CardHeader className="border-b bg-gradient-to-r from-slate-50 to-slate-100 dark:from-slate-950 dark:to-slate-900">
+          <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
+            <div>
+              <CardTitle className="text-2xl">Editar Teste</CardTitle>
+              <CardDescription className="mt-1">
+                Experimento #{experiment?.number ?? experimentId} • Repetição {repetitionId} • Teste {testId}
+              </CardDescription>
+            </div>
+            <div className="rounded-2xl border bg-white/80 px-4 py-2 text-sm shadow-sm dark:bg-slate-950/60">
+              <span className="text-muted-foreground">Cepa</span>
+              <span className="ml-2 font-semibold">{form.watch("strain") || experiment?.strain || "-"}</span>
+            </div>
+          </div>
         </CardHeader>
 
-        <CardContent>
+        <CardContent className="p-4 sm:p-6">
           <Form {...form}>
-            <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <FormField
-                  control={form.control}
-                  name="unit"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Unidade</FormLabel>
-                      <Select value={field.value ?? ""} onValueChange={field.onChange}>
-                        <FormControl>
-                          <SelectTrigger>
-                            <SelectValue placeholder="Selecione" />
-                          </SelectTrigger>
-                        </FormControl>
-                        <SelectContent>
-                          <SelectItem value="americana">Americana</SelectItem>
-                          <SelectItem value="salto">Salto</SelectItem>
-                        </SelectContent>
-                      </Select>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
+            <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-5">
+              <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-950/30">
+                <div className="mb-4 flex items-center justify-between gap-3">
+                  <div>
+                    <h3 className="text-base font-semibold">Informações do teste</h3>
+                    <p className="text-xs text-muted-foreground">Dados gerais, lotes e parâmetros iniciais.</p>
+                  </div>
+                </div>
 
-                <FormField
-                  control={form.control}
-                  name="requisition"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Requisição</FormLabel>
-                      <Select value={field.value ?? ""} onValueChange={field.onChange}>
-                        <FormControl>
-                          <SelectTrigger>
-                            <SelectValue placeholder="Selecione" />
-                          </SelectTrigger>
-                        </FormControl>
-                        <SelectContent>
-                          <SelectItem value="interna">Interna</SelectItem>
-                          <SelectItem value="externa">Externa</SelectItem>
-                        </SelectContent>
-                      </Select>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <FormField
-                  control={form.control}
-                  name="testLot"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Lote Teste</FormLabel>
-                      <FormControl>
-                        <Input {...field} value={field.value ?? ""} />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-
-                <FormField
-                  control={form.control}
-                  name="matrixLot"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Lote Matriz</FormLabel>
-                      <FormControl>
-                        <Input {...field} value={field.value ?? ""} />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <FormField
-                  control={form.control}
-                  name="strain"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Cepa</FormLabel>
-                      <FormControl>
-                        <Input {...field} value={field.value ?? ""} />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-
-                <FormField
-                  control={form.control}
-                  name="mpLot"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Lote MP</FormLabel>
-                      <FormControl>
-                        <Input {...field} value={field.value ?? ""} />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-              </div>
-
-              <FormField
-                control={form.control}
-                name="testType"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Tipo de Teste</FormLabel>
-                    <FormControl>
-                      <Input {...field} value={field.value ?? ""} placeholder="Ex: Teste A" />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                <FormField
-                  control={form.control}
-                  name="averageHumidity"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Média umidade</FormLabel>
-                      <FormControl>
-                        <NumberInputWithSuffix value={field.value} onChange={field.onChange} step="0.1" suffix="%" />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                <FormField
-                  control={form.control}
-                  name="bozo"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Bozo (min)</FormLabel>
-                      <FormControl>
-                        <NumberInputWithSuffix value={field.value} onChange={field.onChange} step="0.1" suffix="min" />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                <FormField
-                  control={form.control}
-                  name="sensorial"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Sensorial</FormLabel>
-                      <FormControl>
-                        <NumberInputWithSuffix value={field.value} onChange={field.onChange} step="0.1" suffix="pts" />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                <FormField
-                  control={form.control}
-                  name="quantity"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Quantidade da Amostra (kg)</FormLabel>
-                      <FormControl>
-                        <NumberInputWithSuffix value={field.value} onChange={field.onChange} step="0.1" suffix="kg" />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-              </div>
-
-              <div className="border rounded-lg p-4 space-y-3">
-                <h3 className="font-semibold">Dados do 7º dia</h3>
-
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
                   <FormField
                     control={form.control}
-                    name="date7Day"
+                    name="unit"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>Data 7º dia</FormLabel>
+                        <FormLabel>Unidade</FormLabel>
+                        <Select value={field.value ?? ""} onValueChange={field.onChange}>
+                          <FormControl>
+                            <SelectTrigger>
+                              <SelectValue placeholder="Selecione" />
+                            </SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            <SelectItem value="americana">Americana</SelectItem>
+                            <SelectItem value="salto">Salto</SelectItem>
+                          </SelectContent>
+                        </Select>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  <FormField
+                    control={form.control}
+                    name="requisition"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Requisição</FormLabel>
+                        <Select value={field.value ?? ""} onValueChange={field.onChange}>
+                          <FormControl>
+                            <SelectTrigger>
+                              <SelectValue placeholder="Selecione" />
+                            </SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            <SelectItem value="interna">Interna</SelectItem>
+                            <SelectItem value="externa">Externa</SelectItem>
+                          </SelectContent>
+                        </Select>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  <FormField
+                    control={form.control}
+                    name="testLot"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Lote Teste</FormLabel>
                         <FormControl>
-                          <Input type="date" {...field} value={field.value ?? ""} />
+                          <Input {...field} value={field.value ?? ""} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  <FormField
+                    control={form.control}
+                    name="matrixLot"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Lote Matriz</FormLabel>
+                        <FormControl>
+                          <Input {...field} value={field.value ?? ""} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  <FormField
+                    control={form.control}
+                    name="strain"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Cepa</FormLabel>
+                        <FormControl>
+                          <Input {...field} value={field.value ?? ""} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  <FormField
+                    control={form.control}
+                    name="mpLot"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Lote MP</FormLabel>
+                        <FormControl>
+                          <Input {...field} value={field.value ?? ""} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  <FormField
+                    control={form.control}
+                    name="testType"
+                    render={({ field }) => (
+                      <FormItem className="xl:col-span-2">
+                        <FormLabel>Tipo de Teste</FormLabel>
+                        <FormControl>
+                          <Input {...field} value={field.value ?? ""} placeholder="Ex: Teste A" />
                         </FormControl>
                         <FormMessage />
                       </FormItem>
                     )}
                   />
                 </div>
+              </section>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <FormField
-                    control={form.control}
-                    name="temp7Chamber"
-                    render={({ field }) => (
-                      <FormItem>
-                      <FormLabel>Temp 7 Câmara (ºC)</FormLabel>
-                      <FormControl>
-                        <NumberInputWithSuffix value={field.value} onChange={field.onChange} step="0.1" suffix="ºC" />
-                      </FormControl>
-                      </FormItem>
-                    )}
-                  />
-                  <FormField
-                    control={form.control}
-                    name="temp7Rice"
-                    render={({ field }) => (
-                      <FormItem>
-                      <FormLabel>Temp 7 Arroz (ºC)</FormLabel>
-                      <FormControl>
-                        <NumberInputWithSuffix value={field.value} onChange={field.onChange} step="0.1" suffix="ºC" />
-                      </FormControl>
-                      </FormItem>
-                    )}
-                  />
+              <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-950/30">
+                <div className="mb-4">
+                  <h3 className="text-base font-semibold">Medições iniciais</h3>
+                  <p className="text-xs text-muted-foreground">Campos numéricos compactos para facilitar o preenchimento.</p>
                 </div>
-
-                <Button
-                  type="button"
-                  variant={photos7Day.length > 0 ? "default" : "outline"}
-                  onClick={() => {
-                    // Se já existe mosaico salvo e não há novas capturas (dataURL), abre modal para decidir
-                    if (existingMerged7Url && !hasNewCapturedPhotos(photos7Day)) {
-                      setOpenDayPreview(7)
-                      return
-                    }
-                    // caso contrário, captura normalmente
-                    prevPhotos7Ref.current = photos7Day?.length ? [...photos7Day] : null
-                    setIsCapturing7Day(true)
-                  }}
-                  className="w-full"
-                >
-                  <Camera className="h-4 w-4 mr-2" />
-                  {photos7Day.length > 0 ? (
-                    <>
-                      <Check className="h-4 w-4 mr-2" />
-                      Fotos do 7º dia capturadas ({photos7Day.length})
-                    </>
-                  ) : (
-                    "Capturar Fotos do 7º dia"
-                  )}
-                </Button>
-
-                {Object.keys(annotations7Day || {}).length > 0 && (
-                  <div className="mt-3 rounded-md border p-2">
-                    <div className="text-xs font-medium mb-1">Anotações (7º dia)</div>
-                    <ul className="text-xs text-muted-foreground space-y-1 list-disc pl-4">
-                      {Object.entries(annotations7Day).flatMap(([idx, anns]) =>
-                        ((anns as Annotation[]) || []).map((a, j) => (
-                          <li key={`${idx}-${j}`}>Foto {Number(idx) + 1}: {a.caption}</li>
-                        )),
-                      )}
-                    </ul>
-                  </div>
-                )}
-              </div>
-
-              <div className="border rounded-lg p-4 space-y-3">
-                <h3 className="font-semibold">Dados do 14º dia</h3>
-
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
                   <FormField
                     control={form.control}
-                    name="date14Day"
+                    name="averageHumidity"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>Data 14º dia</FormLabel>
+                        <FormLabel>Média umidade</FormLabel>
                         <FormControl>
-                          <Input type="date" {...field} value={field.value ?? ""} />
+                          <NumberInputWithSuffix value={field.value} onChange={field.onChange} step="0.1" suffix="%" />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
+                    name="bozo"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Bozo (min)</FormLabel>
+                        <FormControl>
+                          <NumberInputWithSuffix value={field.value} onChange={field.onChange} step="0.1" suffix="min" />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
+                    name="sensorial"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Sensorial</FormLabel>
+                        <FormControl>
+                          <NumberInputWithSuffix value={field.value} onChange={field.onChange} step="0.1" suffix="pts" />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
+                    name="quantity"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Quantidade da Amostra</FormLabel>
+                        <FormControl>
+                          <NumberInputWithSuffix value={field.value} onChange={field.onChange} step="0.1" suffix="kg" />
                         </FormControl>
                         <FormMessage />
                       </FormItem>
                     )}
                   />
                 </div>
+              </section>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(430px,0.92fr)_minmax(520px,1.08fr)]">
+                <section className="rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-950/30">
+                  <div className="flex items-center gap-3 border-b px-4 py-3 dark:border-slate-800">
+                    <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-orange-50 text-orange-600 dark:bg-orange-950/40 dark:text-orange-300">
+                      <Thermometer className="h-5 w-5" />
+                    </div>
+                    <div>
+                      <h3 className="text-base font-semibold">Temperatura</h3>
+                      <p className="text-xs text-muted-foreground">Datas sequenciais a partir do início do experimento.</p>
+                    </div>
+                  </div>
+
+                  <div className="overflow-x-auto p-3">
+                    <div className="min-w-[420px] overflow-hidden rounded-xl border border-slate-200 dark:border-slate-800">
+                      <div className="grid grid-cols-[1.15fr_0.85fr_0.85fr] bg-slate-100 text-xs font-semibold text-slate-700 dark:bg-slate-900 dark:text-slate-200">
+                        <div className="border-r px-3 py-2 dark:border-slate-800">Dia</div>
+                        <div className="border-r px-2 py-2 text-center dark:border-slate-800">Temp. Câmara</div>
+                        <div className="px-2 py-2 text-center">Temp. Arroz</div>
+                      </div>
+
+                      {TEMPERATURE_DAYS.map((day) => {
+                        const dayDate = getExperimentDayDate(experiment?.start_date, day)
+                        const chamberName = getTemperatureFieldName(day, "Chamber")
+                        const riceName = getTemperatureFieldName(day, "Rice")
+
+                        return (
+                          <div
+                            key={day}
+                            className="grid grid-cols-[1.15fr_0.85fr_0.85fr] border-t border-slate-200 text-sm odd:bg-white even:bg-slate-50/70 dark:border-slate-800 dark:odd:bg-slate-950/10 dark:even:bg-slate-900/30"
+                          >
+                            <div className="flex min-h-[42px] items-center border-r px-3 dark:border-slate-800">
+                              <div>
+                                <div className="font-semibold text-slate-800 dark:text-slate-100">{day}º dia</div>
+                                <div className="text-[11px] text-muted-foreground">{formatShortDate(dayDate)}</div>
+                              </div>
+                            </div>
+
+                            <div className="border-r p-1.5 dark:border-slate-800">
+                              <FormField
+                                control={form.control}
+                                name={chamberName as any}
+                                render={({ field }) => (
+                                  <FormItem>
+                                    <FormControl>
+                                      <NumberInputWithSuffix
+                                        value={field.value}
+                                        onChange={field.onChange}
+                                        step="0.1"
+                                        suffix="ºC"
+                                        inputClassName="h-8 text-center text-sm"
+                                      />
+                                    </FormControl>
+                                  </FormItem>
+                                )}
+                              />
+                            </div>
+
+                            <div className="p-1.5">
+                              <FormField
+                                control={form.control}
+                                name={riceName as any}
+                                render={({ field }) => (
+                                  <FormItem>
+                                    <FormControl>
+                                      <NumberInputWithSuffix
+                                        value={field.value}
+                                        onChange={field.onChange}
+                                        step="0.1"
+                                        suffix="ºC"
+                                        inputClassName="h-8 text-center text-sm"
+                                      />
+                                    </FormControl>
+                                  </FormItem>
+                                )}
+                              />
+                            </div>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  </div>
+                </section>
+
+                <section className="rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-950/30">
+                  <div className="flex items-center gap-3 border-b px-4 py-3 dark:border-slate-800">
+                    <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-sky-50 text-sky-600 dark:bg-sky-950/40 dark:text-sky-300">
+                      <Images className="h-5 w-5" />
+                    </div>
+                    <div>
+                      <h3 className="text-base font-semibold">Mídias</h3>
+                      <p className="text-xs text-muted-foreground">Capture ou refaça os mosaicos do 7º e 14º dia.</p>
+                    </div>
+                  </div>
+
+                  <div className="grid gap-4 p-3 sm:p-4">
+                    {renderMediaBlock(7)}
+                    {renderMediaBlock(14)}
+                  </div>
+                </section>
+              </div>
+
+              <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-950/30">
+                <div className="mb-4">
+                  <h3 className="text-base font-semibold">Medições de peso</h3>
+                  <p className="text-xs text-muted-foreground">Pesos finais do teste.</p>
+                </div>
+                <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
                   <FormField
                     control={form.control}
-                    name="temp14Chamber"
+                    name="wetWeight"
                     render={({ field }) => (
                       <FormItem>
-                      <FormLabel>Temp 14 Câmara (ºC)</FormLabel>
-                      <FormControl>
-                        <NumberInputWithSuffix value={field.value} onChange={field.onChange} step="0.1" suffix="ºC" />
-                      </FormControl>
+                        <FormLabel>Peso Úmido</FormLabel>
+                        <FormControl>
+                          <NumberInputWithSuffix value={field.value} onChange={field.onChange} step="0.01" suffix="kg" />
+                        </FormControl>
                       </FormItem>
                     )}
                   />
                   <FormField
                     control={form.control}
-                    name="temp14Rice"
+                    name="dryWeight"
                     render={({ field }) => (
                       <FormItem>
-                      <FormLabel>Temp 14 Arroz (ºC)</FormLabel>
-                      <FormControl>
-                        <NumberInputWithSuffix value={field.value} onChange={field.onChange} step="0.1" suffix="ºC" />
-                      </FormControl>
+                        <FormLabel>Peso Seco</FormLabel>
+                        <FormControl>
+                          <NumberInputWithSuffix value={field.value} onChange={field.onChange} step="0.01" suffix="kg" />
+                        </FormControl>
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
+                    name="extractedConidiumWeight"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Peso conídio extraído</FormLabel>
+                        <FormControl>
+                          <NumberInputWithSuffix value={field.value} onChange={field.onChange} step="0.01" suffix="kg" />
+                        </FormControl>
                       </FormItem>
                     )}
                   />
                 </div>
+              </section>
 
-                <Button
-                  type="button"
-                  variant={photos14Day.length > 0 ? "default" : "outline"}
-                  onClick={() => {
-                    if (existingMerged14Url && !hasNewCapturedPhotos(photos14Day)) {
-                      setOpenDayPreview(14)
-                      return
-                    }
-                    prevPhotos14Ref.current = photos14Day?.length ? [...photos14Day] : null
-                    setIsCapturing14Day(true)
-                  }}
-                  className="w-full"
-                >
-                  <Camera className="h-4 w-4 mr-2" />
-                  {photos14Day.length > 0 ? (
-                    <>
-                      <Check className="h-4 w-4 mr-2" />
-                      Fotos do 14º dia capturadas ({photos14Day.length})
-                    </>
-                  ) : (
-                    "Capturar Fotos do 14º dia"
-                  )}
-                </Button>
-
-                {Object.keys(annotations14Day || {}).length > 0 && (
-                  <div className="mt-3 rounded-md border p-2">
-                    <div className="text-xs font-medium mb-1">Anotações (14º dia)</div>
-                    <ul className="text-xs text-muted-foreground space-y-1 list-disc pl-4">
-                      {Object.entries(annotations14Day).flatMap(([idx, anns]) =>
-                        ((anns as Annotation[]) || []).map((a, j) => (
-                          <li key={`${idx}-${j}`}>Foto {Number(idx) + 1}: {a.caption}</li>
-                        )),
-                      )}
-                    </ul>
-                  </div>
-                )}
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <FormField
-                  control={form.control}
-                  name="wetWeight"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Peso Úmido (kg)</FormLabel>
-                      <FormControl>
-                        <NumberInputWithSuffix value={field.value} onChange={field.onChange} step="0.01" suffix="kg" />
-                      </FormControl>
-                    </FormItem>
-                  )}
-                />
-                <FormField
-                  control={form.control}
-                  name="dryWeight"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Peso Seco (kg)</FormLabel>
-                      <FormControl>
-                        <NumberInputWithSuffix value={field.value} onChange={field.onChange} step="0.01" suffix="kg" />
-                      </FormControl>
-                    </FormItem>
-                  )}
-                />
-                <FormField
-                  control={form.control}
-                  name="extractedConidiumWeight"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Peso conídio extraído (kg)</FormLabel>
-                      <FormControl>
-                        <NumberInputWithSuffix value={field.value} onChange={field.onChange} step="0.01" suffix="kg" />
-                      </FormControl>
-                    </FormItem>
-                  )}
-                />
-              </div>
-
-              <div className="flex justify-end gap-2 pt-2">
+              <div className="flex flex-col-reverse justify-end gap-2 pt-2 sm:flex-row">
                 <Button
                   type="button"
                   variant="outline"
                   onClick={() => router.push(`/experiments/${experimentId}`)}
                   disabled={saving}
+                  className="sm:w-auto"
                 >
                   Cancelar
                 </Button>
-                <Button type="submit" disabled={saving}>
+                <Button type="submit" disabled={saving} className="sm:w-auto">
                   {saving ? "Salvando..." : "Salvar"}
                 </Button>
               </div>
@@ -965,8 +1101,7 @@ export default function TestEditPage() {
         </CardContent>
       </Card>
 
-
-      <Dialog open={openDayPreview !== null} onOpenChange={(o) => setOpenDayPreview(o ? openDayPreview : null)}>
+      <Dialog open={openDayPreview !== null} onOpenChange={(open) => !open && setOpenDayPreview(null)}>
         <DialogContent className="max-w-3xl">
           <DialogHeader>
             <DialogTitle>
@@ -983,11 +1118,11 @@ export default function TestEditPage() {
                     : existingMerged14Url || ""
                 }
                 alt={openDayPreview === 7 ? "Foto 7º dia" : "Foto 14º dia"}
-                className="w-full h-auto block"
+                className="block h-auto w-full"
               />
             </div>
 
-            <div className="flex flex-col sm:flex-row gap-2 justify-end">
+            <div className="flex flex-col justify-end gap-2 sm:flex-row">
               <Button
                 type="button"
                 variant="outline"
@@ -1015,7 +1150,6 @@ export default function TestEditPage() {
           </div>
         </DialogContent>
       </Dialog>
-
     </div>
   )
 }

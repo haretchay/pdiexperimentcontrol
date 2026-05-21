@@ -78,6 +78,7 @@ function NumberInputWithSuffix({
   suffix,
   className,
   inputClassName,
+  suffixClassName,
 }: {
   value: any
   onChange: any
@@ -85,6 +86,7 @@ function NumberInputWithSuffix({
   suffix: string
   className?: string
   inputClassName?: string
+  suffixClassName?: string
 }) {
   return (
     <div className={`relative ${className ?? ""}`}>
@@ -96,7 +98,7 @@ function NumberInputWithSuffix({
         onChange={onChange}
         className={`pr-8 [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none ${inputClassName ?? ""}`}
       />
-      <div className="pointer-events-none absolute inset-y-0 right-2 flex items-center text-[11px] text-muted-foreground">
+      <div className={`pointer-events-none absolute inset-y-0 right-2 flex items-center text-[11px] text-muted-foreground ${suffixClassName ?? ""}`}>
         {suffix}
       </div>
     </div>
@@ -1122,7 +1124,8 @@ export default function TestEditPage() {
                                         onChange={field.onChange}
                                         step="0.1"
                                         suffix="ºC"
-                                        inputClassName="h-8 text-center text-xs"
+                                        inputClassName="h-8 !pl-1.5 !pr-4 text-left text-xs"
+                                        suffixClassName="!right-1 text-[10px]"
                                       />
                                     </FormControl>
                                   </FormItem>
@@ -1148,7 +1151,8 @@ export default function TestEditPage() {
                                                 onChange={field.onChange}
                                                 step="0.1"
                                                 suffix="ºC"
-                                                inputClassName="h-8 text-center text-xs"
+                                                inputClassName="h-8 !pl-1.5 !pr-4 text-left text-xs"
+                                        suffixClassName="!right-1 text-[10px]"
                                               />
                                             </FormControl>
                                           </FormItem>

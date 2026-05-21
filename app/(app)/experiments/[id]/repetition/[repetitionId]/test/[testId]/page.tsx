@@ -89,12 +89,12 @@ function NumberInputWithSuffix({
   return (
     <div className={`relative ${className ?? ""}`}>
       <Input
-        type="number"
+        type="text"
+        inputMode="decimal"
         step={step}
         value={value ?? ""}
         onChange={onChange}
-        onWheel={(e) => e.currentTarget.blur()}
-        className={`pr-10 ${inputClassName ?? ""}`}
+        className={`pr-8 [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none ${inputClassName ?? ""}`}
       />
       <div className="pointer-events-none absolute inset-y-0 right-2 flex items-center text-[11px] text-muted-foreground">
         {suffix}

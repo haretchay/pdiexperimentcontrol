@@ -71,6 +71,24 @@ const temperatureSchemaFields = Object.fromEntries(
 const isDataUrlImage = (s?: string) => typeof s === "string" && s.startsWith("data:image/")
 const hasNewCapturedPhotos = (photos: string[]) => Array.isArray(photos) && photos.some((p) => isDataUrlImage(p))
 
+function sanitizeDecimalInput(value: string, maxDecimalPlaces?: number) {
+  let next = value.replace(/[^0-9,.]/g, "")
+
+  const firstSeparatorIndex = next.search(/[,.]/)
+  if (firstSeparatorIndex >= 0) {
+    const integerPart = next.slice(0, firstSeparatorIndex)
+    const decimalSeparator = next[firstSeparatorIndex]
+    const decimalPart = next
+      .slice(firstSeparatorIndex + 1)
+      .replace(/[,.]/g, "")
+      .slice(0, maxDecimalPlaces)
+
+    next = `${integerPart}${decimalSeparator}${decimalPart}`
+  }
+
+  return next
+}
+
 function NumberInputWithSuffix({
   value,
   onChange,
@@ -79,6 +97,7 @@ function NumberInputWithSuffix({
   className,
   inputClassName,
   suffixClassName,
+  maxDecimalPlaces,
 }: {
   value: any
   onChange: any
@@ -87,6 +106,7 @@ function NumberInputWithSuffix({
   className?: string
   inputClassName?: string
   suffixClassName?: string
+  maxDecimalPlaces?: number
 }) {
   return (
     <div className={`relative ${className ?? ""}`}>
@@ -95,7 +115,14 @@ function NumberInputWithSuffix({
         inputMode="decimal"
         step={step}
         value={value ?? ""}
-        onChange={onChange}
+        onChange={(event) => {
+          if (maxDecimalPlaces === undefined) {
+            onChange(event)
+            return
+          }
+
+          onChange(sanitizeDecimalInput(event.target.value, maxDecimalPlaces))
+        }}
         className={`pr-8 [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none ${inputClassName ?? ""}`}
       />
       <div className={`pointer-events-none absolute inset-y-0 right-2 flex items-center text-[11px] text-muted-foreground ${suffixClassName ?? ""}`}>
@@ -148,8 +175,7 @@ function averageTemperature(values: unknown[]) {
 
   for (const value of values) {
     const numberValue = toNumberOrUndefined(value)
-    if (numberValue === undefined) return undefined
-    numbers.push(numberValue)
+    if (numberValue !== undefined) numbers.push(numberValue)
   }
 
   if (numbers.length === 0) return undefined
@@ -163,14 +189,16 @@ function getRicePeriodAverage(values: Partial<Record<TemperatureFieldName, unkno
 }
 
 function getRiceGeneralAverage(values: Partial<Record<TemperatureFieldName, unknown>>, day: TemperatureDay) {
-  const morning = getRicePeriodAverage(values, day, "Morning")
-  const afternoon = getRicePeriodAverage(values, day, "Afternoon")
-  return averageTemperature([morning, afternoon])
+  return averageTemperature(
+    RICE_PERIODS.flatMap((period) =>
+      RICE_SLOTS.map((slot) => values[getRiceMeasurementFieldName(day, period.key, slot)]),
+    ),
+  )
 }
 
 function formatComputedTemperature(value: number | undefined) {
   if (value === undefined || !Number.isFinite(value)) return ""
-  return String(value).replace(".", ",")
+  return value.toFixed(1).replace(".", ",")
 }
 
 function getTemperaturePayload(values: FormValues) {
@@ -1126,6 +1154,7 @@ export default function TestEditPage() {
                                         suffix="ºC"
                                         inputClassName="h-8 !pl-1.5 !pr-4 text-left text-xs"
                                         suffixClassName="!right-1 text-[10px]"
+                                        maxDecimalPlaces={1}
                                       />
                                     </FormControl>
                                   </FormItem>
@@ -1152,7 +1181,8 @@ export default function TestEditPage() {
                                                 step="0.1"
                                                 suffix="ºC"
                                                 inputClassName="h-8 !pl-1.5 !pr-4 text-left text-xs"
-                                        suffixClassName="!right-1 text-[10px]"
+                                                suffixClassName="!right-1 text-[10px]"
+                                                maxDecimalPlaces={1}
                                               />
                                             </FormControl>
                                           </FormItem>
@@ -1167,9 +1197,9 @@ export default function TestEditPage() {
                                       value={formatComputedTemperature(periodAverage)}
                                       readOnly
                                       tabIndex={-1}
-                                      className="h-8 bg-white/70 pr-10 text-center text-xs font-semibold dark:bg-slate-950/40"
+                                      className="h-8 bg-white/70 !pl-1.5 !pr-4 text-left text-xs font-semibold dark:bg-slate-950/40"
                                     />
-                                    <div className="pointer-events-none absolute inset-y-0 right-2 flex items-center text-[11px] text-muted-foreground">ºC</div>
+                                    <div className="pointer-events-none absolute inset-y-0 right-1 flex items-center text-[10px] text-muted-foreground">ºC</div>
                                   </div>
                                 </td>,
                               ]
@@ -1181,9 +1211,9 @@ export default function TestEditPage() {
                                   value={formatComputedTemperature(generalAverage)}
                                   readOnly
                                   tabIndex={-1}
-                                  className="h-8 bg-white/70 pr-10 text-center text-xs font-bold dark:bg-slate-950/40"
+                                  className="h-8 bg-white/70 !pl-1.5 !pr-4 text-left text-xs font-bold dark:bg-slate-950/40"
                                 />
-                                <div className="pointer-events-none absolute inset-y-0 right-2 flex items-center text-[11px] text-muted-foreground">ºC</div>
+                                <div className="pointer-events-none absolute inset-y-0 right-1 flex items-center text-[10px] text-muted-foreground">ºC</div>
                               </div>
                             </td>
 

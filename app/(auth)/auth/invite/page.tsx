@@ -97,17 +97,31 @@ export default function AcceptInvitationPage() {
 
     setIsSubmitting(true)
     try {
-      const response = await fetch("/api/auth/accept-invitation", {
+      const requestPayload = { token, password, repeatPassword }
+      let response = await fetch("/api/auth/invitations/accept", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ token, password, repeatPassword }),
+        body: JSON.stringify(requestPayload),
+        cache: "no-store",
       })
+
+      // Fallback mantido apenas para compatibilidade com deploys intermediários.
+      // A rota canônica é /api/auth/invitations/accept.
+      if (response.status === 405) {
+        response = await fetch("/api/auth/accept-invitation", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(requestPayload),
+          cache: "no-store",
+        })
+      }
+
       const payload = (await response.json().catch(() => ({}))) as any
 
       if (!response.ok || !payload?.ok) {
         const defaultMessage =
           response.status === 405
-            ? "A rota de aceite do convite não aceitou POST. Confirme se o hotfix da API foi publicado no deploy."
+            ? "A rota de aceite do convite ainda está respondendo 405. Confirme se este hotfix foi publicado no deploy ativo."
             : "Não foi possível concluir o cadastro."
         throw new Error(payload?.error || defaultMessage)
       }

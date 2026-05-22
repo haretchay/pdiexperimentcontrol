@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server"
 
 import { createClient } from "@/lib/supabase/server"
+import { writeAuditLog } from "@/lib/pdi/audit-log"
 
 export async function POST(req: Request) {
   try {
@@ -17,12 +18,26 @@ export async function POST(req: Request) {
 
     const supabase = await createClient()
 
-    const { error } = await supabase.auth.signInWithPassword({ email, password })
+    const { data, error } = await supabase.auth.signInWithPassword({ email, password })
     if (error) {
       return NextResponse.json(
         { ok: false, error: error.message },
         { status: 400 }
       )
+    }
+
+    if (data.user?.id) {
+      await writeAuditLog(supabase, {
+        actorUserId: data.user.id,
+        action: "login",
+        entityType: "auth",
+        entityId: data.user.id,
+        entityLabel: data.user.email ?? email,
+        actorEmail: data.user.email ?? email,
+        summary: `Login realizado por ${data.user.email ?? email}`,
+        metadata: { email: data.user.email ?? email },
+        request: req,
+      })
     }
 
     return NextResponse.json({ ok: true })

@@ -6,12 +6,6 @@ export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
 export const revalidate = 0
 
-const NO_STORE_HEADERS = {
-  "Cache-Control": "no-store, no-cache, must-revalidate, proxy-revalidate",
-  Pragma: "no-cache",
-  Expires: "0",
-}
-
 export async function POST(request: Request) {
   return acceptInvitationRequest(request)
 }
@@ -25,8 +19,15 @@ export async function GET() {
     {
       ok: true,
       route: "/api/auth/accept-invitation",
+      accepts: ["POST", "OPTIONS"],
       message: "Rota alternativa de aceite do convite ativa. Use POST para concluir o cadastro.",
     },
-    { headers: NO_STORE_HEADERS },
+    {
+      headers: {
+        "Cache-Control": "no-store, no-cache, must-revalidate, proxy-revalidate",
+        Pragma: "no-cache",
+        Expires: "0",
+      },
+    },
   )
 }

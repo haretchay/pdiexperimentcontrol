@@ -20,11 +20,23 @@ export async function OPTIONS() {
   return invitationOptionsResponse()
 }
 
+export async function GET() {
+  return NextResponse.json(
+    {
+      ok: true,
+      route: "/api/auth/invitations/accept",
+      accepts: ["POST", "OPTIONS"],
+      message: "Rota de aceite do convite ativa. Use POST para concluir o cadastro.",
+    },
+    { headers: NO_STORE_HEADERS },
+  )
+}
+
 function methodNotAllowed() {
   return NextResponse.json(
     {
       ok: false,
-      error: "Método não permitido. Esta rota aceita apenas POST para concluir o cadastro por convite.",
+      error: "Método não permitido. Esta rota aceita POST para concluir o cadastro por convite.",
     },
     {
       status: 405,
@@ -33,17 +45,6 @@ function methodNotAllowed() {
         ...NO_STORE_HEADERS,
       },
     },
-  )
-}
-
-export async function GET() {
-  return NextResponse.json(
-    {
-      ok: true,
-      route: "/api/auth/invitations/accept",
-      message: "Rota de aceite do convite ativa. Use POST para concluir o cadastro.",
-    },
-    { headers: NO_STORE_HEADERS },
   )
 }
 

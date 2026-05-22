@@ -35,16 +35,30 @@ export function getInvitationExpiresAt(days: number) {
   return date.toISOString()
 }
 
-export function getAppBaseUrl(request?: Request) {
-  const configured = process.env.NEXT_PUBLIC_APP_URL || process.env.NEXT_PUBLIC_SITE_URL
-  if (configured) return configured.replace(/\/$/, "")
+const DEFAULT_PRODUCTION_APP_URL = "https://pdiexperimentcontrol.vercel.app"
 
-  const vercelUrl = process.env.VERCEL_URL
-  if (vercelUrl) return `https://${vercelUrl.replace(/\/$/, "")}`
+function normalizeBaseUrl(value: string) {
+  return value.trim().replace(/\/$/, "")
+}
+
+export function getAppBaseUrl(request?: Request) {
+  const configured =
+    process.env.NEXT_PUBLIC_APP_URL ||
+    process.env.NEXT_PUBLIC_SITE_URL ||
+    process.env.APP_URL ||
+    process.env.SITE_URL
+
+  if (configured) return normalizeBaseUrl(configured)
+
+  // Em produção, não usamos VERCEL_URL nem a origem da requisição, pois eles podem
+  // apontar para deploy preview/protected deployment da Vercel, exigindo login.
+  if (process.env.NODE_ENV === "production") {
+    return DEFAULT_PRODUCTION_APP_URL
+  }
 
   if (request) return new URL(request.url).origin
 
-  return ""
+  return DEFAULT_PRODUCTION_APP_URL
 }
 
 export function buildInvitationUrl(token: string, request?: Request) {

@@ -1,5 +1,5 @@
 import Link from "next/link"
-import { ArrowRight, FileClock, ShieldCheck } from "lucide-react"
+import { ArrowRight, FileClock, ShieldCheck, UserCog } from "lucide-react"
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { PageTitle } from "@/components/page-title"
@@ -16,12 +16,31 @@ export default function RegistersPage() {
           </div>
           <h1 className="text-2xl font-bold sm:text-3xl">Central de Cadastros</h1>
           <p className="max-w-2xl text-sm text-white/80">
-            Área para recursos administrativos do sistema, incluindo auditoria de alterações e acessos.
+            Área para recursos administrativos do sistema, incluindo usuários, convites, auditoria de alterações e acessos.
           </p>
         </div>
       </div>
 
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+        <Link href="/registers/users" className="group block">
+          <Card className="h-full rounded-2xl border-blue-200/80 shadow-sm transition-all hover:-translate-y-0.5 hover:border-blue-400 hover:shadow-lg dark:border-blue-900/70 dark:hover:border-blue-700">
+            <CardHeader>
+              <div className="mb-3 flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-blue-600 to-purple-700 text-white shadow-md">
+                <UserCog className="h-6 w-6" />
+              </div>
+              <CardTitle>Usuários</CardTitle>
+              <CardDescription>
+                Envie convites de cadastro, acompanhe links pendentes e consulte usuários ativos.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="inline-flex items-center text-sm font-medium text-blue-700 group-hover:text-purple-700 dark:text-blue-300 dark:group-hover:text-purple-300">
+                Abrir usuários <ArrowRight className="ml-1 h-4 w-4 transition-transform group-hover:translate-x-1" />
+              </div>
+            </CardContent>
+          </Card>
+        </Link>
+
         <Link href="/registers/logs" className="group block">
           <Card className="h-full rounded-2xl border-slate-200/80 shadow-sm transition-all hover:-translate-y-0.5 hover:border-blue-300 hover:shadow-lg dark:border-slate-800 dark:hover:border-blue-800">
             <CardHeader>

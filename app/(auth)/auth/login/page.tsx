@@ -193,9 +193,9 @@ export default function LoginPage() {
             </div>
 
             <div className="mt-4 text-center text-sm text-white/70">
-              Não tem uma conta?{" "}
+              Precisa de acesso?{" "}
               <Link href="/auth/sign-up" className="underline underline-offset-4 text-white">
-                Cadastre-se
+                Cadastro por convite
               </Link>
             </div>
           </CardContent>

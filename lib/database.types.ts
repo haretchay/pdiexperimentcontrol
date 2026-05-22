@@ -708,15 +708,15 @@ export interface Database {
         }
         Relationships: [
           {
-            foreignKeyName: "user_invitations_invited_by_fkey"
-            columns: ["invited_by"]
+            foreignKeyName: "user_invitations_accepted_user_id_fkey"
+            columns: ["accepted_user_id"]
             isOneToOne: false
             referencedRelation: "users"
             referencedColumns: ["id"]
           },
           {
-            foreignKeyName: "user_invitations_accepted_user_id_fkey"
-            columns: ["accepted_user_id"]
+            foreignKeyName: "user_invitations_invited_by_fkey"
+            columns: ["invited_by"]
             isOneToOne: false
             referencedRelation: "users"
             referencedColumns: ["id"]

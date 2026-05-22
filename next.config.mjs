@@ -4,6 +4,24 @@ const nextConfig = {
   images: {
     unoptimized: true,
   },
+  async rewrites() {
+    return {
+      beforeFiles: [
+        {
+          source: "/api/auth/invitations/accept",
+          destination: "/api/invite-accept-legacy",
+        },
+        {
+          source: "/api/auth/accept-invitation",
+          destination: "/api/invite-accept-legacy",
+        },
+        {
+          source: "/api/auth/accept-invitation-v2",
+          destination: "/api/invite-accept-legacy",
+        },
+      ],
+    }
+  },
   async headers() {
     return [
       {
@@ -16,6 +34,14 @@ const nextConfig = {
       },
       {
         source: "/api/auth/:path*",
+        headers: [
+          { key: "Cache-Control", value: "no-store, no-cache, must-revalidate, proxy-revalidate" },
+          { key: "Pragma", value: "no-cache" },
+          { key: "Expires", value: "0" },
+        ],
+      },
+      {
+        source: "/api/invite-accept-legacy",
         headers: [
           { key: "Cache-Control", value: "no-store, no-cache, must-revalidate, proxy-revalidate" },
           { key: "Pragma", value: "no-cache" },

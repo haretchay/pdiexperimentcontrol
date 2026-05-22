@@ -95,39 +95,53 @@ export default function AcceptInvitationPage() {
       return
     }
 
+    const requestBody = JSON.stringify({ token, password, repeatPassword })
+    const endpoints = [
+      "/api/auth/invitations/accept",
+      "/api/auth/accept-invitation",
+      "/api/auth/accept-invitation-v2",
+    ]
+
     setIsSubmitting(true)
     try {
-      const requestPayload = { token, password, repeatPassword }
-      let response = await fetch("/api/auth/invitations/accept", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(requestPayload),
-        cache: "no-store",
-      })
+      let lastPayload: any = null
+      let lastStatus = 0
 
-      // Fallback mantido apenas para compatibilidade com deploys intermediários.
-      // A rota canônica é /api/auth/invitations/accept.
-      if (response.status === 405) {
-        response = await fetch("/api/auth/accept-invitation", {
+      for (const endpoint of endpoints) {
+        const response = await fetch(endpoint, {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(requestPayload),
+          headers: {
+            "Content-Type": "application/json",
+            "Cache-Control": "no-store",
+          },
           cache: "no-store",
+          body: requestBody,
         })
+        const payload = (await response.json().catch(() => ({}))) as any
+
+        if (response.ok && payload?.ok) {
+          router.push(payload.redirectTo || "/dashboard")
+          router.refresh()
+          return
+        }
+
+        lastPayload = payload
+        lastStatus = response.status
+
+        // Se a rota antiga ainda responder 404/405 em algum deploy/cache,
+        // tenta automaticamente as rotas alternativas antes de falhar.
+        if (response.status === 404 || response.status === 405) {
+          continue
+        }
+
+        throw new Error(payload?.error || "Não foi possível concluir o cadastro.")
       }
 
-      const payload = (await response.json().catch(() => ({}))) as any
-
-      if (!response.ok || !payload?.ok) {
-        const defaultMessage =
-          response.status === 405
-            ? "A rota de aceite do convite ainda está respondendo 405. Confirme se este hotfix foi publicado no deploy ativo."
-            : "Não foi possível concluir o cadastro."
-        throw new Error(payload?.error || defaultMessage)
-      }
-
-      router.push(payload.redirectTo || "/dashboard")
-      router.refresh()
+      const fallbackMessage =
+        lastStatus === 405
+          ? "A API de aceite do convite ainda está respondendo 405. Confirme se este hotfix foi publicado no deploy atual."
+          : "Não foi possível concluir o cadastro."
+      throw new Error(lastPayload?.error || fallbackMessage)
     } catch (err) {
       setError(err instanceof Error ? err.message : "Não foi possível concluir o cadastro.")
     } finally {

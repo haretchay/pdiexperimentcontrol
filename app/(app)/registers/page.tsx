@@ -16,21 +16,21 @@ export default function RegistersPage() {
           </div>
           <h1 className="text-2xl font-bold sm:text-3xl">Central de Cadastros</h1>
           <p className="max-w-2xl text-sm text-white/80">
-            Área para recursos administrativos do sistema, incluindo usuários, convites, auditoria de alterações e acessos.
+            Área para recursos administrativos do sistema, incluindo usuários, convites e auditoria de alterações e acessos.
           </p>
         </div>
       </div>
 
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
         <Link href="/registers/users" className="group block">
-          <Card className="h-full rounded-2xl border-blue-200/80 shadow-sm transition-all hover:-translate-y-0.5 hover:border-blue-400 hover:shadow-lg dark:border-blue-900/70 dark:hover:border-blue-700">
+          <Card className="h-full rounded-2xl border-blue-100/80 shadow-sm transition-all hover:-translate-y-0.5 hover:border-blue-300 hover:shadow-lg dark:border-slate-800 dark:hover:border-blue-800">
             <CardHeader>
               <div className="mb-3 flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-blue-600 to-purple-700 text-white shadow-md">
                 <UserCog className="h-6 w-6" />
               </div>
               <CardTitle>Usuários</CardTitle>
               <CardDescription>
-                Envie convites de cadastro, acompanhe links pendentes e consulte usuários ativos.
+                Envie convites, acompanhe cadastros pendentes e gerencie usuários autorizados.
               </CardDescription>
             </CardHeader>
             <CardContent>
@@ -63,3 +63,4 @@ export default function RegistersPage() {
     </div>
   )
 }
+

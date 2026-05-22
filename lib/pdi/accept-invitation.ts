@@ -140,4 +140,3 @@ export async function acceptInvitationRequest(request: Request) {
     return jsonError(error?.message ?? "Erro inesperado ao aceitar convite.", 500)
   }
 }
-

@@ -56,7 +56,7 @@ export function AppSidebar() {
       href: "/registers",
       label: "Cadastros",
       icon: Database,
-      active: pathname === "/registers",
+      active: pathname === "/registers" || pathname.startsWith("/registers/"),
     },
   ]
 

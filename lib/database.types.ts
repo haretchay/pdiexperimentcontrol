@@ -660,6 +660,69 @@ export interface Database {
           },
         ]
       }
+      user_invitations: {
+        Row: {
+          id: string
+          email: string
+          full_name: string | null
+          role: string
+          status: string
+          token_hash: string
+          invited_by: string | null
+          accepted_user_id: string | null
+          expires_at: string
+          accepted_at: string | null
+          revoked_at: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          email: string
+          full_name?: string | null
+          role?: string
+          status?: string
+          token_hash: string
+          invited_by?: string | null
+          accepted_user_id?: string | null
+          expires_at: string
+          accepted_at?: string | null
+          revoked_at?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          email?: string
+          full_name?: string | null
+          role?: string
+          status?: string
+          token_hash?: string
+          invited_by?: string | null
+          accepted_user_id?: string | null
+          expires_at?: string
+          accepted_at?: string | null
+          revoked_at?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "user_invitations_invited_by_fkey"
+            columns: ["invited_by"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "user_invitations_accepted_user_id_fkey"
+            columns: ["accepted_user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Views: Record<string, never>
     Functions: Record<string, never>

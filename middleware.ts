@@ -9,7 +9,7 @@ export const config = {
   matcher: [
     /*
      * Corresponde a todos os caminhos de requisição exceto:
-     * - /api (rotas de API devem responder diretamente, sem rewrite de middleware)
+     * - /api (rotas de API não devem passar pelo middleware de sessão)
      * - _next/static (arquivos estáticos)
      * - _next/image (arquivos de otimização de imagem)
      * - favicon.ico
@@ -18,3 +18,4 @@ export const config = {
     "/((?!api|_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)",
   ],
 }
+

@@ -97,7 +97,7 @@ export default function AcceptInvitationPage() {
 
     setIsSubmitting(true)
     try {
-      const response = await fetch("/api/auth/invitations/accept", {
+      const response = await fetch("/api/auth/accept-invitation", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ token, password, repeatPassword }),
@@ -105,7 +105,11 @@ export default function AcceptInvitationPage() {
       const payload = (await response.json().catch(() => ({}))) as any
 
       if (!response.ok || !payload?.ok) {
-        throw new Error(payload?.error || "Não foi possível concluir o cadastro.")
+        const defaultMessage =
+          response.status === 405
+            ? "A rota de aceite do convite não aceitou POST. Confirme se o hotfix da API foi publicado no deploy."
+            : "Não foi possível concluir o cadastro."
+        throw new Error(payload?.error || defaultMessage)
       }
 
       router.push(payload.redirectTo || "/dashboard")

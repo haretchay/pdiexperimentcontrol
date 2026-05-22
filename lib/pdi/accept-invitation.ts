@@ -14,6 +14,13 @@ export function invitationOptionsResponse() {
   return new NextResponse(null, { status: 204, headers: ALLOW_HEADERS })
 }
 
+export function methodNotAllowedResponse() {
+  return NextResponse.json(
+    { ok: false, error: "Método não permitido. Esta rota aceita somente POST para concluir o cadastro." },
+    { status: 405, headers: ALLOW_HEADERS },
+  )
+}
+
 function jsonError(message: string, status: number) {
   return NextResponse.json({ ok: false, error: message }, { status, headers: ALLOW_HEADERS })
 }

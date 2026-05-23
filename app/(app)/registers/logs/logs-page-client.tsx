@@ -27,6 +27,8 @@ export type AuditLogRow = {
 
 type Props = {
   logs: AuditLogRow[]
+  viewerMode?: "admin" | "own"
+  currentUserLabel?: string
 }
 
 const actionLabels: Record<AuditLogRow["action"], string> = {
@@ -99,7 +101,7 @@ function formatChangeValue(value: unknown) {
   }
 }
 
-export function LogsPageClient({ logs }: Props) {
+export function LogsPageClient({ logs, viewerMode = "admin", currentUserLabel }: Props) {
   const [query, setQuery] = useState("")
   const [action, setAction] = useState<"all" | AuditLogRow["action"]>("all")
   const [entityType, setEntityType] = useState<"all" | AuditLogRow["entity_type"]>("all")
@@ -150,7 +152,9 @@ export function LogsPageClient({ logs }: Props) {
             </div>
             <h1 className="text-2xl font-bold sm:text-3xl">Logs do Sistema</h1>
             <p className="mt-1 max-w-2xl text-sm text-white/80">
-              Histórico de criações, edições, exclusões, logins e logouts. As edições mostram somente os campos alterados.
+              {viewerMode === "admin"
+                ? "Histórico de criações, edições, exclusões, logins e logouts de todos os usuários. As edições mostram somente os campos alterados."
+                : `Histórico de criações, edições, exclusões, logins e logouts do seu usuário${currentUserLabel ? ` (${currentUserLabel})` : ""}.`}
             </p>
           </div>
           <div className="grid grid-cols-2 gap-2 text-sm sm:grid-cols-5 lg:min-w-[580px]">
@@ -183,7 +187,9 @@ export function LogsPageClient({ logs }: Props) {
           <CardTitle className="flex items-center gap-2 text-lg">
             <Filter className="h-5 w-5 text-blue-600" /> Filtros
           </CardTitle>
-          <CardDescription>Use os filtros para localizar rapidamente uma alteração, usuário ou item do sistema.</CardDescription>
+          <CardDescription>{viewerMode === "admin"
+              ? "Use os filtros para localizar rapidamente uma alteração, usuário ou item do sistema."
+              : "Use os filtros para localizar rapidamente uma alteração ou acesso registrado no seu usuário."}</CardDescription>
         </CardHeader>
         <CardContent>
           <div className="grid grid-cols-1 gap-3 md:grid-cols-[1fr_220px_220px]">
@@ -192,7 +198,7 @@ export function LogsPageClient({ logs }: Props) {
               <Input
                 value={query}
                 onChange={(event) => setQuery(event.target.value)}
-                placeholder="Buscar por usuário, ação, experimento, teste, mídia ou IP..."
+                placeholder={viewerMode === "admin" ? "Buscar por usuário, ação, experimento, teste, mídia ou IP..." : "Buscar por ação, experimento, teste, mídia ou IP..."}
                 className="pl-9"
               />
             </div>

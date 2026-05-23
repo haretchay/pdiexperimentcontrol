@@ -4,6 +4,24 @@ const nextConfig = {
   images: {
     unoptimized: true,
   },
+  async rewrites() {
+    return {
+      beforeFiles: [
+        {
+          source: "/api/auth/invitations/accept",
+          destination: "/api/pdi/accept-invite",
+        },
+        {
+          source: "/api/auth/accept-invitation",
+          destination: "/api/pdi/accept-invite",
+        },
+        {
+          source: "/api/auth/accept-invitation-v2",
+          destination: "/api/pdi/accept-invite",
+        },
+      ],
+    }
+  },
   async headers() {
     return [
       {
@@ -33,4 +51,3 @@ const nextConfig = {
 }
 
 export default nextConfig
-

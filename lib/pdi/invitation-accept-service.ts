@@ -229,3 +229,4 @@ export async function acceptInvitation(input: Partial<AcceptInviteInput>): Promi
     return fail(error?.message ?? "Erro inesperado ao aceitar convite.", 500)
   }
 }
+

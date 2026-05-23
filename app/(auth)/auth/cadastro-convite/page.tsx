@@ -6,12 +6,9 @@ type PageProps = {
   }
 }
 
-function getSingleParam(value: string | string[] | undefined) {
-  if (Array.isArray(value)) return value[0] ?? ""
-  return value ?? ""
-}
-
 export default function CadastroConviteRedirectPage({ searchParams }: PageProps) {
-  const token = getSingleParam(searchParams?.token).trim()
-  redirect(token ? `/auth/convite/${encodeURIComponent(token)}` : "/auth/login")
+  const rawToken = Array.isArray(searchParams?.token) ? searchParams?.token[0] : searchParams?.token
+  const token = typeof rawToken === "string" ? rawToken.trim() : ""
+
+  redirect(token ? `/auth/invite?token=${encodeURIComponent(token)}` : "/auth/invite")
 }

@@ -79,4 +79,3 @@ export function formatInvitationDate(value: string | null | undefined) {
   }).format(date)
 }
 
-

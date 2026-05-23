@@ -355,17 +355,14 @@ export default function ExperimentDetailPage() {
 
 
   useEffect(() => {
-    if (!experimentId) {
-      toast({
-        title: "Experimento inválido",
-        description: "Não foi possível identificar o experimento solicitado.",
-        variant: "destructive",
-      })
-      router.push("/experiments")
-      return
-    }
-
     let cancelled = false
+
+    if (!experimentId) {
+      router.push("/experiments")
+      return () => {
+        cancelled = true
+      }
+    }
 
     async function load() {
       try {

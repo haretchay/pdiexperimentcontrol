@@ -9,7 +9,7 @@ interface MainNavProps {
 }
 
 export function MainNav({ className }: MainNavProps) {
-  const pathname = usePathname()
+  const pathname = usePathname() ?? ""
 
   const routes = [
     {
@@ -56,3 +56,4 @@ export function MainNav({ className }: MainNavProps) {
     </nav>
   )
 }
+

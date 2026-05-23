@@ -306,7 +306,7 @@ function getStatusIcon(variant: StatusVariant) {
 export default function ExperimentDetailPage() {
   const params = useParams<{ id: string }>()
   const router = useRouter()
-  const experimentId = params.id // uuid (string)
+  const experimentId = params?.id ?? "" // uuid (string)
 
   const supabase = useMemo(() => createClient(), [])
 
@@ -355,6 +355,16 @@ export default function ExperimentDetailPage() {
 
 
   useEffect(() => {
+    if (!experimentId) {
+      toast({
+        title: "Experimento inválido",
+        description: "Não foi possível identificar o experimento solicitado.",
+        variant: "destructive",
+      })
+      router.push("/experiments")
+      return
+    }
+
     let cancelled = false
 
     async function load() {

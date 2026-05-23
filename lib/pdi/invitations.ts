@@ -63,7 +63,7 @@ export function getAppBaseUrl(request?: Request) {
 
 export function buildInvitationUrl(token: string, request?: Request) {
   const baseUrl = getAppBaseUrl(request)
-  return `${baseUrl}/auth/invite?token=${encodeURIComponent(token)}`
+  return `${baseUrl}/auth/cadastro-convite?token=${encodeURIComponent(token)}`
 }
 
 export function formatInvitationDate(value: string | null | undefined) {
@@ -78,3 +78,4 @@ export function formatInvitationDate(value: string | null | undefined) {
     minute: "2-digit",
   }).format(date)
 }
+

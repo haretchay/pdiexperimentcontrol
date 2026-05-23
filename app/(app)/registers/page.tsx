@@ -16,7 +16,7 @@ export default function RegistersPage() {
           </div>
           <h1 className="text-2xl font-bold sm:text-3xl">Central de Cadastros</h1>
           <p className="max-w-2xl text-sm text-white/80">
-            Área para recursos administrativos do sistema, incluindo usuários, convites e auditoria de alterações e acessos.
+            Área para recursos administrativos do sistema, incluindo usuários autorizados e auditoria de alterações e acessos.
           </p>
         </div>
       </div>
@@ -30,7 +30,7 @@ export default function RegistersPage() {
               </div>
               <CardTitle>Usuários</CardTitle>
               <CardDescription>
-                Envie convites, acompanhe cadastros pendentes e gerencie usuários autorizados.
+                Autorize e-mails, acompanhe cadastros pendentes e gerencie usuários do sistema.
               </CardDescription>
             </CardHeader>
             <CardContent>
@@ -63,3 +63,4 @@ export default function RegistersPage() {
     </div>
   )
 }
+

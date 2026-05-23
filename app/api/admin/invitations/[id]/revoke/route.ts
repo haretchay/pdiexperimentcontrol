@@ -12,7 +12,7 @@ export async function POST(_request: Request, { params }: { params: { id: string
   try {
     const id = params.id
     if (!id) {
-      return NextResponse.json({ ok: false, error: "Convite inválido." }, { status: 400 })
+      return NextResponse.json({ ok: false, error: "Autorização inválida." }, { status: 400 })
     }
 
     const now = new Date().toISOString()
@@ -26,14 +26,14 @@ export async function POST(_request: Request, { params }: { params: { id: string
 
     if (error) {
       return NextResponse.json(
-        { ok: false, error: error.message || "Erro ao revogar convite." },
+        { ok: false, error: error.message || "Erro ao revogar autorização." },
         { status: 500 },
       )
     }
 
     if (!data) {
       return NextResponse.json(
-        { ok: false, error: "Convite não encontrado ou já não está pendente." },
+        { ok: false, error: "Autorização não encontrada ou já não está pendente." },
         { status: 404 },
       )
     }
@@ -41,7 +41,7 @@ export async function POST(_request: Request, { params }: { params: { id: string
     return NextResponse.json({ ok: true, invitation: data })
   } catch (error: any) {
     return NextResponse.json(
-      { ok: false, error: error?.message ?? "Erro inesperado ao revogar convite." },
+      { ok: false, error: error?.message ?? "Erro inesperado ao revogar autorização." },
       { status: 500 },
     )
   }

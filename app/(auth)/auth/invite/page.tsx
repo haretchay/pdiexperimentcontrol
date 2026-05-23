@@ -113,6 +113,7 @@ export default function AcceptInvitationPage() {
     setIsSubmitting(true)
     try {
       const endpoints = [
+        "/api/invite-accept-legacy",
         "/api/auth/invitations/accept",
         "/api/auth/accept-invitation",
         "/api/auth/accept-invitation-v2",

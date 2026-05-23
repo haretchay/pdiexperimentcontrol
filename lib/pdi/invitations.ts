@@ -62,8 +62,8 @@ export function getAppBaseUrl(request?: Request) {
 export function buildInvitationUrl(token: string, request?: Request) {
   const baseUrl = getAppBaseUrl(request)
 
-  // Rota nova, server-rendered e sem dependência de JS antigo/cacheado do navegador.
-  return `${baseUrl}/auth/convite/${encodeURIComponent(token)}`
+  // Rota canônica já existente no projeto. Mantemos /auth/invite para evitar 404 em produção.
+  return `${baseUrl}/auth/invite?token=${encodeURIComponent(token)}`
 }
 
 export function formatInvitationDate(value: string | null | undefined) {
@@ -78,4 +78,5 @@ export function formatInvitationDate(value: string | null | undefined) {
     minute: "2-digit",
   }).format(date)
 }
+
 

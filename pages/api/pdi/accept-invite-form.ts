@@ -42,3 +42,4 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
   return res.redirect(303, result.redirectTo || "/auth/login?registered=1")
 }
+

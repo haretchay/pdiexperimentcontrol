@@ -16,7 +16,7 @@ import { useAuth } from "@/components/auth-provider"
 import { Button } from "@/components/ui/button"
 
 export function AppSidebar() {
-  const pathname = usePathname()
+  const pathname = usePathname() ?? ""
   const { isMobile, setOpenMobile } = useSidebar()
   // Usar o hook useSidebar do componente shadcn/ui
   const { user, signOut } = useAuth()
@@ -56,7 +56,7 @@ export function AppSidebar() {
       href: "/registers",
       label: "Cadastros",
       icon: Database,
-      active: pathname === "/registers" || pathname.startsWith("/registers/"),
+      active: pathname === "/registers",
     },
   ]
 
@@ -223,3 +223,4 @@ export function AppSidebar() {
     </Sidebar>
   )
 }
+

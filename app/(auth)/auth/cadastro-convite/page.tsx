@@ -12,3 +12,4 @@ export default function CadastroConviteRedirectPage({ searchParams }: PageProps)
 
   redirect(token ? `/auth/invite?token=${encodeURIComponent(token)}` : "/auth/invite")
 }
+

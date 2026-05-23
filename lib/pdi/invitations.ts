@@ -78,4 +78,3 @@ export function formatInvitationDate(value: string | null | undefined) {
     minute: "2-digit",
   }).format(date)
 }
-

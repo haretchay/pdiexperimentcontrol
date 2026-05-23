@@ -22,6 +22,14 @@ function noStore(res: NextApiResponse) {
 
 function formatAuthError(message: string) {
   const lower = message.toLowerCase()
+
+  if (lower.includes("database error creating new user")) {
+    return (
+      "O Supabase recusou a criação do usuário por uma regra/trigger no banco. " +
+      "Execute o script scripts/008_cleanup_legacy_auth_invitation_trigger.sql no Supabase e tente novamente."
+    )
+  }
+
   if (lower.includes("already") || lower.includes("registered") || lower.includes("exists")) {
     return "Este e-mail já possui cadastro. Acesse pelo login."
   }
@@ -90,7 +98,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     user_metadata: {
       full_name: displayName,
       role,
+      // Compatibilidade com o trigger antigo validate_auth_user_invitation_before_insert,
+      // caso ele ainda exista no Supabase. O fluxo novo não usa token, mas o ID
+      // da autorização é o mesmo registro de user_invitations.
       authorization_id: authorization.id,
+      invitation_id: authorization.id,
     },
   })
 

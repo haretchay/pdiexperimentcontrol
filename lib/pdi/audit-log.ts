@@ -2,6 +2,8 @@ import "server-only"
 
 import type { SupabaseClient } from "@supabase/supabase-js"
 
+import { createAdminClient } from "@/lib/supabase/admin"
+
 export type AuditAction = "insert" | "update" | "delete" | "login" | "logout"
 export type AuditEntityType = "experiment" | "test" | "media" | "auth" | "user" | "invitation" | "system"
 
@@ -61,9 +63,10 @@ async function getActorSnapshot(supabase: SupabaseClient, userId: string) {
  */
 export async function writeAuditLog(supabase: SupabaseClient, input: WriteAuditLogInput) {
   try {
-    const actor = await getActorSnapshot(supabase, input.actorUserId)
+    const auditClient = (createAdminClient() ?? supabase) as SupabaseClient
+    const actor = await getActorSnapshot(auditClient, input.actorUserId)
 
-    const { error } = await supabase.from("audit_logs").insert({
+    const { error } = await auditClient.from("audit_logs").insert({
       actor_user_id: input.actorUserId,
       actor_name: actor.actorName,
       actor_email: input.actorEmail ?? actor.actorEmail,

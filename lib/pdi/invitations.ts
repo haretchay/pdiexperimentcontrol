@@ -50,8 +50,6 @@ export function getAppBaseUrl(request?: Request) {
 
   if (configured) return normalizeBaseUrl(configured)
 
-  // Em produção, não usamos VERCEL_URL nem a origem da requisição, pois eles podem
-  // apontar para deploy preview/protected deployment da Vercel, exigindo login.
   if (process.env.NODE_ENV === "production") {
     return DEFAULT_PRODUCTION_APP_URL
   }
@@ -63,7 +61,9 @@ export function getAppBaseUrl(request?: Request) {
 
 export function buildInvitationUrl(token: string, request?: Request) {
   const baseUrl = getAppBaseUrl(request)
-  return `${baseUrl}/auth/cadastro-convite?token=${encodeURIComponent(token)}`
+
+  // Rota canônica já existente no projeto. Mantemos /auth/invite para evitar 404 em produção.
+  return `${baseUrl}/auth/invite?token=${encodeURIComponent(token)}`
 }
 
 export function formatInvitationDate(value: string | null | undefined) {
@@ -78,3 +78,4 @@ export function formatInvitationDate(value: string | null | undefined) {
     minute: "2-digit",
   }).format(date)
 }
+

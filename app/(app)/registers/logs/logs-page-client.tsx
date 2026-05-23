@@ -43,7 +43,7 @@ const entityLabels: Record<AuditLogRow["entity_type"], string> = {
   media: "Mídia",
   auth: "Acesso",
   user: "Usuário",
-  invitation: "Convite",
+  invitation: "Autorização",
   system: "Sistema",
 }
 
@@ -220,7 +220,7 @@ export function LogsPageClient({ logs }: Props) {
                 <SelectItem value="media">Mídia</SelectItem>
                 <SelectItem value="auth">Acesso</SelectItem>
                 <SelectItem value="user">Usuário</SelectItem>
-                <SelectItem value="invitation">Convite</SelectItem>
+                <SelectItem value="invitation">Autorização</SelectItem>
               </SelectContent>
             </Select>
           </div>

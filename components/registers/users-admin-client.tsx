@@ -2,18 +2,18 @@
 
 import type React from "react"
 
-import { useMemo, useState } from "react"
+import { Fragment, useMemo, useState } from "react"
 import { useRouter } from "next/navigation"
 import {
   AlertCircle,
   Check,
   Clipboard,
+  Clock,
+  KeyRound,
   Loader2,
-  MailCheck,
+  MailPlus,
   ShieldCheck,
-  UserCheck,
   UserCog,
-  UserPlus,
   Users,
   XCircle,
 } from "lucide-react"
@@ -70,16 +70,16 @@ function formatDate(value: string | null | undefined) {
   }).format(date)
 }
 
-function getAuthorizationStatusLabel(status: string) {
+function getInvitationStatusLabel(status: string) {
   switch (status) {
     case "pending":
-      return "Autorizado"
+      return "Pendente"
     case "accepted":
-      return "Cadastrado"
+      return "Aceito"
     case "expired":
       return "Expirado"
     case "revoked":
-      return "Removido"
+      return "Revogado"
     default:
       return status || "-"
   }
@@ -98,13 +98,9 @@ function getProfileStatusLabel(status: string) {
   }
 }
 
-function getRoleLabel(role: string) {
-  return role === "admin" ? "Admin" : "Usuário"
-}
-
 function StatusBadge({ status }: { status: string }) {
   const statusClass = {
-    pending: "border-blue-200 bg-blue-50 text-blue-700",
+    pending: "border-amber-200 bg-amber-50 text-amber-700",
     active: "border-emerald-200 bg-emerald-50 text-emerald-700",
     accepted: "border-emerald-200 bg-emerald-50 text-emerald-700",
     expired: "border-slate-200 bg-slate-50 text-slate-600",
@@ -114,7 +110,7 @@ function StatusBadge({ status }: { status: string }) {
 
   return (
     <Badge variant="outline" className={cn("whitespace-nowrap", statusClass)}>
-      {status === "active" || status === "blocked" ? getProfileStatusLabel(status) : getAuthorizationStatusLabel(status)}
+      {status === "active" || status === "blocked" ? getProfileStatusLabel(status) : getInvitationStatusLabel(status)}
     </Badge>
   )
 }
@@ -124,27 +120,32 @@ export function UsersAdminClient({ invitations, profiles }: UsersAdminClientProp
   const [email, setEmail] = useState("")
   const [fullName, setFullName] = useState("")
   const [role, setRole] = useState("user")
+  const [expiresDays, setExpiresDays] = useState("7")
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState<string | null>(null)
-  const [signUpUrl, setSignUpUrl] = useState<string | null>(null)
+  const [inviteUrl, setInviteUrl] = useState<string | null>(null)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [revokingId, setRevokingId] = useState<string | null>(null)
+  const [copyingInvitationId, setCopyingInvitationId] = useState<string | null>(null)
+  const [copiedInvitationId, setCopiedInvitationId] = useState<string | null>(null)
+  const [expandedInvitationId, setExpandedInvitationId] = useState<string | null>(null)
+  const [generatedInviteUrls, setGeneratedInviteUrls] = useState<Record<string, string>>({})
   const [copied, setCopied] = useState(false)
 
   const stats = useMemo(() => {
-    const authorized = invitations.filter((item) => item.status === "pending").length
-    const registered = invitations.filter((item) => item.status === "accepted").length
+    const pending = invitations.filter((item) => item.status === "pending").length
+    const accepted = invitations.filter((item) => item.status === "accepted").length
     const activeUsers = profiles.filter((profile) => profile.status === "active").length
     const admins = profiles.filter((profile) => profile.role === "admin" && profile.status === "active").length
 
-    return { authorized, registered, activeUsers, admins }
+    return { pending, accepted, activeUsers, admins }
   }, [invitations, profiles])
 
-  async function handleCreateAuthorization(event: React.FormEvent<HTMLFormElement>) {
+  async function handleCreateInvitation(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault()
     setError(null)
     setSuccess(null)
-    setSignUpUrl(null)
+    setInviteUrl(null)
     setCopied(false)
     setIsSubmitting(true)
 
@@ -152,32 +153,33 @@ export function UsersAdminClient({ invitations, profiles }: UsersAdminClientProp
       const response = await fetch("/api/admin/invitations", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, fullName, role }),
+        body: JSON.stringify({ email, fullName, role, expiresDays: Number(expiresDays) || 7 }),
       })
       const payload = (await response.json().catch(() => ({}))) as any
 
       if (!response.ok || !payload?.ok) {
-        throw new Error(payload?.error || "Não foi possível autorizar o cadastro.")
+        throw new Error(payload?.error || "Não foi possível criar o convite.")
       }
 
-      setSignUpUrl(payload.signUpUrl || `${window.location.origin}/auth/sign-up`)
-      setSuccess("E-mail autorizado com sucesso. O usuário já pode acessar a tela de cadastro e criar a senha.")
+      setInviteUrl(payload.inviteUrl)
+      setSuccess("Convite criado com sucesso. Copie o link e envie ao usuário autorizado.")
       setEmail("")
       setFullName("")
       setRole("user")
+      setExpiresDays("7")
       router.refresh()
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Não foi possível autorizar o cadastro.")
+      setError(err instanceof Error ? err.message : "Não foi possível criar o convite.")
     } finally {
       setIsSubmitting(false)
     }
   }
 
-  async function handleCopySignUpUrl() {
-    const url = signUpUrl || `${window.location.origin}/auth/sign-up`
+  async function handleCopyInvitation() {
+    if (!inviteUrl) return
 
     try {
-      await navigator.clipboard.writeText(url)
+      await navigator.clipboard.writeText(inviteUrl)
       setCopied(true)
       window.setTimeout(() => setCopied(false), 1800)
     } catch {
@@ -185,7 +187,36 @@ export function UsersAdminClient({ invitations, profiles }: UsersAdminClientProp
     }
   }
 
-  async function handleRevokeAuthorization(id: string) {
+  async function handleCopyExistingInvitation(invitation: UserInvitationView) {
+    setError(null)
+    setSuccess(null)
+    setCopyingInvitationId(invitation.id)
+
+    try {
+      const response = await fetch(`/api/admin/invitations/${invitation.id}/link`, { method: "POST" })
+      const payload = (await response.json().catch(() => ({}))) as any
+
+      if (!response.ok || !payload?.ok || typeof payload?.inviteUrl !== "string") {
+        throw new Error(payload?.error || "Não foi possível gerar o link do convite.")
+      }
+
+      setGeneratedInviteUrls((current) => ({ ...current, [invitation.id]: payload.inviteUrl }))
+      await navigator.clipboard.writeText(payload.inviteUrl)
+      setCopiedInvitationId(invitation.id)
+      setSuccess("Link do convite copiado. Se havia um link anterior pendente, ele foi substituído por este novo link.")
+      window.setTimeout(() => setCopiedInvitationId(null), 2200)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Não foi possível copiar o link do convite.")
+    } finally {
+      setCopyingInvitationId(null)
+    }
+  }
+
+  function toggleInvitationOptions(id: string) {
+    setExpandedInvitationId((current) => (current === id ? null : id))
+  }
+
+  async function handleRevokeInvitation(id: string) {
     setError(null)
     setSuccess(null)
     setRevokingId(id)
@@ -195,13 +226,13 @@ export function UsersAdminClient({ invitations, profiles }: UsersAdminClientProp
       const payload = (await response.json().catch(() => ({}))) as any
 
       if (!response.ok || !payload?.ok) {
-        throw new Error(payload?.error || "Não foi possível remover a autorização.")
+        throw new Error(payload?.error || "Não foi possível revogar o convite.")
       }
 
-      setSuccess("Autorização removida com sucesso.")
+      setSuccess("Convite revogado com sucesso.")
       router.refresh()
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Não foi possível remover a autorização.")
+      setError(err instanceof Error ? err.message : "Não foi possível revogar o convite.")
     } finally {
       setRevokingId(null)
     }
@@ -214,11 +245,12 @@ export function UsersAdminClient({ invitations, profiles }: UsersAdminClientProp
           <div>
             <div className="inline-flex items-center gap-2 rounded-full border border-white/20 bg-white/10 px-3 py-1 text-sm text-white/80">
               <ShieldCheck className="h-4 w-4" />
-              Cadastro liberado por e-mail autorizado
+              Cadastro protegido por convite
             </div>
             <h1 className="mt-4 text-3xl font-bold tracking-tight sm:text-4xl">Usuários</h1>
             <p className="mt-2 max-w-2xl text-sm leading-6 text-white/75">
-              Cadastre previamente o e-mail do usuário. Depois, ele acessa a página pública de cadastro, informa o e-mail autorizado e cria a própria senha.
+              Envie links individuais para liberar novos acessos. O e-mail do convite fica travado no cadastro, o link expira
+              e só pode ser usado uma vez.
             </p>
           </div>
 
@@ -232,12 +264,12 @@ export function UsersAdminClient({ invitations, profiles }: UsersAdminClientProp
               <p className="mt-2 text-2xl font-bold">{stats.admins}</p>
             </div>
             <div className="rounded-2xl border border-white/15 bg-white/10 p-4">
-              <p className="text-xs uppercase tracking-wide text-white/60">Autorizados</p>
-              <p className="mt-2 text-2xl font-bold">{stats.authorized}</p>
+              <p className="text-xs uppercase tracking-wide text-white/60">Pendentes</p>
+              <p className="mt-2 text-2xl font-bold">{stats.pending}</p>
             </div>
             <div className="rounded-2xl border border-white/15 bg-white/10 p-4">
-              <p className="text-xs uppercase tracking-wide text-white/60">Cadastrados</p>
-              <p className="mt-2 text-2xl font-bold">{stats.registered}</p>
+              <p className="text-xs uppercase tracking-wide text-white/60">Aceitos</p>
+              <p className="mt-2 text-2xl font-bold">{stats.accepted}</p>
             </div>
           </div>
         </div>
@@ -247,15 +279,15 @@ export function UsersAdminClient({ invitations, profiles }: UsersAdminClientProp
         <Card className="border-blue-100 shadow-sm">
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-xl">
-              <UserPlus className="h-5 w-5 text-blue-600" />
-              Autorizar novo cadastro
+              <MailPlus className="h-5 w-5 text-blue-600" />
+              Enviar novo convite
             </CardTitle>
             <CardDescription>
-              O usuário só conseguirá criar conta se o e-mail estiver cadastrado aqui como autorizado.
+              Crie um link seguro para o e-mail autorizado. Links pendentes anteriores do mesmo e-mail serão revogados.
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <form className="space-y-4" onSubmit={handleCreateAuthorization}>
+            <form className="space-y-4" onSubmit={handleCreateInvitation}>
               <div className="space-y-2">
                 <Label htmlFor="fullName">Nome completo</Label>
                 <Input
@@ -278,17 +310,35 @@ export function UsersAdminClient({ invitations, profiles }: UsersAdminClientProp
                 />
               </div>
 
-              <div className="space-y-2">
-                <Label>Função</Label>
-                <Select value={role} onValueChange={setRole}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Selecione" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="user">Usuário</SelectItem>
-                    <SelectItem value="admin">Admin</SelectItem>
-                  </SelectContent>
-                </Select>
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div className="space-y-2">
+                  <Label>Função</Label>
+                  <Select value={role} onValueChange={setRole}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Selecione" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="user">Usuário</SelectItem>
+                      <SelectItem value="admin">Admin</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="expiresDays">Validade do convite</Label>
+                  <Select value={expiresDays} onValueChange={setExpiresDays}>
+                    <SelectTrigger id="expiresDays">
+                      <SelectValue placeholder="Validade do convite" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="1">1 dia</SelectItem>
+                      <SelectItem value="3">3 dias</SelectItem>
+                      <SelectItem value="7">7 dias</SelectItem>
+                      <SelectItem value="15">15 dias</SelectItem>
+                      <SelectItem value="30">30 dias</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
               </div>
 
               {error && (
@@ -305,18 +355,15 @@ export function UsersAdminClient({ invitations, profiles }: UsersAdminClientProp
                 </Alert>
               )}
 
-              {signUpUrl && (
+              {inviteUrl && (
                 <div className="rounded-2xl border border-blue-100 bg-blue-50 p-3">
-                  <Label className="text-xs uppercase tracking-wide text-blue-700">Página pública de cadastro</Label>
+                  <Label className="text-xs uppercase tracking-wide text-blue-700">Link do convite</Label>
                   <div className="mt-2 flex gap-2">
-                    <Input readOnly value={signUpUrl} className="bg-white text-xs" />
-                    <Button type="button" variant="outline" onClick={handleCopySignUpUrl} className="shrink-0">
+                    <Input readOnly value={inviteUrl} className="bg-white text-xs" />
+                    <Button type="button" variant="outline" onClick={handleCopyInvitation} className="shrink-0">
                       {copied ? <Check className="h-4 w-4" /> : <Clipboard className="h-4 w-4" />}
                     </Button>
                   </div>
-                  <p className="mt-2 text-xs text-blue-800/75">
-                    Esse link é sempre o mesmo. A segurança fica no e-mail previamente autorizado, não em token.
-                  </p>
                 </div>
               )}
 
@@ -328,12 +375,12 @@ export function UsersAdminClient({ invitations, profiles }: UsersAdminClientProp
                 {isSubmitting ? (
                   <>
                     <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    Autorizando...
+                    Criando convite...
                   </>
                 ) : (
                   <>
-                    <UserCheck className="mr-2 h-4 w-4" />
-                    Autorizar cadastro
+                    <KeyRound className="mr-2 h-4 w-4" />
+                    Gerar link de cadastro
                   </>
                 )}
               </Button>
@@ -344,10 +391,10 @@ export function UsersAdminClient({ invitations, profiles }: UsersAdminClientProp
         <Card className="border-purple-100 shadow-sm">
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-xl">
-              <MailCheck className="h-5 w-5 text-purple-600" />
-              E-mails autorizados recentes
+              <Clock className="h-5 w-5 text-purple-600" />
+              Convites recentes
             </CardTitle>
-            <CardDescription>Controle quem está autorizado, quem já concluiu o cadastro e autorizações removidas.</CardDescription>
+            <CardDescription>Controle convites pendentes, aceitos, expirados e revogados.</CardDescription>
           </CardHeader>
           <CardContent>
             <div className="overflow-hidden rounded-2xl border">
@@ -358,8 +405,8 @@ export function UsersAdminClient({ invitations, profiles }: UsersAdminClientProp
                       <th className="px-4 py-3 font-semibold">Usuário</th>
                       <th className="px-4 py-3 font-semibold">Função</th>
                       <th className="px-4 py-3 font-semibold">Status</th>
-                      <th className="px-4 py-3 font-semibold">Autorizado em</th>
-                      <th className="px-4 py-3 font-semibold">Cadastro concluído</th>
+                      <th className="px-4 py-3 font-semibold">Validade</th>
+                      <th className="px-4 py-3 font-semibold">Criado</th>
                       <th className="px-4 py-3 text-right font-semibold">Ações</th>
                     </tr>
                   </thead>
@@ -367,45 +414,118 @@ export function UsersAdminClient({ invitations, profiles }: UsersAdminClientProp
                     {invitations.length === 0 ? (
                       <tr>
                         <td colSpan={6} className="px-4 py-10 text-center text-muted-foreground">
-                          Nenhum e-mail autorizado ainda.
+                          Nenhum convite criado ainda.
                         </td>
                       </tr>
                     ) : (
-                      invitations.map((authorization) => (
-                        <tr key={authorization.id} className="bg-white odd:bg-slate-50/60">
-                          <td className="px-4 py-3">
-                            <div className="font-semibold text-slate-900">{authorization.full_name || "Sem nome"}</div>
-                            <div className="text-xs text-muted-foreground">{authorization.email}</div>
-                          </td>
-                          <td className="px-4 py-3">{getRoleLabel(authorization.role)}</td>
-                          <td className="px-4 py-3">
-                            <StatusBadge status={authorization.status} />
-                          </td>
-                          <td className="px-4 py-3 whitespace-nowrap">{formatDate(authorization.created_at)}</td>
-                          <td className="px-4 py-3 whitespace-nowrap">{formatDate(authorization.accepted_at)}</td>
-                          <td className="px-4 py-3 text-right">
-                            {authorization.status === "pending" ? (
-                              <Button
-                                type="button"
-                                size="sm"
-                                variant="outline"
-                                disabled={revokingId === authorization.id}
-                                onClick={() => handleRevokeAuthorization(authorization.id)}
-                                className="border-rose-200 text-rose-700 hover:bg-rose-50"
-                              >
-                                {revokingId === authorization.id ? (
-                                  <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />
+                      invitations.map((invitation) => {
+                        const isExpanded = expandedInvitationId === invitation.id
+                        const generatedInviteUrl = generatedInviteUrls[invitation.id]
+
+                        return (
+                          <Fragment key={invitation.id}>
+                            <tr className="bg-white odd:bg-slate-50/60">
+                              <td className="px-4 py-3">
+                                <button
+                                  type="button"
+                                  onClick={() => toggleInvitationOptions(invitation.id)}
+                                  className="group text-left"
+                                  title="Clique para abrir as opções do convite"
+                                >
+                                  <div className="font-semibold text-slate-900 underline-offset-4 transition-colors group-hover:text-blue-700 group-hover:underline">
+                                    {invitation.full_name || "Sem nome"}
+                                  </div>
+                                  <div className="text-xs text-muted-foreground">{invitation.email}</div>
+                                </button>
+                              </td>
+                              <td className="px-4 py-3 capitalize">{invitation.role}</td>
+                              <td className="px-4 py-3">
+                                <StatusBadge status={invitation.status} />
+                              </td>
+                              <td className="px-4 py-3 whitespace-nowrap">{formatDate(invitation.expires_at)}</td>
+                              <td className="px-4 py-3 whitespace-nowrap">{formatDate(invitation.created_at)}</td>
+                              <td className="px-4 py-3 text-right">
+                                {invitation.status === "pending" ? (
+                                  <Button
+                                    type="button"
+                                    size="sm"
+                                    variant="outline"
+                                    disabled={revokingId === invitation.id}
+                                    onClick={() => handleRevokeInvitation(invitation.id)}
+                                    className="border-rose-200 text-rose-700 hover:bg-rose-50"
+                                  >
+                                    {revokingId === invitation.id ? (
+                                      <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />
+                                    ) : (
+                                      <XCircle className="mr-2 h-3.5 w-3.5" />
+                                    )}
+                                    Revogar
+                                  </Button>
                                 ) : (
-                                  <XCircle className="mr-2 h-3.5 w-3.5" />
+                                  <span className="text-xs text-muted-foreground">-</span>
                                 )}
-                                Remover
-                              </Button>
-                            ) : (
-                              <span className="text-xs text-muted-foreground">-</span>
+                              </td>
+                            </tr>
+
+                            {isExpanded && (
+                              <tr className="bg-blue-50/70">
+                                <td colSpan={6} className="px-4 py-3">
+                                  <div className="rounded-2xl border border-blue-100 bg-white p-3 shadow-sm">
+                                    {invitation.status === "pending" ? (
+                                      <div className="space-y-3">
+                                        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                                          <div>
+                                            <p className="text-sm font-semibold text-slate-900">Opções do convite</p>
+                                            <p className="text-xs text-muted-foreground">
+                                              Copie uma nova via do link para enviar ao usuário. Por segurança, o link anterior deste convite será substituído.
+                                            </p>
+                                          </div>
+                                          <Button
+                                            type="button"
+                                            size="sm"
+                                            disabled={copyingInvitationId === invitation.id}
+                                            onClick={() => handleCopyExistingInvitation(invitation)}
+                                            className="bg-gradient-to-r from-blue-600 to-purple-700 font-semibold text-white hover:from-blue-700 hover:to-purple-800"
+                                          >
+                                            {copyingInvitationId === invitation.id ? (
+                                              <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />
+                                            ) : copiedInvitationId === invitation.id ? (
+                                              <Check className="mr-2 h-3.5 w-3.5" />
+                                            ) : (
+                                              <Clipboard className="mr-2 h-3.5 w-3.5" />
+                                            )}
+                                            {copiedInvitationId === invitation.id ? "Link copiado" : "Copiar link de envio"}
+                                          </Button>
+                                        </div>
+
+                                        {generatedInviteUrl && (
+                                          <div className="flex flex-col gap-2 sm:flex-row">
+                                            <Input readOnly value={generatedInviteUrl} className="bg-slate-50 text-xs" />
+                                            <Button
+                                              type="button"
+                                              variant="outline"
+                                              size="sm"
+                                              onClick={() => navigator.clipboard.writeText(generatedInviteUrl)}
+                                              className="shrink-0"
+                                            >
+                                              <Clipboard className="mr-2 h-3.5 w-3.5" />
+                                              Copiar novamente
+                                            </Button>
+                                          </div>
+                                        )}
+                                      </div>
+                                    ) : (
+                                      <p className="text-sm text-muted-foreground">
+                                        Este convite não está pendente. O link só pode ser copiado para convites pendentes.
+                                      </p>
+                                    )}
+                                  </div>
+                                </td>
+                              </tr>
                             )}
-                          </td>
-                        </tr>
-                      ))
+                          </Fragment>
+                        )
+                      })
                     )}
                   </tbody>
                 </table>
@@ -454,7 +574,7 @@ export function UsersAdminClient({ invitations, profiles }: UsersAdminClientProp
                           </div>
                         </td>
                         <td className="px-4 py-3 text-muted-foreground">{profile.email || "-"}</td>
-                        <td className="px-4 py-3">{getRoleLabel(profile.role)}</td>
+                        <td className="px-4 py-3 capitalize">{profile.role}</td>
                         <td className="px-4 py-3">
                           <StatusBadge status={profile.status} />
                         </td>

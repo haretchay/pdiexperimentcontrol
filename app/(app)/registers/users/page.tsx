@@ -58,7 +58,7 @@ export default async function UsersRegisterPage() {
           <CardHeader>
             <CardTitle>Configuração pendente</CardTitle>
             <CardDescription className="text-red-800/80">
-              Configure SUPABASE_SERVICE_ROLE_KEY nas variáveis de ambiente para administrar usuários e autorizações de cadastro.
+              Configure SUPABASE_SERVICE_ROLE_KEY nas variáveis de ambiente para administrar usuários e convites.
             </CardDescription>
           </CardHeader>
         </Card>
@@ -98,4 +98,3 @@ export default async function UsersRegisterPage() {
     </div>
   )
 }
-

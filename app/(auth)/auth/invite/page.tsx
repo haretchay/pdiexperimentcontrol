@@ -23,7 +23,7 @@ interface ValidInvitation {
 export default function AcceptInvitationPage() {
   const router = useRouter()
   const searchParams = useSearchParams()
-  const token = searchParams.get("token")?.trim() ?? ""
+  const token = searchParams?.get("token")?.trim() ?? ""
 
   const [invitation, setInvitation] = useState<ValidInvitation | null>(null)
   const [password, setPassword] = useState("")
@@ -113,7 +113,6 @@ export default function AcceptInvitationPage() {
     setIsSubmitting(true)
     try {
       const endpoints = [
-        "/api/invite-accept-legacy",
         "/api/auth/invitations/accept",
         "/api/auth/accept-invitation",
         "/api/auth/accept-invitation-v2",

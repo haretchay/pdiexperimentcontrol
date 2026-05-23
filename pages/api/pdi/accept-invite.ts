@@ -3,8 +3,8 @@ import type { NextApiRequest, NextApiResponse } from "next"
 import { acceptInvitation } from "@/lib/pdi/invitation-accept-service"
 
 type ApiResponse =
-  | { ok: true; signedIn: false; redirectTo: string }
-  | { ok: false; error: string }
+  | { ok: true; signedIn: false; redirectTo: string; route: string }
+  | { ok: false; error: string; route: string }
 
 const NO_STORE_HEADERS = {
   "Cache-Control": "no-store, no-cache, must-revalidate, proxy-revalidate",
@@ -19,16 +19,20 @@ function setHeaders(res: NextApiResponse) {
   }
 }
 
-function getBody(req: NextApiRequest) {
+function normalizeBody(req: NextApiRequest): Record<string, unknown> {
   if (typeof req.body === "string") {
     try {
       return JSON.parse(req.body)
     } catch {
-      return {}
+      const params = new URLSearchParams(req.body)
+      return Object.fromEntries(params.entries())
     }
   }
 
-  if (req.body && typeof req.body === "object") return req.body as Record<string, unknown>
+  if (req.body && typeof req.body === "object") {
+    return req.body as Record<string, unknown>
+  }
+
   return {}
 }
 
@@ -42,15 +46,21 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
   if (req.method !== "POST") {
     return res.status(405).json({
       ok: false,
+      route: "/api/pdi/accept-invite",
       error: "Método não permitido. Esta rota aceita POST para concluir o cadastro por convite.",
     })
   }
 
-  const result = await acceptInvitation(getBody(req))
+  const result = await acceptInvitation(normalizeBody(req))
 
   if (!result.ok) {
-    return res.status(result.status).json({ ok: false, error: result.error })
+    return res.status(result.status).json({ ok: false, route: "/api/pdi/accept-invite", error: result.error })
   }
 
-  return res.status(200).json({ ok: true, signedIn: false, redirectTo: result.redirectTo })
+  return res.status(200).json({
+    ok: true,
+    route: "/api/pdi/accept-invite",
+    signedIn: false,
+    redirectTo: result.redirectTo,
+  })
 }

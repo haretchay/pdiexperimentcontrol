@@ -33,6 +33,17 @@ function formatTemperature(value: number | null | undefined) {
   return value.toLocaleString("pt-BR", { minimumFractionDigits: 1, maximumFractionDigits: 1 })
 }
 
+function splitScientificName(value: string) {
+  const normalized = value.trim().replace(/\s+/g, " ")
+  if (!normalized) return { genus: "--", species: "" }
+
+  const [genus, ...rest] = normalized.split(" ")
+  return {
+    genus,
+    species: rest.join(" "),
+  }
+}
+
 function formatExperimentNumber(value: number) {
   return String(value || 0).padStart(3, "0")
 }
@@ -367,6 +378,8 @@ export default function NewExperimentPage() {
                       ) : (
                         fungi.map((fungus) => {
                           const active = fungus.id === selectedFungusId
+                          const scientificName = splitScientificName(fungus.scientific_name)
+
                           return (
                             <button
                               key={fungus.id}
@@ -374,17 +387,23 @@ export default function NewExperimentPage() {
                               onClick={() => selectFungus(fungus.id)}
                               className={
                                 active
-                                  ? "rounded-2xl border border-blue-500 bg-blue-50 p-3 text-left shadow-md ring-2 ring-blue-200 dark:bg-blue-950/30 dark:ring-blue-900"
-                                  : "rounded-2xl border border-slate-200 bg-white p-3 text-left shadow-sm transition hover:border-blue-300 hover:bg-blue-50/60 dark:border-slate-800 dark:bg-slate-950 dark:hover:border-blue-900 dark:hover:bg-blue-950/20"
+                                  ? "rounded-2xl border border-blue-500 bg-blue-50 px-3 py-3 text-left shadow-md ring-2 ring-blue-200 dark:bg-blue-950/30 dark:ring-blue-900"
+                                  : "rounded-2xl border border-slate-200 bg-white px-3 py-3 text-left shadow-sm transition hover:border-blue-300 hover:bg-blue-50/60 dark:border-slate-800 dark:bg-slate-950 dark:hover:border-blue-900 dark:hover:bg-blue-950/20"
                               }
                             >
                               <div className="flex items-start justify-between gap-2">
-                                <p className="min-w-0 truncate font-bold text-slate-950 dark:text-white">{fungus.scientific_name}</p>
-                                {active ? <Check className="h-4 w-4 shrink-0 text-blue-600" /> : null}
+                                <div className="min-w-0 leading-tight">
+                                  <div className="truncate font-serif text-base font-bold italic text-slate-950 dark:text-white">
+                                    {scientificName.genus}
+                                  </div>
+                                  {scientificName.species ? (
+                                    <div className="mt-0.5 truncate font-serif text-sm font-semibold italic text-slate-700 dark:text-slate-200">
+                                      {scientificName.species}
+                                    </div>
+                                  ) : null}
+                                </div>
+                                {active ? <Check className="mt-0.5 h-4 w-4 shrink-0 text-blue-600" /> : null}
                               </div>
-                              <p className="mt-1 text-xs text-muted-foreground">
-                                Ótima: {formatTemperature(fungus.optimal_temperature)} ºC • Faixa: {formatTemperature(fungus.min_temperature)}–{formatTemperature(fungus.max_temperature)} ºC
-                              </p>
                             </button>
                           )
                         })

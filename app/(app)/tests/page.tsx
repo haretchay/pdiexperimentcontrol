@@ -29,6 +29,7 @@ export type UITestRow = {
   photos14Count: number
   viewHref: string
   editHref: string
+  isRepetitionLocked: boolean
 }
 
 type TestStatusRecord = {
@@ -213,14 +214,57 @@ function mapRow(row: TestRow): UITestRow {
     photos14Count: photos14DayPaths.length,
     viewHref: `/experiments/${row.experiment_id}/repetition/${row.repetition_number}/test/${row.test_number}/view`,
     editHref: `/experiments/${row.experiment_id}/repetition/${row.repetition_number}/test/${row.test_number}`,
+    isRepetitionLocked: false,
   }
+}
+
+
+function applyRepetitionLocks(items: UITestRow[]): UITestRow[] {
+  const byExperiment = new Map<string, UITestRow[]>()
+
+  for (const item of items) {
+    const list = byExperiment.get(item.experimentId) ?? []
+    list.push(item)
+    byExperiment.set(item.experimentId, list)
+  }
+
+  const lockedKeys = new Set<string>()
+
+  for (const [experimentId, tests] of byExperiment.entries()) {
+    const byRepetition = new Map<number, UITestRow[]>()
+
+    for (const test of tests) {
+      const list = byRepetition.get(test.repetitionNumber) ?? []
+      list.push(test)
+      byRepetition.set(test.repetitionNumber, list)
+    }
+
+    const testCount = Math.max(...tests.map((test) => test.testNumber), 0)
+    const completedRepetitions = new Set<number>()
+
+    for (const [repetitionNumber, repetitionTests] of byRepetition.entries()) {
+      const hasAllTests = testCount > 0 && repetitionTests.length >= testCount
+      const allCompleted = hasAllTests && repetitionTests.every((test) => test.status === "Concluído")
+      if (allCompleted) completedRepetitions.add(repetitionNumber)
+    }
+
+    for (const test of tests) {
+      const isLocked = test.repetitionNumber > 1 && !completedRepetitions.has(test.repetitionNumber - 1)
+      if (isLocked) lockedKeys.add(`${experimentId}:${test.repetitionNumber}:${test.testNumber}`)
+    }
+  }
+
+  return items.map((item) => ({
+    ...item,
+    isRepetitionLocked: lockedKeys.has(`${item.experimentId}:${item.repetitionNumber}:${item.testNumber}`),
+  }))
 }
 
 export default async function TestsPage() {
   try {
     const supabase = await createClient()
     const rows = await getAllTests(supabase)
-    const items = rows.map(mapRow)
+    const items = applyRepetitionLocks(rows.map(mapRow))
 
     return <TestsPageClient initialTests={items} />
   } catch (error) {

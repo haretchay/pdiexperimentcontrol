@@ -135,7 +135,12 @@ export function ExportExperimentQRCodesButton({ experimentId, experimentNumber, 
   }
 
   return (
-    <Button onClick={handleExport} disabled={busy} variant="outline" className="gap-2">
+    <Button
+      onClick={handleExport}
+      disabled={busy}
+      variant="outline"
+      className="gap-2 rounded-xl border-white/40 bg-white text-blue-700 shadow-sm hover:bg-blue-50 hover:text-blue-800 dark:border-slate-700 dark:bg-slate-950 dark:text-blue-200 dark:hover:bg-slate-900 dark:hover:text-blue-100"
+    >
       <QrCode className="h-4 w-4" />
       <span className="hidden sm:inline">Exportar QR Codes</span>
       <span className="sm:hidden">QR</span>

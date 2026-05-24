@@ -172,21 +172,21 @@ export function EditExperimentDialog({
 
   async function save() {
     if (!dateValue) {
-      toast({ title: "Informe a data do experimento", variant: "destructive" })
+      toast({ title: "Informe a data do experimento", description: "Selecione a data antes de salvar.", variant: "destructive" })
       return
     }
 
     if (fungusId) {
       if (!selectedAcronym) {
-        toast({ title: "Selecione a cepa/sigla", variant: "destructive" })
+        toast({ title: "Selecione a cepa/sigla", description: "Escolha uma das siglas cadastradas para este fungo.", variant: "destructive" })
         return
       }
       if (!variable.trim()) {
-        toast({ title: "Informe a variável da cepa", variant: "destructive" })
+        toast({ title: "Informe a variável da cepa", description: "Preencha a variável que completa a cepa.", variant: "destructive" })
         return
       }
     } else if (!legacyStrain.trim()) {
-      toast({ title: "Informe a cepa", variant: "destructive" })
+      toast({ title: "Informe a cepa", description: "Preencha a cepa do experimento antes de salvar.", variant: "destructive" })
       return
     }
 

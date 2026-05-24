@@ -249,7 +249,7 @@ function getExperimentDayDate(startDate: string | null | undefined, day: number)
   if (!year || !month || !date) return ""
 
   const d = new Date(year, month - 1, date)
-  d.setDate(d.getDate() + day - 1)
+  d.setDate(d.getDate() + day)
 
   const yyyy = d.getFullYear()
   const mm = String(d.getMonth() + 1).padStart(2, "0")

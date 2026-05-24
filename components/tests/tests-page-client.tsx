@@ -10,6 +10,7 @@ import {
   Eye,
   FlaskConical,
   ImageIcon,
+  LockKeyhole,
   MapPin,
   Search,
   Sparkles,
@@ -320,14 +321,35 @@ export function TestsPageClient({ initialTests }: { initialTests: UITestRow[] })
                 <Card
                   key={test.id}
                   role="button"
-                  tabIndex={0}
-                  onClick={() => router.push(test.viewHref)}
-                  onKeyDown={(event) => {
-                    if (event.key === "Enter" || event.key === " ") router.push(test.viewHref)
+                  tabIndex={test.isRepetitionLocked ? -1 : 0}
+                  aria-disabled={test.isRepetitionLocked}
+                  onClick={() => {
+                    if (!test.isRepetitionLocked) router.push(test.viewHref)
                   }}
-                  className="group cursor-pointer overflow-hidden border-slate-200 bg-white shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:border-blue-200 hover:shadow-lg"
+                  onKeyDown={(event) => {
+                    if (!test.isRepetitionLocked && (event.key === "Enter" || event.key === " ")) router.push(test.viewHref)
+                  }}
+                  className={`group relative overflow-hidden border-slate-200 bg-white shadow-sm transition-all duration-200 ${
+                    test.isRepetitionLocked
+                      ? "cursor-not-allowed border-slate-200/80 bg-slate-50/90"
+                      : "cursor-pointer hover:-translate-y-0.5 hover:border-blue-200 hover:shadow-lg"
+                  }`}
                 >
-                  <div className="h-1.5 bg-gradient-to-r from-blue-500 via-indigo-500 to-purple-600" />
+                  <div
+                    className={`h-1.5 ${
+                      test.isRepetitionLocked ? "bg-slate-300" : "bg-gradient-to-r from-blue-500 via-indigo-500 to-purple-600"
+                    }`}
+                  />
+                  {test.isRepetitionLocked && (
+                    <div className="pointer-events-none absolute inset-0 z-20 flex items-center justify-center bg-white/55 backdrop-blur-[1.5px]">
+                      <div className="flex flex-col items-center rounded-2xl border border-slate-200 bg-white/90 px-4 py-3 text-center shadow-sm">
+                        <LockKeyhole className="mb-1 h-6 w-6 text-slate-500" />
+                        <p className="text-xs font-bold uppercase tracking-wide text-slate-700">Repetição bloqueada</p>
+                        <p className="mt-0.5 max-w-[190px] text-[11px] text-slate-500">Conclua a repetição anterior para liberar este teste.</p>
+                      </div>
+                    </div>
+                  )}
+                  <div className={test.isRepetitionLocked ? "select-none opacity-45 grayscale" : undefined}>
                   <CardHeader className="space-y-3 p-4 pb-2">
                     <div className="flex items-start justify-between gap-3">
                       <div className="min-w-0">
@@ -399,9 +421,10 @@ export function TestsPageClient({ initialTests }: { initialTests: UITestRow[] })
                         size="sm"
                         variant="outline"
                         className="flex-1 rounded-xl border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+                        disabled={test.isRepetitionLocked}
                         onClick={(event) => {
                           event.stopPropagation()
-                          router.push(test.viewHref)
+                          if (!test.isRepetitionLocked) router.push(test.viewHref)
                         }}
                       >
                         <Eye className="mr-1.5 h-4 w-4" />
@@ -411,9 +434,10 @@ export function TestsPageClient({ initialTests }: { initialTests: UITestRow[] })
                         type="button"
                         size="sm"
                         className="flex-1 rounded-xl bg-gradient-to-r from-blue-600 to-purple-600 font-semibold text-white shadow-sm hover:from-blue-700 hover:to-purple-700"
+                        disabled={test.isRepetitionLocked}
                         onClick={(event) => {
                           event.stopPropagation()
-                          router.push(test.editHref)
+                          if (!test.isRepetitionLocked) router.push(test.editHref)
                         }}
                       >
                         <Edit3 className="mr-1.5 h-4 w-4" />
@@ -421,6 +445,7 @@ export function TestsPageClient({ initialTests }: { initialTests: UITestRow[] })
                       </Button>
                     </div>
                   </CardContent>
+                  </div>
                 </Card>
               ))}
             </div>

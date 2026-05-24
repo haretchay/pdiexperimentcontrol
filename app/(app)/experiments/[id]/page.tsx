@@ -29,6 +29,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Badge } from "@/components/ui/badge"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { ExportExperimentQRCodesButton } from "@/components/experiments/qr-export-buttons"
+import { EditExperimentDialog } from "@/components/experiments/edit-experiment-dialog"
 
 import { useIsMobile } from "@/hooks/use-mobile"
 import { useToast } from "@/hooks/use-toast"
@@ -43,6 +44,9 @@ type DbExperimentRow = {
   test_count: number
   start_date: string
   strain: string
+  fungus_id?: string | null
+  strain_acronym?: string | null
+  strain_variable?: string | null
 }
 
 type DbTestPhotoRow = {
@@ -99,6 +103,9 @@ type ExperimentUI = {
   testTypes: string[] // (por enquanto vazio; o tipo real do teste vem de tests.test_type)
   startDate: string
   strain: string
+  fungusId?: string | null
+  strainAcronym?: string | null
+  strainVariable?: string | null
   totalTests: number
 }
 
@@ -405,6 +412,9 @@ export default function ExperimentDetailPage() {
           testTypes: [], // por enquanto não vem de experiments
           startDate: expRow.start_date,
           strain: expRow.strain,
+          fungusId: expRow.fungus_id ?? null,
+          strainAcronym: expRow.strain_acronym ?? null,
+          strainVariable: expRow.strain_variable ?? null,
           totalTests: expRow.repetition_count * expRow.test_count,
         }
 
@@ -948,12 +958,24 @@ export default function ExperimentDetailPage() {
                   </div>
                 </div>
 
-                <div className="flex flex-wrap gap-2 lg:justify-end">
+                <div className="flex flex-col gap-2 sm:min-w-[220px] lg:items-stretch lg:justify-end">
                   <ExportExperimentQRCodesButton
                     experimentId={experiment.id}
                     experimentNumber={experiment.number}
                     experimentStrain={experiment.strain}
                     tests={qrTests}
+                  />
+                  <EditExperimentDialog
+                    experimentId={experiment.id}
+                    experimentNumber={experiment.number}
+                    startDate={experiment.startDate}
+                    testCount={experiment.testCount}
+                    repetitionCount={experiment.repetitionCount}
+                    strain={experiment.strain}
+                    fungusId={experiment.fungusId}
+                    strainAcronym={experiment.strainAcronym}
+                    strainVariable={experiment.strainVariable}
+                    onSaved={() => window.location.reload()}
                   />
                 </div>
               </div>

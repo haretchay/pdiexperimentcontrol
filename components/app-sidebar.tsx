@@ -1,5 +1,5 @@
 "use client"
-import { FlaskConical, ImageIcon, LayoutDashboard, Repeat, TestTube, Database, LogOut } from "lucide-react"
+import { FlaskConical, ImageIcon, LayoutDashboard, TestTube, Database, LogOut } from "lucide-react"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 import {
@@ -33,12 +33,6 @@ export function AppSidebar() {
       label: "Experimentos",
       icon: FlaskConical,
       active: pathname === "/experiments" || pathname.startsWith("/experiments/"),
-    },
-    {
-      href: "/repetitions",
-      label: "Repetições",
-      icon: Repeat,
-      active: pathname === "/repetitions",
     },
     {
       href: "/tests",

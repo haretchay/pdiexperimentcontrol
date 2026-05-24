@@ -1,46 +1,43 @@
+// SUBSTITUIR ARQUIVO COMPLETO: components/media/zoomable-image.tsx
+
 "use client"
 
-import { useCallback, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent, type MouseEvent as ReactMouseEvent, type WheelEvent as ReactWheelEvent } from "react"
+import { useCallback, useRef, useState, type PointerEvent, type WheelEvent } from "react"
 import { Button } from "@/components/ui/button"
-import { Maximize2, Minus, Move, Plus, RotateCcw } from "lucide-react"
+import { cn } from "@/lib/utils"
+import { Maximize2, Move, RotateCcw, ZoomIn, ZoomOut } from "lucide-react"
 
-type Point = {
-  x: number
-  y: number
-}
+const DEFAULT_MIN_ZOOM = 1
+const DEFAULT_MAX_ZOOM = 6
 
-type ActivePointer = Point & {
-  id: number
-}
+type Point = { x: number; y: number }
 
 function clamp(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, value))
-}
-
-function roundZoom(value: number) {
-  return Number(value.toFixed(2))
 }
 
 function distance(a: Point, b: Point) {
   return Math.hypot(a.x - b.x, a.y - b.y)
 }
 
-function center(a: Point, b: Point): Point {
-  return {
-    x: (a.x + b.x) / 2,
-    y: (a.y + b.y) / 2,
-  }
+function midpoint(a: Point, b: Point) {
+  return { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }
+}
+
+function roundZoom(value: number) {
+  return Math.round(value * 100) / 100
 }
 
 /**
- * Visualizador de imagem com zoom por scroll, pinça no celular e arraste.
- * Mantém a mesma assinatura usada pelas páginas de Mídias e Visualização do Teste.
+ * Visualizador de imagem em tela cheia/área total.
+ * Desktop: scroll do mouse dá zoom; clicar e segurar arrasta.
+ * Mobile: pinça dá zoom; arraste com dedo move a imagem.
  */
 export function ZoomableImage({
   src,
   title,
-  maxZoom = 5,
-  minZoom = 1,
+  maxZoom = DEFAULT_MAX_ZOOM,
+  minZoom = DEFAULT_MIN_ZOOM,
   initialZoom = 1,
   className,
 }: {
@@ -51,274 +48,204 @@ export function ZoomableImage({
   initialZoom?: number
   className?: string
 }) {
-  const initial = clamp(initialZoom, minZoom, maxZoom)
-  const [zoom, setZoom] = useState(initial)
+  const [zoom, setZoom] = useState(() => clamp(initialZoom, minZoom, maxZoom))
   const [position, setPosition] = useState<Point>({ x: 0, y: 0 })
   const [isDragging, setIsDragging] = useState(false)
-  const [isPinching, setIsPinching] = useState(false)
 
-  const viewportRef = useRef<HTMLDivElement | null>(null)
-  const activePointersRef = useRef<Map<number, ActivePointer>>(new Map())
-  const lastDragPointRef = useRef<Point | null>(null)
-  const pinchStartRef = useRef<{
-    distance: number
-    zoom: number
-    position: Point
-    center: Point
-  } | null>(null)
+  const pointersRef = useRef(new Map<number, Point>())
+  const lastPanPointRef = useRef<Point | null>(null)
+  const pinchStartRef = useRef<{ distance: number; zoom: number; center: Point; position: Point } | null>(null)
 
-  const zoomLabel = useMemo(() => `${zoom.toFixed(2)}x`, [zoom])
-
-  const resetView = useCallback(() => {
-    setZoom(initial)
+  const reset = useCallback(() => {
+    setZoom(1)
     setPosition({ x: 0, y: 0 })
-    setIsDragging(false)
-    setIsPinching(false)
-    activePointersRef.current.clear()
-    lastDragPointRef.current = null
+    pointersRef.current.clear()
+    lastPanPointRef.current = null
     pinchStartRef.current = null
-  }, [initial])
+    setIsDragging(false)
+  }, [])
 
-  const setZoomFromPoint = useCallback(
-    (nextZoomValue: number, point: Point | null) => {
-      const viewport = viewportRef.current
-      const nextZoom = roundZoom(clamp(nextZoomValue, minZoom, maxZoom))
-
+  const applyZoom = useCallback(
+    (nextZoom: number, origin?: Point) => {
       setZoom((currentZoom) => {
-        if (!viewport || !point || nextZoom === currentZoom) return nextZoom
+        const clamped = roundZoom(clamp(nextZoom, minZoom, maxZoom))
 
-        const rect = viewport.getBoundingClientRect()
-        const localPoint = {
-          x: point.x - rect.left,
-          y: point.y - rect.top,
+        // Quando volta ao tamanho normal, centraliza novamente.
+        if (clamped <= 1) {
+          setPosition({ x: 0, y: 0 })
+          return 1
         }
 
-        setPosition((currentPosition) => {
-          const contentPoint = {
-            x: (localPoint.x - currentPosition.x) / currentZoom,
-            y: (localPoint.y - currentPosition.y) / currentZoom,
-          }
+        // Aproxima o zoom do ponto usado pelo mouse/dedo, deixando a navegação mais natural.
+        if (origin) {
+          const ratio = clamped / Math.max(currentZoom, 0.01)
+          setPosition((currentPosition) => ({
+            x: origin.x - (origin.x - currentPosition.x) * ratio,
+            y: origin.y - (origin.y - currentPosition.y) * ratio,
+          }))
+        }
 
-          return {
-            x: localPoint.x - contentPoint.x * nextZoom,
-            y: localPoint.y - contentPoint.y * nextZoom,
-          }
-        })
-
-        return nextZoom
+        return clamped
       })
     },
     [maxZoom, minZoom],
   )
 
-  const changeZoom = useCallback(
-    (delta: number, point: Point | null = null) => {
-      setZoomFromPoint(zoom + delta, point)
-    },
-    [setZoomFromPoint, zoom],
-  )
+  function zoomIn() {
+    applyZoom(zoom + 0.35)
+  }
 
-  const handleWheel = useCallback(
-    (event: ReactWheelEvent<HTMLDivElement>) => {
-      event.preventDefault()
-      const direction = event.deltaY > 0 ? -1 : 1
-      const step = event.ctrlKey ? 0.08 : 0.18
-      setZoomFromPoint(zoom + direction * step, { x: event.clientX, y: event.clientY })
-    },
-    [setZoomFromPoint, zoom],
-  )
+  function zoomOut() {
+    applyZoom(zoom - 0.35)
+  }
 
-  const getActivePointers = useCallback(() => Array.from(activePointersRef.current.values()), [])
-
-  const handlePointerDown = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
+  function handleWheel(event: WheelEvent<HTMLDivElement>) {
     event.preventDefault()
+    const rect = event.currentTarget.getBoundingClientRect()
+    const origin = {
+      x: event.clientX - rect.left - rect.width / 2,
+      y: event.clientY - rect.top - rect.height / 2,
+    }
+    const delta = event.deltaY < 0 ? 0.35 : -0.35
+    applyZoom(zoom + delta, origin)
+  }
+
+  function handlePointerDown(event: PointerEvent<HTMLDivElement>) {
     event.currentTarget.setPointerCapture(event.pointerId)
+    const point = { x: event.clientX, y: event.clientY }
+    pointersRef.current.set(event.pointerId, point)
+    setIsDragging(true)
 
-    const pointer = { id: event.pointerId, x: event.clientX, y: event.clientY }
-    activePointersRef.current.set(event.pointerId, pointer)
-
-    const active = getActivePointers()
-    if (active.length === 1) {
-      setIsDragging(true)
-      setIsPinching(false)
-      lastDragPointRef.current = pointer
+    if (pointersRef.current.size === 1) {
+      lastPanPointRef.current = point
+      pinchStartRef.current = null
       return
     }
 
-    if (active.length >= 2) {
-      const [a, b] = active
-      setIsDragging(false)
-      setIsPinching(true)
-      lastDragPointRef.current = null
+    if (pointersRef.current.size === 2) {
+      const points = Array.from(pointersRef.current.values())
       pinchStartRef.current = {
-        distance: Math.max(distance(a, b), 1),
+        distance: distance(points[0], points[1]),
         zoom,
+        center: midpoint(points[0], points[1]),
         position,
-        center: center(a, b),
       }
+      lastPanPointRef.current = null
     }
-  }, [getActivePointers, position, zoom])
+  }
 
-  const handlePointerMove = useCallback(
-    (event: ReactPointerEvent<HTMLDivElement>) => {
-      if (!activePointersRef.current.has(event.pointerId)) return
-      event.preventDefault()
+  function handlePointerMove(event: PointerEvent<HTMLDivElement>) {
+    if (!pointersRef.current.has(event.pointerId)) return
 
-      activePointersRef.current.set(event.pointerId, {
-        id: event.pointerId,
-        x: event.clientX,
-        y: event.clientY,
+    const nextPoint = { x: event.clientX, y: event.clientY }
+    pointersRef.current.set(event.pointerId, nextPoint)
+
+    if (pointersRef.current.size >= 2) {
+      const points = Array.from(pointersRef.current.values())
+      const pinchStart = pinchStartRef.current
+      if (!pinchStart) return
+
+      const currentDistance = distance(points[0], points[1])
+      const currentCenter = midpoint(points[0], points[1])
+      const nextZoom = clamp(pinchStart.zoom * (currentDistance / Math.max(pinchStart.distance, 1)), minZoom, maxZoom)
+
+      setZoom(roundZoom(nextZoom))
+      setPosition({
+        x: pinchStart.position.x + (currentCenter.x - pinchStart.center.x),
+        y: pinchStart.position.y + (currentCenter.y - pinchStart.center.y),
       })
-
-      const active = getActivePointers()
-
-      if (active.length >= 2 && pinchStartRef.current) {
-        const [a, b] = active
-        const currentDistance = Math.max(distance(a, b), 1)
-        const pinchStart = pinchStartRef.current
-        const nextZoom = roundZoom(clamp(pinchStart.zoom * (currentDistance / pinchStart.distance), minZoom, maxZoom))
-        const currentCenter = center(a, b)
-        const viewport = viewportRef.current
-
-        if (!viewport) {
-          setZoom(nextZoom)
-          return
-        }
-
-        const rect = viewport.getBoundingClientRect()
-        const startLocalCenter = {
-          x: pinchStart.center.x - rect.left,
-          y: pinchStart.center.y - rect.top,
-        }
-        const currentLocalCenter = {
-          x: currentCenter.x - rect.left,
-          y: currentCenter.y - rect.top,
-        }
-        const contentPoint = {
-          x: (startLocalCenter.x - pinchStart.position.x) / pinchStart.zoom,
-          y: (startLocalCenter.y - pinchStart.position.y) / pinchStart.zoom,
-        }
-
-        setZoom(nextZoom)
-        setPosition({
-          x: currentLocalCenter.x - contentPoint.x * nextZoom,
-          y: currentLocalCenter.y - contentPoint.y * nextZoom,
-        })
-        return
-      }
-
-      if (active.length === 1 && lastDragPointRef.current) {
-        const last = lastDragPointRef.current
-        const current = active[0]
-        const delta = {
-          x: current.x - last.x,
-          y: current.y - last.y,
-        }
-
-        setPosition((currentPosition) => ({
-          x: currentPosition.x + delta.x,
-          y: currentPosition.y + delta.y,
-        }))
-        lastDragPointRef.current = current
-      }
-    },
-    [getActivePointers, maxZoom, minZoom],
-  )
-
-  const finishPointer = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
-    activePointersRef.current.delete(event.pointerId)
-
-    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
-      event.currentTarget.releasePointerCapture(event.pointerId)
+      return
     }
 
-    const active = getActivePointers()
+    const lastPoint = lastPanPointRef.current
+    if (!lastPoint) return
 
-    if (active.length === 1) {
-      setIsDragging(true)
-      setIsPinching(false)
-      lastDragPointRef.current = active[0]
+    const dx = nextPoint.x - lastPoint.x
+    const dy = nextPoint.y - lastPoint.y
+    lastPanPointRef.current = nextPoint
+
+    if (zoom > 1) {
+      setPosition((current) => ({ x: current.x + dx, y: current.y + dy }))
+    }
+  }
+
+  function handlePointerUp(event: PointerEvent<HTMLDivElement>) {
+    pointersRef.current.delete(event.pointerId)
+
+    if (pointersRef.current.size === 1) {
+      lastPanPointRef.current = Array.from(pointersRef.current.values())[0] ?? null
       pinchStartRef.current = null
       return
     }
 
-    if (active.length === 0) {
-      setIsDragging(false)
-      setIsPinching(false)
-      lastDragPointRef.current = null
+    if (pointersRef.current.size === 0) {
+      lastPanPointRef.current = null
       pinchStartRef.current = null
+      setIsDragging(false)
     }
-  }, [getActivePointers])
+  }
 
-  const handleDoubleClick = useCallback(
-    (event: ReactMouseEvent<HTMLDivElement>) => {
-      const targetZoom = zoom > minZoom + 0.2 ? minZoom : Math.min(maxZoom, 2.5)
-      setZoomFromPoint(targetZoom, { x: event.clientX, y: event.clientY })
-    },
-    [maxZoom, minZoom, setZoomFromPoint, zoom],
-  )
-
-  const cursorClass = isDragging || isPinching ? "cursor-grabbing" : "cursor-grab"
+  function handleDoubleClick() {
+    if (zoom > 1) reset()
+    else applyZoom(Math.min(2.5, maxZoom))
+  }
 
   return (
-    <div className={"space-y-3 " + (className ?? "")}>
-      <div className="flex flex-col gap-2 rounded-2xl border border-slate-200 bg-slate-50/80 p-3 dark:border-slate-800 dark:bg-slate-950/50 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex items-center gap-2 text-xs text-slate-600 dark:text-slate-300">
-          <span className="inline-flex h-9 w-9 items-center justify-center rounded-xl bg-blue-100 text-blue-700 dark:bg-blue-950/60 dark:text-blue-200">
-            <Move className="h-4 w-4" />
-          </span>
-          <div>
-            <div className="font-semibold text-slate-900 dark:text-white">Zoom e navegação</div>
-            <div>Mouse: role para zoom e arraste a imagem. Celular: pinça e arraste com os dedos.</div>
-          </div>
+    <div className={cn("flex min-h-0 flex-col bg-slate-950 text-white", className)}>
+      <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-b border-white/10 bg-slate-950/95 px-3 py-2 sm:px-4">
+        <div className="flex min-w-0 items-center gap-2 text-xs text-slate-300 sm:text-sm">
+          <Move className="h-4 w-4 shrink-0 text-slate-400" />
+          <span className="hidden truncate sm:inline">Scroll/pinça para zoom • Clique e arraste para mover</span>
+          <span className="truncate sm:hidden">Pinça para zoom • arraste para mover</span>
         </div>
 
         <div className="flex items-center gap-2">
-          <Button type="button" variant="secondary" size="icon" className="h-9 w-9 rounded-xl" onClick={() => changeZoom(-0.25)} aria-label="Diminuir zoom">
-            <Minus className="h-4 w-4" />
+          <Button type="button" size="icon" variant="secondary" className="h-9 w-9 rounded-full bg-white/10 text-white hover:bg-white/20" onClick={zoomOut}>
+            <ZoomOut className="h-4 w-4" />
+            <span className="sr-only">Reduzir zoom</span>
           </Button>
-          <div className="min-w-16 rounded-xl border border-slate-200 bg-white px-3 py-2 text-center text-xs font-semibold text-slate-700 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200">
-            {zoomLabel}
-          </div>
-          <Button type="button" variant="secondary" size="icon" className="h-9 w-9 rounded-xl" onClick={() => changeZoom(0.25)} aria-label="Aumentar zoom">
-            <Plus className="h-4 w-4" />
+          <div className="w-14 text-center text-xs font-semibold text-slate-200">{zoom.toFixed(2)}x</div>
+          <Button type="button" size="icon" variant="secondary" className="h-9 w-9 rounded-full bg-white/10 text-white hover:bg-white/20" onClick={zoomIn}>
+            <ZoomIn className="h-4 w-4" />
+            <span className="sr-only">Aumentar zoom</span>
           </Button>
-          <Button type="button" variant="outline" size="sm" className="h-9 rounded-xl" onClick={resetView}>
-            <RotateCcw className="mr-2 h-4 w-4" />
-            Resetar
+          <Button type="button" size="icon" variant="secondary" className="h-9 w-9 rounded-full bg-white/10 text-white hover:bg-white/20" onClick={reset}>
+            <RotateCcw className="h-4 w-4" />
+            <span className="sr-only">Resetar visualização</span>
           </Button>
         </div>
       </div>
 
       <div
-        ref={viewportRef}
-        className={`relative h-[70vh] min-h-[320px] overflow-hidden rounded-2xl border border-slate-200 bg-slate-950 shadow-inner dark:border-slate-800 ${cursorClass}`}
+        className={cn(
+          "relative min-h-0 flex-1 overflow-hidden bg-[radial-gradient(circle_at_top,rgba(59,130,246,0.16),transparent_38%),#020617]",
+          zoom > 1 ? (isDragging ? "cursor-grabbing" : "cursor-grab") : "cursor-zoom-in",
+        )}
+        style={{ touchAction: "none" }}
         onWheel={handleWheel}
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}
-        onPointerUp={finishPointer}
-        onPointerCancel={finishPointer}
+        onPointerUp={handlePointerUp}
+        onPointerCancel={handlePointerUp}
         onDoubleClick={handleDoubleClick}
-        style={{ touchAction: "none" }}
       >
-        <div
-          className="absolute left-0 top-0 will-change-transform"
-          style={{
-            transform: `translate3d(${position.x}px, ${position.y}px, 0) scale(${zoom})`,
-            transformOrigin: "0 0",
-          }}
-        >
+        <div className="absolute inset-0 flex items-center justify-center p-2 sm:p-4">
           <img
-            src={src}
+            src={src || "/placeholder.svg"}
             alt={title}
             draggable={false}
-            className="block max-h-[70vh] max-w-full select-none object-contain"
+            className="max-h-full max-w-full select-none object-contain shadow-2xl"
+            style={{
+              transform: `translate3d(${position.x}px, ${position.y}px, 0) scale(${zoom})`,
+              transformOrigin: "center center",
+              transition: isDragging ? "none" : "transform 120ms ease-out",
+            }}
           />
         </div>
 
-        <div className="pointer-events-none absolute bottom-3 right-3 hidden items-center gap-2 rounded-full bg-black/55 px-3 py-1.5 text-xs font-medium text-white backdrop-blur sm:flex">
+        <div className="pointer-events-none absolute bottom-3 left-3 hidden items-center gap-2 rounded-full border border-white/10 bg-black/35 px-3 py-1 text-xs text-slate-200 backdrop-blur sm:flex">
           <Maximize2 className="h-3.5 w-3.5" />
-          Duplo clique alterna o zoom
+          Duplo clique para alternar zoom
         </div>
       </div>
     </div>

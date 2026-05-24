@@ -19,6 +19,8 @@ import {
   ComposedChart,
   Legend,
   Line,
+  ReferenceArea,
+  ReferenceLine,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -33,6 +35,14 @@ type PhotoRow = {
   created_at: string
   kind?: "single" | "merged"
   photo_index?: number | null
+}
+
+type FungusReference = {
+  id: string
+  scientific_name: string
+  optimal_temperature: number | null
+  min_temperature: number | null
+  max_temperature: number | null
 }
 
 const TEMPERATURE_DAYS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14] as const
@@ -127,6 +137,11 @@ function formatChartTemperature(value: any) {
   return `${n.toFixed(1).replace(".", ",")} ºC`
 }
 
+function formatScientificName(name: string | null | undefined) {
+  const normalized = String(name ?? "").trim()
+  return normalized || "Fungo não vinculado"
+}
+
 function getRiceAverageFromRow(row: any, day: TemperatureDay) {
   const storedAverage = toNumberOrUndefined(row?.[`temp${day}_rice`])
   if (storedAverage !== undefined) return storedAverage
@@ -191,6 +206,7 @@ export default function TestViewPage() {
   const [temperatureComparison, setTemperatureComparison] = useState<"both" | "chamber" | "rice">("both")
   const [showHistoricalAverage, setShowHistoricalAverage] = useState(true)
   const [historicalTemperatures, setHistoricalTemperatures] = useState<any[]>([])
+  const [fungusReference, setFungusReference] = useState<FungusReference | null>(null)
 
   const getWeekNumber = (date: Date) => {
     const firstDayOfYear = new Date(date.getFullYear(), 0, 1)
@@ -205,13 +221,25 @@ export default function TestViewPage() {
 
         const { data: exp, error: expErr } = await supabase
           .from("experiments")
-          .select("id, number, strain, start_date, test_count, repetition_count")
+          .select("id, number, strain, start_date, test_count, repetition_count, fungus_id, strain_acronym, strain_variable")
           .eq("id", experimentId)
           .single()
 
         if (expErr) throw expErr
         if (cancelled) return
         setExperiment(exp)
+
+        let currentFungus: FungusReference | null = null
+        if ((exp as any)?.fungus_id) {
+          const { data: fungusRow, error: fungusErr } = await supabase
+            .from("fungi")
+            .select("id, scientific_name, optimal_temperature, min_temperature, max_temperature")
+            .eq("id", (exp as any).fungus_id)
+            .maybeSingle()
+
+          if (!fungusErr && fungusRow) currentFungus = fungusRow as FungusReference
+        }
+        if (!cancelled) setFungusReference(currentFungus)
 
         const { data: t, error: tErr } = await supabase
           .from("tests")
@@ -231,12 +259,37 @@ export default function TestViewPage() {
           ),
         ]).join(", ")
 
-        const { data: historicalRows, error: historicalErr } = await supabase
-          .from("tests")
-          .select(`id, ${historicalTemperatureColumns}`)
+        let historicalRows: any[] = []
 
-        if (!historicalErr && !cancelled) {
-          setHistoricalTemperatures(buildHistoricalTemperatureRows(historicalRows ?? []))
+        if ((exp as any)?.fungus_id) {
+          const { data: sameFungusExperiments, error: sameFungusErr } = await supabase
+            .from("experiments")
+            .select("id")
+            .eq("fungus_id", (exp as any).fungus_id)
+
+          if (!sameFungusErr) {
+            const experimentIds = (sameFungusExperiments ?? []).map((row: any) => row.id).filter(Boolean)
+
+            if (experimentIds.length > 0) {
+              const { data: rows, error: historicalErr } = await supabase
+                .from("tests")
+                .select(`id, experiment_id, ${historicalTemperatureColumns}`)
+                .in("experiment_id", experimentIds)
+
+              if (!historicalErr) historicalRows = rows ?? []
+            }
+          }
+        } else {
+          const { data: rows, error: historicalErr } = await supabase
+            .from("tests")
+            .select(`id, experiment_id, ${historicalTemperatureColumns}`)
+            .eq("experiment_id", experimentId)
+
+          if (!historicalErr) historicalRows = rows ?? []
+        }
+
+        if (!cancelled) {
+          setHistoricalTemperatures(buildHistoricalTemperatureRows(historicalRows))
         }
 
         const ENABLE_INDIVIDUAL_PHOTOS = false
@@ -439,12 +492,15 @@ const mapped = {
         rice: toNumberOrUndefined(row.rice),
         historicalChamber: toNumberOrUndefined(historical?.historicalChamber),
         historicalRice: toNumberOrUndefined(historical?.historicalRice),
+        optimalTemperature: toNumberOrUndefined(fungusReference?.optimal_temperature),
+        minTemperature: toNumberOrUndefined(fungusReference?.min_temperature),
+        maxTemperature: toNumberOrUndefined(fungusReference?.max_temperature),
       }
     })
-  }, [historicalTemperatures, testData])
+  }, [fungusReference, historicalTemperatures, testData])
 
   const hasTemperatureChartData = temperatureChartData.some((row: any) =>
-    [row.chamber, row.rice, row.historicalChamber, row.historicalRice].some((value) => value !== undefined),
+    [row.chamber, row.rice, row.historicalChamber, row.historicalRice, row.optimalTemperature, row.minTemperature, row.maxTemperature].some((value) => value !== undefined),
   )
   const showChamberSeries = temperatureComparison === "both" || temperatureComparison === "chamber"
   const showRiceSeries = temperatureComparison === "both" || temperatureComparison === "rice"
@@ -454,6 +510,11 @@ const mapped = {
     historicalChamberAverage: averageTemperature(temperatureChartData.map((row: any) => row.historicalChamber)),
     historicalRiceAverage: averageTemperature(temperatureChartData.map((row: any) => row.historicalRice)),
   }
+  const fungusOptimalTemperature = toNumberOrUndefined(fungusReference?.optimal_temperature)
+  const fungusMinTemperature = toNumberOrUndefined(fungusReference?.min_temperature)
+  const fungusMaxTemperature = toNumberOrUndefined(fungusReference?.max_temperature)
+  const hasFungusReferenceRange = fungusMinTemperature !== undefined && fungusMaxTemperature !== undefined
+  const hasFungusReference = fungusReference !== null
 
   if (loading) return <div className="container mx-auto p-4">Carregando detalhes do teste...</div>
   if (!testData) return <div className="container mx-auto p-4">Teste não encontrado</div>
@@ -544,7 +605,7 @@ const mapped = {
               <div>
                 <CardTitle className="text-xl">Temperaturas</CardTitle>
                 <CardDescription>
-                  Acompanhamento diário da câmara e das médias do arroz, com comparação histórica opcional.
+                  Acompanhamento diário da câmara e das médias do arroz, com comparação histórica filtrada pelo fungo do experimento.
                 </CardDescription>
               </div>
             </div>
@@ -575,7 +636,7 @@ const mapped = {
         </CardHeader>
 
         <CardContent className="p-3 sm:p-4">
-          <div className="mb-4 grid grid-cols-1 gap-3 md:grid-cols-4">
+          <div className="mb-4 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-5">
             <div className="rounded-2xl border border-blue-100 bg-blue-50/70 p-3 dark:border-blue-900/50 dark:bg-blue-950/20">
               <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-blue-700 dark:text-blue-300">
                 <Activity className="h-3.5 w-3.5" />
@@ -591,12 +652,19 @@ const mapped = {
               <div className="mt-1 text-2xl font-bold text-emerald-900 dark:text-emerald-100">{formatChartTemperature(chartSummary.riceAverage)}</div>
             </div>
             <div className="rounded-2xl border border-slate-200 bg-slate-50/80 p-3 dark:border-slate-800 dark:bg-slate-950/40">
-              <div className="text-xs font-semibold uppercase tracking-wide text-slate-600 dark:text-slate-300">Histórico Câmara</div>
+              <div className="text-xs font-semibold uppercase tracking-wide text-slate-600 dark:text-slate-300">Hist. Câmara do fungo</div>
               <div className="mt-1 text-2xl font-bold text-slate-900 dark:text-slate-100">{formatChartTemperature(chartSummary.historicalChamberAverage)}</div>
             </div>
             <div className="rounded-2xl border border-slate-200 bg-slate-50/80 p-3 dark:border-slate-800 dark:bg-slate-950/40">
-              <div className="text-xs font-semibold uppercase tracking-wide text-slate-600 dark:text-slate-300">Histórico Arroz</div>
+              <div className="text-xs font-semibold uppercase tracking-wide text-slate-600 dark:text-slate-300">Hist. Arroz do fungo</div>
               <div className="mt-1 text-2xl font-bold text-slate-900 dark:text-slate-100">{formatChartTemperature(chartSummary.historicalRiceAverage)}</div>
+            </div>
+            <div className="rounded-2xl border border-amber-200 bg-amber-50/80 p-3 dark:border-amber-900/60 dark:bg-amber-950/20">
+              <div className="text-xs font-semibold uppercase tracking-wide text-amber-700 dark:text-amber-300">Referência do fungo</div>
+              <div className="mt-1 truncate text-sm font-bold italic text-amber-950 dark:text-amber-100">{formatScientificName(fungusReference?.scientific_name)}</div>
+              <div className="mt-1 text-xs text-amber-800 dark:text-amber-200">
+                Ótima: <b>{formatChartTemperature(fungusOptimalTemperature)}</b> • Faixa: <b>{formatChartTemperature(fungusMinTemperature)}</b> a <b>{formatChartTemperature(fungusMaxTemperature)}</b>
+              </div>
             </div>
           </div>
 
@@ -631,7 +699,7 @@ const mapped = {
                     onClick={() => setShowHistoricalAverage((value) => !value)}
                     className={showHistoricalAverage ? "bg-gradient-to-r from-blue-600 to-purple-600 text-white" : ""}
                   >
-                    Média histórica
+                    Hist. do fungo
                   </Button>
                 </div>
 
@@ -655,6 +723,20 @@ const mapped = {
                 </div>
               </div>
 
+              <div className="rounded-2xl border border-amber-200 bg-amber-50/80 px-3 py-2 text-xs text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/20 dark:text-amber-100">
+                {hasFungusReference ? (
+                  <>
+                    Gráfico baseado em <span className="font-bold italic">{formatScientificName(fungusReference?.scientific_name)}</span>.
+                    A faixa sombreada indica a faixa cadastrada para o fungo e a linha pontilhada indica a temperatura ótima.
+                    A opção <b>Hist. do fungo</b> compara somente testes de experimentos vinculados ao mesmo fungo.
+                  </>
+                ) : (
+                  <>
+                    Este experimento não possui fungo vinculado. A comparação histórica foi limitada ao próprio experimento.
+                  </>
+                )}
+              </div>
+
               <div className="h-[380px] rounded-2xl border border-slate-200 bg-white p-3 dark:border-slate-800 dark:bg-slate-950/30">
                 {hasTemperatureChartData ? (
                   <ResponsiveContainer width="100%" height="100%">
@@ -665,11 +747,32 @@ const mapped = {
                       <Tooltip content={<TemperatureChartTooltip />} />
                       <Legend wrapperStyle={{ fontSize: 12 }} />
 
+                      {hasFungusReferenceRange ? (
+                        <ReferenceArea
+                          y1={fungusMinTemperature}
+                          y2={fungusMaxTemperature}
+                          fill="#f59e0b"
+                          fillOpacity={0.08}
+                          strokeOpacity={0}
+                          ifOverflow="extendDomain"
+                        />
+                      ) : null}
+                      {fungusOptimalTemperature !== undefined ? (
+                        <ReferenceLine
+                          y={fungusOptimalTemperature}
+                          stroke="#f59e0b"
+                          strokeDasharray="6 6"
+                          strokeWidth={2}
+                          ifOverflow="extendDomain"
+                          label={{ value: "Temp. ótima", position: "insideTopRight", fill: "#92400e", fontSize: 11 }}
+                        />
+                      ) : null}
+
                       {showHistoricalAverage && showChamberSeries ? (
                         <Area
                           type="monotone"
                           dataKey="historicalChamber"
-                          name="Média hist. Câmara"
+                          name="Hist. Câmara do fungo"
                           fill="#93c5fd"
                           stroke="#60a5fa"
                           fillOpacity={0.18}
@@ -681,7 +784,7 @@ const mapped = {
                         <Area
                           type="monotone"
                           dataKey="historicalRice"
-                          name="Média hist. Arroz"
+                          name="Hist. Arroz do fungo"
                           fill="#86efac"
                           stroke="#4ade80"
                           fillOpacity={0.16}

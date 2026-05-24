@@ -1,35 +1,37 @@
 "use client"
 
+import type { ReactNode } from "react"
 import { useEffect, useMemo, useState } from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
-import { PlusCircle, Calendar, CalendarDays, Download, Trash } from "lucide-react"
+import {
+  BarChart3,
+  CalendarDays,
+  Download,
+  FlaskConical,
+  ImageIcon,
+  MapPin,
+  PlusCircle,
+  Search,
+  Sparkles,
+  TestTube,
+  Trash,
+} from "lucide-react"
 
+import { PageTitle } from "@/components/page-title"
+import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { PeriodGroup } from "@/components/period-group"
-import { PageTitle } from "@/components/page-title"
-import { useCardColors } from "@/lib/color-utils"
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { useToast } from "@/hooks/use-toast"
-import { useIsMobile } from "@/hooks/use-mobile"
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
-
 import { createClient } from "@/lib/supabase/client"
 import { deleteExperiment, getTestsByExperiment, type Test as DbTest } from "@/lib/supabase/experiments"
 import type { ExperimentUnitFilter, UIExperiment } from "@/app/(app)/experiments/page"
 
-// Função auxiliar para obter a semana do ano
-function getWeekNumber(date: Date) {
-  const firstDayOfYear = new Date(date.getFullYear(), 0, 1)
-  const pastDaysOfYear = (date.getTime() - firstDayOfYear.getTime()) / 86400000
-  return Math.ceil((pastDaysOfYear + firstDayOfYear.getDay() + 1) / 7)
-}
-
-// Função auxiliar para obter o nome do mês
-function getMonthName(date: Date) {
-  return date.toLocaleString("pt-BR", { month: "long" })
-}
+type PeriodMode = "week" | "month"
+type ExperimentStatusFilter = "all" | "Pendente" | "Inserir Fotos" | "Em andamento" | "Concluído"
+type ExperimentStatus = Exclude<ExperimentStatusFilter, "all">
 
 type TestDataMap = Record<
   string,
@@ -54,11 +56,81 @@ type TestDataMap = Record<
     wetWeight?: number
     dryWeight?: number
     extractedConidiumWeight?: number
-    // Fotos serão buscadas de test_photos no Step 2 (por enquanto mantemos vazio)
     photos7Day?: string[]
     photos14Day?: string[]
   }
 >
+
+type GroupedExperiments = Array<{
+  key: string
+  title: string
+  subtitle: string
+  sortValue: number
+  experiments: UIExperiment[]
+}>
+
+const UNIT_FILTERS: ExperimentUnitFilter[] = ["Salto", "Americana"]
+
+const STATUS_FILTERS: Array<{ value: ExperimentStatusFilter; label: string }> = [
+  { value: "all", label: "Todos" },
+  { value: "Pendente", label: "Pendentes" },
+  { value: "Inserir Fotos", label: "Inserir fotos" },
+  { value: "Em andamento", label: "Em andamento" },
+  { value: "Concluído", label: "Concluídos" },
+]
+
+function parseDate(value: string | null | undefined): Date | null {
+  if (!value) return null
+
+  const text = String(value)
+  const [year, month, day] = text.slice(0, 10).split("-").map(Number)
+
+  if (year && month && day) return new Date(year, month - 1, day)
+
+  const fallback = new Date(text)
+  return Number.isNaN(fallback.getTime()) ? null : fallback
+}
+
+function formatDateBR(value: string | null | undefined): string {
+  const date = parseDate(value)
+  if (!date) return "--/--/--"
+  return date.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", year: "2-digit" })
+}
+
+function getWeekNumber(date: Date): number {
+  const target = new Date(date.valueOf())
+  const dayNr = (date.getDay() + 6) % 7
+  target.setDate(target.getDate() - dayNr + 3)
+  const firstThursday = target.valueOf()
+  target.setMonth(0, 1)
+  if (target.getDay() !== 4) {
+    target.setMonth(0, 1 + ((4 - target.getDay() + 7) % 7))
+  }
+  return 1 + Math.ceil((firstThursday - target.valueOf()) / 604800000)
+}
+
+function getPeriodInfo(experiment: UIExperiment, mode: PeriodMode) {
+  const date = parseDate(experiment.startDate) ?? new Date(0)
+  const year = date.getFullYear()
+
+  if (mode === "week") {
+    const week = getWeekNumber(date)
+    return {
+      key: `${year}-W${String(week).padStart(2, "0")}`,
+      title: `Semana ${week} • ${year}`,
+      subtitle: "Agrupado pela data de criação do experimento",
+      sortValue: year * 100 + week,
+    }
+  }
+
+  const monthName = date.toLocaleDateString("pt-BR", { month: "long" })
+  return {
+    key: `${year}-${String(date.getMonth() + 1).padStart(2, "0")}`,
+    title: `${monthName.charAt(0).toUpperCase()}${monthName.slice(1)} • ${year}`,
+    subtitle: "Agrupado pela data de criação do experimento",
+    sortValue: year * 100 + date.getMonth() + 1,
+  }
+}
 
 function testsToMap(tests: DbTest[]): TestDataMap {
   const map: TestDataMap = {}
@@ -73,26 +145,20 @@ function testsToMap(tests: DbTest[]): TestDataMap {
       matrixLot: t.matrixLot ?? undefined,
       strain: t.strain ?? undefined,
       mpLot: t.mpLot ?? undefined,
-
       averageHumidity: typeof t.averageHumidity === "number" ? t.averageHumidity : undefined,
       bozo: typeof t.bozo === "number" ? t.bozo : undefined,
       sensorial: typeof t.sensorial === "number" ? t.sensorial : undefined,
       quantity: typeof t.quantity === "number" ? t.quantity : undefined,
-
       testType: t.testType ?? undefined,
-
       date7Day: t.date7Day ?? undefined,
       date14Day: t.date14Day ?? undefined,
-
       temp7Chamber: typeof t.temp7Chamber === "number" ? t.temp7Chamber : undefined,
       temp7Rice: typeof t.temp7Rice === "number" ? t.temp7Rice : undefined,
       temp14Chamber: typeof t.temp14Chamber === "number" ? t.temp14Chamber : undefined,
       temp14Rice: typeof t.temp14Rice === "number" ? t.temp14Rice : undefined,
-
       wetWeight: typeof t.wetWeight === "number" ? t.wetWeight : undefined,
       dryWeight: typeof t.dryWeight === "number" ? t.dryWeight : undefined,
       extractedConidiumWeight: typeof t.extractedConidiumWeight === "number" ? t.extractedConidiumWeight : undefined,
-
       photos7Day: [],
       photos14Day: [],
     }
@@ -101,52 +167,128 @@ function testsToMap(tests: DbTest[]): TestDataMap {
   return map
 }
 
+function normalizeUnit(value: string | undefined): ExperimentUnitFilter | null {
+  const normalized = String(value ?? "").trim().toLowerCase()
+  if (!normalized) return null
+  if (normalized.includes("salto")) return "Salto"
+  if (normalized.includes("americana")) return "Americana"
+  return null
+}
+
+function getExperimentStatus(experiment: UIExperiment): ExperimentStatus {
+  if (experiment.totalTests > 0 && experiment.completedTests === experiment.totalTests) return "Concluído"
+  if (experiment.inProgressTests > 0) return "Em andamento"
+  if (experiment.needsPhotosTests > 0) return "Inserir Fotos"
+  return "Pendente"
+}
+
+function statusClasses(status: ExperimentStatus) {
+  if (status === "Concluído") return "border-emerald-200 bg-emerald-50 text-emerald-700"
+  if (status === "Em andamento") return "border-blue-200 bg-blue-50 text-blue-700"
+  if (status === "Inserir Fotos") return "border-amber-200 bg-amber-50 text-amber-700"
+  return "border-slate-200 bg-slate-50 text-slate-700"
+}
+
+function statusDotClasses(status: ExperimentStatus) {
+  if (status === "Concluído") return "bg-emerald-500"
+  if (status === "Em andamento") return "bg-blue-500"
+  if (status === "Inserir Fotos") return "bg-amber-500"
+  return "bg-slate-400"
+}
+
+function FilterButton({
+  active,
+  children,
+  onClick,
+}: {
+  active: boolean
+  children: ReactNode
+  onClick: () => void
+}) {
+  return (
+    <Button
+      type="button"
+      size="sm"
+      variant={active ? "default" : "outline"}
+      onClick={onClick}
+      className={
+        active
+          ? "h-8 rounded-full bg-gradient-to-r from-blue-600 to-purple-600 px-3 text-xs font-semibold text-white shadow-sm hover:from-blue-700 hover:to-purple-700"
+          : "h-8 rounded-full border-slate-200 bg-white/80 px-3 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+      }
+    >
+      {children}
+    </Button>
+  )
+}
+
+function StatCard({ label, value, detail }: { label: string; value: string | number; detail?: string }) {
+  return (
+    <div className="rounded-2xl bg-white/15 p-3 ring-1 ring-white/20">
+      <div className="text-xs text-blue-100">{label}</div>
+      <div className="mt-1 text-2xl font-bold">{value}</div>
+      {detail ? <div className="mt-0.5 text-[11px] text-blue-100/90">{detail}</div> : null}
+    </div>
+  )
+}
+
 export function ExperimentsPageClient({ initialExperiments }: { initialExperiments: UIExperiment[] }) {
   const router = useRouter()
-
-  const [experiments, setExperiments] = useState<UIExperiment[]>(initialExperiments)
-  const [periodMode, setPeriodMode] = useState<"week" | "month">("week")
-  const [groupedExperiments, setGroupedExperiments] = useState<Record<string, UIExperiment[]>>({})
-  const { getCardBackground, getCardBorder } = useCardColors()
   const { toast } = useToast()
+  const [experiments, setExperiments] = useState<UIExperiment[]>(initialExperiments)
+  const [periodMode, setPeriodMode] = useState<PeriodMode>("week")
+  const [unitFilter, setUnitFilter] = useState<ExperimentUnitFilter | "all">("all")
+  const [statusFilter, setStatusFilter] = useState<ExperimentStatusFilter>("all")
   const [selectedExperimentId, setSelectedExperimentId] = useState<string>("")
   const [isExporting, setIsExporting] = useState(false)
   const [showDeleteDialog, setShowDeleteDialog] = useState(false)
   const [experimentToDelete, setExperimentToDelete] = useState<UIExperiment | null>(null)
-  const isMobile = useIsMobile()
-  const [unitFilter, setUnitFilter] = useState<ExperimentUnitFilter | "all">("all")
+
+  useEffect(() => {
+    setExperiments(initialExperiments)
+  }, [initialExperiments])
+
+  const stats = useMemo(() => {
+    const total = experiments.length
+    const totalTests = experiments.reduce((sum, experiment) => sum + experiment.totalTests, 0)
+    const completedTests = experiments.reduce((sum, experiment) => sum + experiment.completedTests, 0)
+    const inProgressTests = experiments.reduce((sum, experiment) => sum + experiment.inProgressTests, 0)
+    const activeProgressAvg = total > 0 ? Math.round(experiments.reduce((sum, experiment) => sum + experiment.progressActivePct, 0) / total) : 0
+
+    return { total, totalTests, completedTests, inProgressTests, activeProgressAvg }
+  }, [experiments])
 
   const filteredExperiments = useMemo(() => {
-    if (unitFilter === "all") return experiments
-    return experiments.filter((experiment) => (experiment.units ?? []).includes(unitFilter))
-  }, [experiments, unitFilter])
-
-  const handleUnitFilterClick = (unit: ExperimentUnitFilter) => {
-    setUnitFilter((current) => (current === unit ? "all" : unit))
-  }
-
-  // Agrupar experimentos por período
-  useEffect(() => {
-    const grouped: Record<string, UIExperiment[]> = {}
-
-    filteredExperiments.forEach((experiment) => {
-      const startDate = new Date(experiment.startDate)
-      let periodKey: string
-
-      if (periodMode === "week") {
-        const weekNumber = getWeekNumber(startDate)
-        periodKey = `Semana ${weekNumber} - ${startDate.getFullYear()}`
-      } else {
-        const monthName = getMonthName(startDate)
-        periodKey = `${monthName} de ${startDate.getFullYear()}`
-      }
-
-      if (!grouped[periodKey]) grouped[periodKey] = []
-      grouped[periodKey].push(experiment)
+    return experiments.filter((experiment) => {
+      if (unitFilter !== "all" && !(experiment.units ?? []).some((unit) => normalizeUnit(unit) === unitFilter)) return false
+      if (statusFilter !== "all" && getExperimentStatus(experiment) !== statusFilter) return false
+      return true
     })
+  }, [experiments, statusFilter, unitFilter])
 
-    setGroupedExperiments(grouped)
+  const groupedExperiments = useMemo<GroupedExperiments>(() => {
+    const groups = new Map<string, GroupedExperiments[number]>()
+
+    for (const experiment of filteredExperiments) {
+      const info = getPeriodInfo(experiment, periodMode)
+      const existing = groups.get(info.key)
+      if (existing) {
+        existing.experiments.push(experiment)
+      } else {
+        groups.set(info.key, { ...info, experiments: [experiment] })
+      }
+    }
+
+    return Array.from(groups.values())
+      .map((group) => ({
+        ...group,
+        experiments: [...group.experiments].sort((a, b) => Number(b.number) - Number(a.number)),
+      }))
+      .sort((a, b) => b.sortValue - a.sortValue)
   }, [filteredExperiments, periodMode])
+
+  const activeUnitLabel = unitFilter === "all" ? "Todas as unidades" : unitFilter
+  const activeStatusLabel = STATUS_FILTERS.find((item) => item.value === statusFilter)?.label ?? "Todos"
 
   async function loadTestDataFromSupabase(experimentId: string) {
     const supabase = createClient()
@@ -154,12 +296,11 @@ export function ExperimentsPageClient({ initialExperiments }: { initialExperimen
     return testsToMap(tests ?? [])
   }
 
-  // Exportar PDF (via Supabase)
-  const exportToPDF = async () => {
+  async function exportToPDF() {
     if (!selectedExperimentId) {
       toast({
         title: "Nenhum experimento selecionado",
-        description: "Por favor, selecione um experimento para exportar.",
+        description: "Selecione um experimento para exportar.",
         variant: "destructive",
       })
       return
@@ -172,7 +313,6 @@ export function ExperimentsPageClient({ initialExperiments }: { initialExperimen
       if (!experiment) throw new Error("Experimento não encontrado")
 
       const testData = await loadTestDataFromSupabase(experiment.id)
-
       const { jsPDF } = await import("jspdf")
       const doc = new jsPDF()
       doc.setFont("helvetica")
@@ -188,28 +328,18 @@ export function ExperimentsPageClient({ initialExperiments }: { initialExperimen
         return y + lines.length * lineHeight
       }
 
-      // Título
       doc.setFontSize(18)
       doc.setFont("helvetica", "bold")
       let y = margin
       y = addWrappedText(`Relatório do Experimento #${experiment.number}`, margin, y, contentWidth, 8) + 10
 
-      // Detalhes
       doc.setFontSize(12)
       doc.setFont("helvetica", "normal")
       y = addWrappedText(`Cepa: ${experiment.strain}`, margin, y, contentWidth, 6) + 4
-      y =
-        addWrappedText(
-          `Data de Início: ${new Date(experiment.startDate).toLocaleDateString("pt-BR")}`,
-          margin,
-          y,
-          contentWidth,
-          6,
-        ) + 4
+      y = addWrappedText(`Data de criação: ${formatDateBR(experiment.startDate)}`, margin, y, contentWidth, 6) + 4
       y = addWrappedText(`Testes: ${experiment.testCount}`, margin, y, contentWidth, 6) + 4
       y = addWrappedText(`Repetições: ${experiment.repetitionCount}`, margin, y, contentWidth, 6) + 10
 
-      // Loop (sem imagens por enquanto)
       for (let rep = 1; rep <= experiment.repetitionCount; rep++) {
         for (let test = 1; test <= experiment.testCount; test++) {
           const key = `${rep}_${test}`
@@ -225,7 +355,7 @@ export function ExperimentsPageClient({ initialExperiments }: { initialExperimen
           doc.setFont("helvetica", "normal")
 
           if (!info) {
-            y = addWrappedText(`Status: Pendente`, margin, y, contentWidth, 6) + 6
+            y = addWrappedText("Status: Pendente", margin, y, contentWidth, 6) + 6
             continue
           }
 
@@ -245,14 +375,13 @@ export function ExperimentsPageClient({ initialExperiments }: { initialExperimen
     }
   }
 
-  // Deletar (Supabase)
-  const handleDeleteExperiment = async () => {
+  async function handleDeleteExperiment() {
     if (!experimentToDelete) return
+
     try {
       const supabase = createClient()
       await deleteExperiment(supabase, experimentToDelete.id)
-
-      setExperiments((prev) => prev.filter((e) => e.id !== experimentToDelete.id))
+      setExperiments((prev) => prev.filter((experiment) => experiment.id !== experimentToDelete.id))
       toast({
         title: "Experimento excluído",
         description: `O experimento #${experimentToDelete.number} foi excluído com sucesso.`,
@@ -267,175 +396,291 @@ export function ExperimentsPageClient({ initialExperiments }: { initialExperimen
   }
 
   return (
-    <div className="w-full px-4 py-4 sm:px-6 lg:px-8 overflow-x-hidden">
+    <div className="w-full overflow-x-hidden px-4 py-5 sm:px-6 lg:px-8">
       <PageTitle title="Experimentos" />
 
-      <div className="mb-6">
-        <Card>
-          <CardContent className="p-4">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-              <div className="flex flex-col sm:flex-row gap-2 items-center">
-                <Select value={selectedExperimentId} onValueChange={setSelectedExperimentId}>
-                  <SelectTrigger className="w-full sm:w-[250px]">
-                    <SelectValue placeholder="Selecione um experimento" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {experiments.map((exp) => (
-                      <SelectItem key={exp.id} value={exp.id}>
-                        #{exp.number} - {exp.strain}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+      <section className="mb-5 overflow-hidden rounded-3xl border border-blue-100 bg-gradient-to-br from-blue-600 via-indigo-600 to-purple-700 text-white shadow-lg">
+        <div className="relative p-5 sm:p-6">
+          <div className="absolute right-0 top-0 h-44 w-44 rounded-full bg-white/10 blur-2xl" />
+          <div className="absolute bottom-0 left-1/2 h-32 w-32 rounded-full bg-cyan-300/20 blur-2xl" />
 
-                <div className="flex flex-wrap gap-2">
-                  <Button variant="outline" onClick={() => setPeriodMode("week")}>
-                    <Calendar className="h-4 w-4 mr-2" />
-                    Semanas
-                  </Button>
-                  <Button variant="outline" onClick={() => setPeriodMode("month")}>
-                    <CalendarDays className="h-4 w-4 mr-2" />
-                    Meses
-                  </Button>
-
-                  <div className="mx-1 hidden h-9 w-px bg-border sm:block" aria-hidden="true" />
-
-                  <Button
-                    variant={unitFilter === "Salto" ? "default" : "outline"}
-                    onClick={() => handleUnitFilterClick("Salto")}
-                    className={unitFilter === "Salto" ? "bg-gradient-to-r from-blue-600 to-purple-600 text-white hover:from-blue-700 hover:to-purple-700" : undefined}
-                  >
-                    Salto
-                  </Button>
-                  <Button
-                    variant={unitFilter === "Americana" ? "default" : "outline"}
-                    onClick={() => handleUnitFilterClick("Americana")}
-                    className={unitFilter === "Americana" ? "bg-gradient-to-r from-blue-600 to-purple-600 text-white hover:from-blue-700 hover:to-purple-700" : undefined}
-                  >
-                    Americana
-                  </Button>
-                </div>
+          <div className="relative flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+            <div className="space-y-2">
+              <div className="inline-flex items-center gap-2 rounded-full bg-white/15 px-3 py-1 text-xs font-semibold ring-1 ring-white/20">
+                <Sparkles className="h-3.5 w-3.5" />
+                Central de experimentos do PDI
               </div>
-
-              <div className="flex gap-2">
-                <Button onClick={exportToPDF} disabled={isExporting}>
-                  <Download className="h-4 w-4 mr-2" />
-                  Exportar PDF
-                </Button>
-                <Button asChild>
-                  <Link href="/experiments/new">
-                    <PlusCircle className="h-4 w-4 mr-2" />
-                    Novo
-                  </Link>
-                </Button>
+              <div>
+                <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">Experimentos</h1>
+                <p className="mt-1 max-w-2xl text-sm text-blue-50">
+                  Acompanhe o andamento geral, filtre por período, unidade e status, e acesse rapidamente cada experimento.
+                </p>
               </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-2 text-sm sm:grid-cols-4 lg:min-w-[560px]">
+              <StatCard label="Experimentos" value={stats.total} />
+              <StatCard label="Testes" value={stats.totalTests} />
+              <StatCard label="Concluídos" value={stats.completedTests} detail={`${stats.inProgressTests} em andamento`} />
+              <StatCard label="Progresso médio" value={`${stats.activeProgressAvg}%`} />
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <Card className="mb-5 border-slate-200/80 bg-white/90 shadow-sm backdrop-blur">
+        <CardContent className="space-y-4 p-4">
+          <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="inline-flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                <CalendarDays className="h-3.5 w-3.5" /> Período
+              </span>
+              <FilterButton active={periodMode === "week"} onClick={() => setPeriodMode("week")}>
+                Semanas
+              </FilterButton>
+              <FilterButton active={periodMode === "month"} onClick={() => setPeriodMode("month")}>
+                Meses
+              </FilterButton>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="inline-flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                <MapPin className="h-3.5 w-3.5" /> Unidade
+              </span>
+              <FilterButton active={unitFilter === "all"} onClick={() => setUnitFilter("all")}>
+                Todas
+              </FilterButton>
+              {UNIT_FILTERS.map((unit) => (
+                <FilterButton key={unit} active={unitFilter === unit} onClick={() => setUnitFilter(unit)}>
+                  {unit}
+                </FilterButton>
+              ))}
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2 border-t border-slate-100 pt-4">
+            <span className="inline-flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-slate-500">
+              <BarChart3 className="h-3.5 w-3.5" /> Status
+            </span>
+            {STATUS_FILTERS.map((status) => (
+              <FilterButton key={status.value} active={statusFilter === status.value} onClick={() => setStatusFilter(status.value)}>
+                {status.label}
+              </FilterButton>
+            ))}
+          </div>
+
+          <div className="flex flex-col gap-3 border-t border-slate-100 pt-4 xl:flex-row xl:items-center xl:justify-between">
+            <div className="flex flex-1 flex-wrap items-center gap-2 rounded-2xl bg-slate-50 px-3 py-2 text-xs text-slate-600">
+              <Search className="h-3.5 w-3.5" />
+              Exibindo <strong>{filteredExperiments.length}</strong> de <strong>{experiments.length}</strong> experimentos • {activeUnitLabel} • {activeStatusLabel}
+            </div>
+
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+              <Select value={selectedExperimentId} onValueChange={setSelectedExperimentId}>
+                <SelectTrigger className="h-9 w-full rounded-xl border-slate-200 bg-white text-xs font-semibold sm:w-[280px]">
+                  <SelectValue placeholder="Selecione para exportar" />
+                </SelectTrigger>
+                <SelectContent>
+                  {experiments.map((experiment) => (
+                    <SelectItem key={experiment.id} value={experiment.id}>
+                      #{experiment.number} - {experiment.strain}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                onClick={exportToPDF}
+                disabled={isExporting}
+                className="h-9 rounded-xl border-slate-200 bg-white text-xs font-semibold text-slate-700 hover:bg-slate-50"
+              >
+                <Download className="h-4 w-4" />
+                Exportar PDF
+              </Button>
+
+              <Button asChild size="sm" className="h-9 rounded-xl bg-gradient-to-r from-blue-600 to-purple-600 text-xs font-semibold text-white shadow-sm hover:from-blue-700 hover:to-purple-700">
+                <Link href="/experiments/new">
+                  <PlusCircle className="h-4 w-4" />
+                  Novo
+                </Link>
+              </Button>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      <div className="space-y-6">
+        {groupedExperiments.map((group) => (
+          <section key={group.key} className="space-y-3">
+            <div className="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
+              <div>
+                <h2 className="text-lg font-bold text-slate-900">{group.title}</h2>
+                <p className="text-xs text-slate-500">{group.subtitle}</p>
+              </div>
+              <Badge variant="outline" className="w-fit rounded-full border-slate-200 bg-white px-3 py-1 text-slate-600">
+                {group.experiments.length} experimento{group.experiments.length === 1 ? "" : "s"}
+              </Badge>
+            </div>
+
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
+              {group.experiments.map((experiment) => {
+                const status = getExperimentStatus(experiment)
+
+                return (
+                  <Card
+                    key={experiment.id}
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => router.push(`/experiments/${experiment.id}`)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter" || event.key === " ") router.push(`/experiments/${experiment.id}`)
+                    }}
+                    className="group cursor-pointer overflow-hidden border-slate-200 bg-white shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:border-blue-200 hover:shadow-lg"
+                  >
+                    <div className="h-1.5 bg-gradient-to-r from-blue-500 via-indigo-500 to-purple-600" />
+                    <CardHeader className="space-y-3 p-4 pb-2">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <CardTitle className="flex items-center gap-2 text-base text-slate-900">
+                            <FlaskConical className="h-4 w-4 shrink-0 text-blue-600" />
+                            <span className="truncate">Experimento #{experiment.number}</span>
+                          </CardTitle>
+                          <p className="mt-1 truncate text-base font-bold text-purple-700">{experiment.strain}</p>
+                        </div>
+                        <Badge className={`shrink-0 rounded-full border px-2 py-1 text-[11px] font-bold ${statusClasses(status)}`}>
+                          <span className={`mr-1.5 inline-block h-2 w-2 rounded-full ${statusDotClasses(status)}`} />
+                          {status}
+                        </Badge>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-2 text-xs">
+                        <div className="rounded-2xl bg-slate-50 p-2">
+                          <p className="text-slate-500">Testes</p>
+                          <p className="font-bold text-slate-900">{experiment.testCount}</p>
+                        </div>
+                        <div className="rounded-2xl bg-slate-50 p-2">
+                          <p className="text-slate-500">Repetições</p>
+                          <p className="font-bold text-slate-900">{experiment.repetitionCount}</p>
+                        </div>
+                      </div>
+                    </CardHeader>
+
+                    <CardContent className="space-y-3 p-4 pt-2 text-sm">
+                      <div className="flex flex-wrap gap-2">
+                        {(experiment.units ?? []).length > 0 ? (
+                          (experiment.units ?? []).map((unit) => (
+                            <Badge key={unit} variant="outline" className="rounded-full border-blue-200 bg-blue-50 text-blue-700">
+                              {unit}
+                            </Badge>
+                          ))
+                        ) : (
+                          <Badge variant="outline" className="rounded-full border-slate-200 bg-slate-50 text-slate-500">
+                            Sem unidade
+                          </Badge>
+                        )}
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-2 text-xs text-slate-600">
+                        <div className="rounded-2xl border border-slate-100 p-2">
+                          <div className="flex items-center gap-1 text-slate-500">
+                            <CalendarDays className="h-3.5 w-3.5" /> Criação
+                          </div>
+                          <div className="mt-1 font-semibold text-slate-800">{formatDateBR(experiment.startDate)}</div>
+                        </div>
+                        <div className="rounded-2xl border border-slate-100 p-2">
+                          <div className="flex items-center gap-1 text-slate-500">
+                            <TestTube className="h-3.5 w-3.5" /> Total
+                          </div>
+                          <div className="mt-1 font-semibold text-slate-800">{experiment.totalTests} testes</div>
+                        </div>
+                      </div>
+
+                      <div className="space-y-1.5">
+                        <div className="flex items-center justify-between text-xs">
+                          <span className="font-medium text-slate-600">Progresso do experimento</span>
+                          <span className="font-bold text-slate-800">{experiment.progressActivePct}%</span>
+                        </div>
+                        <div className="flex h-2.5 w-full overflow-hidden rounded-full bg-slate-100">
+                          {experiment.progressCompletedPct > 0 ? (
+                            <div className="h-full bg-emerald-500" style={{ width: `${experiment.progressCompletedPct}%` }} />
+                          ) : null}
+                          {experiment.progressInProgressPct > 0 ? (
+                            <div className="h-full bg-blue-500" style={{ width: `${experiment.progressInProgressPct}%` }} />
+                          ) : null}
+                        </div>
+                        <div className="grid grid-cols-2 gap-1 text-[11px] text-slate-500">
+                          <span className="inline-flex items-center gap-1">
+                            <span className="h-2 w-2 rounded-full bg-emerald-500" />
+                            {experiment.completedTests}/{experiment.totalTests} concluídos
+                          </span>
+                          <span className="inline-flex items-center gap-1">
+                            <span className="h-2 w-2 rounded-full bg-blue-500" />
+                            {experiment.inProgressTests}/{experiment.totalTests} andamento
+                          </span>
+                          <span className="inline-flex items-center gap-1">
+                            <span className="h-2 w-2 rounded-full bg-amber-500" />
+                            {experiment.needsPhotosTests}/{experiment.totalTests} fotos
+                          </span>
+                          <span className="inline-flex items-center gap-1">
+                            <span className="h-2 w-2 rounded-full bg-slate-400" />
+                            {experiment.pendingTests}/{experiment.totalTests} pendentes
+                          </span>
+                        </div>
+                      </div>
+
+                      <div className="flex gap-2 pt-1">
+                        <Button
+                          type="button"
+                          size="sm"
+                          className="flex-1 rounded-xl bg-gradient-to-r from-blue-600 to-purple-600 font-semibold text-white shadow-sm hover:from-blue-700 hover:to-purple-700"
+                          onClick={(event) => {
+                            event.stopPropagation()
+                            router.push(`/experiments/${experiment.id}`)
+                          }}
+                        >
+                          <ImageIcon className="mr-1.5 h-4 w-4" />
+                          Abrir
+                        </Button>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          className="rounded-xl border-red-200 bg-red-50 px-3 text-red-700 hover:bg-red-100 hover:text-red-800"
+                          onClick={(event) => {
+                            event.stopPropagation()
+                            setExperimentToDelete(experiment)
+                            setShowDeleteDialog(true)
+                          }}
+                          title="Excluir experimento"
+                        >
+                          <Trash className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    </CardContent>
+                  </Card>
+                )
+              })}
+            </div>
+          </section>
+        ))}
+      </div>
+
+      {filteredExperiments.length === 0 ? (
+        <Card className="mt-6 border-dashed border-slate-300 bg-slate-50/80">
+          <CardContent className="flex flex-col items-center justify-center gap-3 p-10 text-center">
+            <div className="rounded-full bg-white p-4 shadow-sm">
+              <FlaskConical className="h-8 w-8 text-slate-400" />
+            </div>
+            <div>
+              <h3 className="font-semibold text-slate-900">Nenhum experimento encontrado</h3>
+              <p className="mt-1 text-sm text-slate-500">Ajuste os filtros ou cadastre um novo experimento.</p>
             </div>
           </CardContent>
         </Card>
-      </div>
-
-      {filteredExperiments.length === 0 && (
-        <Card className="border-dashed">
-          <CardContent className="p-8 text-center text-sm text-muted-foreground">
-            Nenhum experimento encontrado para o filtro selecionado.
-          </CardContent>
-        </Card>
-      )}
-
-      {Object.entries(groupedExperiments).map(([periodTitle, exps]) => (
-        <PeriodGroup key={periodTitle} title={periodTitle}>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-            {exps.map((experiment) => (
-              <Card
-                key={experiment.id}
-                role="button"
-                tabIndex={0}
-                onClick={() => router.push(`/experiments/${experiment.id}`)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" || e.key === " ") router.push(`/experiments/${experiment.id}`)
-                }}
-                className={`${getCardBackground(experiment.number)} ${getCardBorder(
-                  experiment.number,
-                )} cursor-pointer transition-transform hover:scale-[1.01]`}
-              >
-                <CardHeader className="space-y-3">
-                  <CardTitle>Experimento #{experiment.number}</CardTitle>
-
-                  <div className="rounded-lg border border-blue-200/70 bg-white/70 px-3 py-2 shadow-sm dark:border-blue-900/50 dark:bg-background/40">
-                    <div className="mb-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Cepa</div>
-                    <div className="text-2xl font-semibold leading-none tracking-tight text-foreground">
-                      {experiment.strain}
-                    </div>
-                  </div>
-                </CardHeader>
-
-                <CardContent className="space-y-2">
-                  <div className="text-sm">
-                    <strong>Início:</strong> {new Date(experiment.startDate).toLocaleDateString("pt-BR")}
-                  </div>
-                  <div className="text-sm">
-                    <strong>Testes:</strong> {experiment.testCount} | <strong>Repetições:</strong>{" "}
-                    {experiment.repetitionCount}
-                  </div>
-                  <div className="text-sm">
-                    <strong>Total:</strong> {experiment.totalTests}
-                  </div>
-                </CardContent>
-
-                <div className="px-6 pb-6 space-y-3">
-                  <div className="space-y-2">
-                    <div className="flex items-center justify-between text-xs text-muted-foreground">
-                      <span>Progresso do experimento</span>
-                      <span className="font-semibold text-foreground">{experiment.progressActivePct}%</span>
-                    </div>
-
-                    <div className="flex h-3 w-full overflow-hidden rounded-full border bg-muted/70">
-                      {experiment.progressCompletedPct > 0 && (
-                        <div
-                          className="h-full bg-green-500 transition-all"
-                          style={{ width: `${experiment.progressCompletedPct}%` }}
-                          title={`Concluídos: ${experiment.progressCompletedPct}%`}
-                        />
-                      )}
-                      {experiment.progressInProgressPct > 0 && (
-                        <div
-                          className="h-full bg-blue-500 transition-all"
-                          style={{ width: `${experiment.progressInProgressPct}%` }}
-                          title={`Em andamento: ${experiment.progressInProgressPct}%`}
-                        />
-                      )}
-                    </div>
-
-                    <div className="grid grid-cols-1 gap-1 text-[11px] text-muted-foreground sm:grid-cols-2">
-                      <span className="inline-flex items-center gap-1">
-                        <span className="h-2 w-2 rounded-full bg-green-500" />
-                        Concluídos: {experiment.completedTests}/{experiment.totalTests}
-                      </span>
-                      <span className="inline-flex items-center gap-1">
-                        <span className="h-2 w-2 rounded-full bg-blue-500" />
-                        Em andamento: {experiment.inProgressTests}/{experiment.totalTests}
-                      </span>
-                    </div>
-                  </div>
-
-                  <div className="flex justify-end">
-                    <Button
-                      variant="destructive"
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        setExperimentToDelete(experiment)
-                        setShowDeleteDialog(true)
-                      }}
-                    >
-                      <Trash className="h-4 w-4" />
-                    </Button>
-                  </div>
-                </div>
-              </Card>
-            ))}
-          </div>
-        </PeriodGroup>
-      ))}
+      ) : null}
 
       <Dialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
         <DialogContent>

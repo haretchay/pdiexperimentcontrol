@@ -7,7 +7,6 @@ import { useParams, useRouter } from "next/navigation"
 import {
   AlertTriangle,
   ArrowLeft,
-  BarChart3,
   CalendarDays,
   CheckCircle2,
   ClipboardList,
@@ -20,7 +19,6 @@ import {
   LockKeyhole,
   Share2,
   Sparkles,
-  Thermometer,
   TrendingUp,
 } from "lucide-react"
 
@@ -1097,46 +1095,6 @@ export default function ExperimentDetailPage() {
           </Card>
         </div>
 
-        <div className="mb-5 grid gap-3 lg:grid-cols-3">
-          <Card className="border-slate-200 bg-white/90 shadow-sm dark:border-slate-800 dark:bg-slate-950/90">
-            <CardContent className="flex items-center gap-3 p-4">
-              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-200">
-                <Thermometer className="h-5 w-5" />
-              </div>
-              <div className="min-w-0">
-                <p className="text-sm font-semibold">Temperaturas monitoradas</p>
-                <p className="text-xs text-muted-foreground">14 dias de câmara + manhã/tarde do arroz.</p>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card className="border-slate-200 bg-white/90 shadow-sm dark:border-slate-800 dark:bg-slate-950/90">
-            <CardContent className="flex items-center gap-3 p-4">
-              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-purple-100 text-purple-700 dark:bg-purple-950 dark:text-purple-200">
-                <BarChart3 className="h-5 w-5" />
-              </div>
-              <div className="min-w-0">
-                <p className="text-sm font-semibold">Unidades com testes</p>
-                <p className="truncate text-xs text-muted-foreground">
-                  {experimentStats.units.length > 0 ? experimentStats.units.join(" • ") : "Ainda sem unidade informada"}
-                </p>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card className="border-slate-200 bg-white/90 shadow-sm dark:border-slate-800 dark:bg-slate-950/90">
-            <CardContent className="flex items-center gap-3 p-4">
-              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-200">
-                <Eye className="h-5 w-5" />
-              </div>
-              <div className="min-w-0">
-                <p className="text-sm font-semibold">Acesso rápido</p>
-                <p className="text-xs text-muted-foreground">Clique no card para visualizar. Use “Editar” para preencher.</p>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-
         <Tabs defaultValue="repetition-1" className="w-full">
           <div className="mb-4 overflow-x-auto rounded-2xl border border-slate-200 bg-white/80 p-2 shadow-sm dark:border-slate-800 dark:bg-slate-950/80">
             <TabsList className="h-auto w-max gap-2 bg-transparent p-0">
@@ -1158,9 +1116,6 @@ export default function ExperimentDetailPage() {
           </div>
 
           {repetitions.map((repetition) => {
-            const repetitionCompleted = repetition.tests.filter((test) => test.completed).length
-            const repetitionProgress = pct(repetitionCompleted, repetition.tests.length)
-
             return (
               <TabsContent key={repetition.id} value={`repetition-${repetition.id}`} className="m-0 w-full p-0">
                 {!repetition.unlocked ? (
@@ -1177,21 +1132,6 @@ export default function ExperimentDetailPage() {
                   </Card>
                 ) : (
                   <div className="space-y-4">
-                    <div className="rounded-2xl border border-slate-200 bg-white/85 p-4 shadow-sm dark:border-slate-800 dark:bg-slate-950/85">
-                      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                        <div>
-                          <h2 className="text-lg font-bold text-slate-950 dark:text-white">Repetição {repetition.number}</h2>
-                          <p className="text-sm text-muted-foreground">{repetitionCompleted} de {repetition.tests.length} teste(s) concluído(s)</p>
-                        </div>
-                        <div className="flex min-w-[220px] items-center gap-3">
-                          <div className="h-2.5 flex-1 overflow-hidden rounded-full bg-slate-200 dark:bg-slate-800">
-                            <div className="h-full rounded-full bg-gradient-to-r from-emerald-500 to-green-500" style={{ width: `${repetitionProgress}%` }} />
-                          </div>
-                          <span className="w-10 text-right text-sm font-bold text-slate-800 dark:text-slate-100">{repetitionProgress}%</span>
-                        </div>
-                      </div>
-                    </div>
-
                     <div className="grid w-full grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
                       {repetition.tests.map((test) => {
                         const key = `${repetition.id}_${test.id}`

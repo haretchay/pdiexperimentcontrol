@@ -1,517 +1,871 @@
 "use client"
 
-import Link from "next/link"
-import type { ComponentType } from "react"
+import { useMemo, useState } from "react"
+import type { LucideIcon } from "lucide-react"
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { Button } from "@/components/ui/button"
+import { Badge } from "@/components/ui/badge"
+import { PageTitle } from "@/components/page-title"
 import {
-  Area,
-  AreaChart,
+  Activity,
+  BarChart3,
+  Gauge,
+  Leaf,
+  Microscope,
+  PackageCheck,
+  Thermometer,
+  TrendingUp,
+} from "lucide-react"
+import {
   Bar,
   BarChart,
   CartesianGrid,
   Cell,
+  ComposedChart,
+  Legend,
   Line,
-  LineChart,
-  Pie,
-  PieChart,
+  ReferenceArea,
+  ReferenceLine,
   ResponsiveContainer,
+  Scatter,
+  ScatterChart,
   Tooltip,
   XAxis,
   YAxis,
+  ZAxis,
 } from "recharts"
-import {
-  Activity,
-  BarChart3,
-  CalendarDays,
-  CheckCircle2,
-  Clock3,
-  FlaskConical,
-  ImageIcon,
-  Layers3,
-  Microscope,
-  Plus,
-  TestTube2,
-  Thermometer,
-  TrendingUp,
-} from "lucide-react"
 
-import { PageTitle } from "@/components/page-title"
-import { Badge } from "@/components/ui/badge"
-import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import type { TestStatus, UIDashboardExperiment, UIDashboardTest } from "@/app/(app)/dashboard/page"
-
-type DashboardClientProps = {
-  experiments: UIDashboardExperiment[]
+type UIExperiment = {
+  id: string
+  number: number
+  strain: string
+  fungusId: string | null
+  fungusName: string
+  startDate: string
+  testCount: number
+  repetitionCount: number
+  totalTests: number
 }
 
-type StatCardProps = {
-  title: string
-  value: string | number
-  description: string
-  icon: ComponentType<{ className?: string }>
-  tone: "blue" | "purple" | "green" | "amber"
+type FungusInfo = {
+  id: string
+  scientificName: string
+  optimalTemperature: number | null
+  minTemperature: number | null
+  maxTemperature: number | null
 }
 
-const STATUS_ORDER: TestStatus[] = ["Concluído", "Em andamento", "Inserir Fotos", "Pendente"]
-const STATUS_COLORS: Record<TestStatus, string> = {
-  Concluído: "#10b981",
-  "Em andamento": "#2563eb",
-  "Inserir Fotos": "#f59e0b",
-  Pendente: "#64748b",
+type TemperatureDay = {
+  day: number
+  chamber?: number
+  rice?: number
 }
 
-function parseDate(value: string | null | undefined): Date | null {
-  if (!value) return null
-  const text = String(value)
-  const [year, month, day] = text.slice(0, 10).split("-").map(Number)
-  if (year && month && day) return new Date(year, month - 1, day)
-  const fallback = new Date(text)
-  return Number.isNaN(fallback.getTime()) ? null : fallback
+type UITest = {
+  id: string
+  repetitionNumber?: number
+  testNumber?: number
+  status?: "Pendente" | "Inserir Fotos" | "Em andamento" | "Concluído"
+  unit?: string
+  wetWeight?: number
+  dryWeight?: number
+  extractedConidiumWeight?: number
+  averageHumidity?: number
+  bozo?: number
+  sensorial?: number
+  temperatureDays?: TemperatureDay[]
+  avgRiceTemperature?: number
+  avgChamberTemperature?: number
+  createdAt?: string
 }
 
-function formatDateBR(value: string | null | undefined): string {
-  const date = parseDate(value)
-  if (!date) return "--/--/--"
-  return date.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", year: "2-digit" })
+type ExperimentData = {
+  id: string
+  number: number
+  strain: string
+  fungusId: string | null
+  fungusName: string
+  fungusOptimalTemperature: number | null
+  fungusMinTemperature: number | null
+  fungusMaxTemperature: number | null
+  startDate: string
+  testsData?: UITest[]
+  completedTests: number
 }
 
-function formatDateTimeBR(value: string | null | undefined): string {
-  if (!value) return "--/--/--"
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return formatDateBR(value)
-  return date.toLocaleString("pt-BR", {
-    day: "2-digit",
-    month: "2-digit",
-    year: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-  })
+type ProductionMetric = "dry" | "conidium" | "wet"
+
+interface DashboardClientProps {
+  experiments: UIExperiment[]
+  experimentData: ExperimentData[]
+  fungi: FungusInfo[]
 }
 
-function expLabel(number: number): string {
-  return `Exp. #${String(number).padStart(3, "0")}`
+const METRIC_LABEL: Record<ProductionMetric, string> = {
+  dry: "Pó seco",
+  conidium: "Conídios",
+  wet: "Pó úmido",
 }
 
-function average(values: Array<number | undefined>): number | undefined {
-  const valid = values.filter((value): value is number => typeof value === "number" && Number.isFinite(value))
+const METRIC_KEY: Record<ProductionMetric, "dryWeight" | "extractedConidiumWeight" | "wetWeight"> = {
+  dry: "dryWeight",
+  conidium: "extractedConidiumWeight",
+  wet: "wetWeight",
+}
+
+function isNumber(value: unknown): value is number {
+  return typeof value === "number" && Number.isFinite(value)
+}
+
+function average(values: Array<number | undefined | null>): number | undefined {
+  const valid = values.filter(isNumber)
   if (valid.length === 0) return undefined
-  return Math.round((valid.reduce((sum, value) => sum + value, 0) / valid.length) * 10) / 10
+  return valid.reduce((sum, value) => sum + value, 0) / valid.length
 }
 
-function percent(value: number, total: number) {
-  if (!Number.isFinite(value) || !Number.isFinite(total) || total <= 0) return 0
-  return Math.max(0, Math.min(100, Math.round((value / total) * 100)))
+function formatNumber(value: number | undefined | null, digits = 1): string {
+  if (!isNumber(value)) return "-"
+  return value.toLocaleString("pt-BR", { minimumFractionDigits: digits, maximumFractionDigits: digits })
 }
 
-function StatCard({ title, value, description, icon: Icon, tone }: StatCardProps) {
-  const toneClass = {
-    blue: "border-blue-100 bg-blue-50 text-blue-700",
-    purple: "border-purple-100 bg-purple-50 text-purple-700",
-    green: "border-emerald-100 bg-emerald-50 text-emerald-700",
-    amber: "border-amber-100 bg-amber-50 text-amber-700",
-  }[tone]
+function formatPercent(value: number | undefined | null): string {
+  if (!isNumber(value)) return "-"
+  return `${Math.round(value)}%`
+}
+
+function shortFungusName(name: string): string {
+  const parts = name.trim().split(/\s+/)
+  if (parts.length < 2) return name
+  return `${parts[0][0]}. ${parts.slice(1).join(" ")}`
+}
+
+function getMetricValue(test: UITest, metric: ProductionMetric): number | undefined {
+  return test[METRIC_KEY[metric]]
+}
+
+function withinRange(value: number | undefined, min: number | null, max: number | null): boolean {
+  if (!isNumber(value) || !isNumber(min) || !isNumber(max)) return false
+  return value >= min && value <= max
+}
+
+export function DashboardClient({ experiments, experimentData, fungi }: DashboardClientProps) {
+  const [selectedFungusId, setSelectedFungusId] = useState<string>("all")
+  const [metric, setMetric] = useState<ProductionMetric>("dry")
+
+  const selectedFungus = fungi.find((fungus) => fungus.id === selectedFungusId) ?? null
+
+  const filteredExperiments = useMemo(() => {
+    if (selectedFungusId === "all") return experimentData
+    return experimentData.filter((experiment) => experiment.fungusId === selectedFungusId)
+  }, [experimentData, selectedFungusId])
+
+  const testRows = useMemo(() => {
+    return filteredExperiments.flatMap((experiment) =>
+      (experiment.testsData ?? []).map((test) => ({
+        ...test,
+        experimentId: experiment.id,
+        experimentNumber: experiment.number,
+        strain: experiment.strain,
+        fungusId: experiment.fungusId,
+        fungusName: experiment.fungusName,
+        fungusOptimalTemperature: experiment.fungusOptimalTemperature,
+        fungusMinTemperature: experiment.fungusMinTemperature,
+        fungusMaxTemperature: experiment.fungusMaxTemperature,
+      })),
+    )
+  }, [filteredExperiments])
+
+  const productionRows = testRows.filter(
+    (test) => isNumber(test.wetWeight) || isNumber(test.dryWeight) || isNumber(test.extractedConidiumWeight),
+  )
+
+  const completedTests = testRows.filter((test) => test.status === "Concluído").length
+  const totalTests = testRows.length
+  const avgRiceTemp = average(testRows.map((test) => test.avgRiceTemperature))
+  const avgChamberTemp = average(testRows.map((test) => test.avgChamberTemperature))
+  const avgWet = average(productionRows.map((test) => test.wetWeight))
+  const avgDry = average(productionRows.map((test) => test.dryWeight))
+  const avgConidium = average(productionRows.map((test) => test.extractedConidiumWeight))
+  const dryYield = isNumber(avgWet) && avgWet > 0 && isNumber(avgDry) ? (avgDry / avgWet) * 100 : undefined
+  const conidiumByDry = isNumber(avgDry) && avgDry > 0 && isNumber(avgConidium) ? avgConidium / avgDry : undefined
+
+  const fungusSummary = useMemo(() => buildFungusSummary(experimentData), [experimentData])
+  const strainSummary = useMemo(() => buildStrainSummary(filteredExperiments), [filteredExperiments])
+  const temperatureProductionRows = useMemo(() => buildTemperatureProductionRows(filteredExperiments, metric), [filteredExperiments, metric])
+  const dailyTemperatureRows = useMemo(() => buildDailyTemperatureRows(filteredExperiments), [filteredExperiments])
+  const productionByExperimentRows = useMemo(() => buildProductionByExperimentRows(filteredExperiments), [filteredExperiments])
+  const statusRows = useMemo(() => buildStatusRows(testRows), [testRows])
+
+  const mostProductiveStrain = strainSummary.reduce<(typeof strainSummary)[number] | null>((best, row) => {
+    if (!best) return row
+    return (row.avgDry ?? 0) > (best.avgDry ?? 0) ? row : best
+  }, null)
 
   return (
-    <Card className="border-slate-200/80 bg-white/90 shadow-sm backdrop-blur transition hover:-translate-y-0.5 hover:shadow-md dark:bg-slate-950/70">
-      <CardContent className="flex items-center gap-4 p-4">
-        <div className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl border ${toneClass}`}>
-          <Icon className="h-5 w-5" />
-        </div>
-        <div className="min-w-0">
-          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500 dark:text-slate-400">{title}</p>
-          <div className="mt-1 text-2xl font-bold tracking-tight text-slate-950 dark:text-white">{value}</div>
-          <p className="mt-0.5 truncate text-xs text-slate-500 dark:text-slate-400">{description}</p>
-        </div>
-      </CardContent>
-    </Card>
-  )
-}
-
-function ChartTooltip({ active, payload, label }: any) {
-  if (!active || !payload?.length) return null
-
-  return (
-    <div className="rounded-xl border border-slate-200 bg-white p-3 text-xs shadow-lg dark:border-slate-800 dark:bg-slate-950">
-      <div className="mb-2 font-semibold text-slate-900 dark:text-slate-100">{label}</div>
-      <div className="space-y-1">
-        {payload.map((entry: any) => (
-          <div key={entry.dataKey ?? entry.name} className="flex items-center justify-between gap-4 text-slate-600 dark:text-slate-300">
-            <span>{entry.name ?? entry.dataKey}</span>
-            <span className="font-semibold text-slate-950 dark:text-white">{entry.value}</span>
-          </div>
-        ))}
-      </div>
-    </div>
-  )
-}
-
-export function DashboardClient({ experiments }: DashboardClientProps) {
-  const allTests = experiments.flatMap((experiment) => experiment.testsData)
-  const totalTests = allTests.length
-  const completedTests = allTests.filter((test) => test.status === "Concluído").length
-  const inProgressTests = allTests.filter((test) => test.status === "Em andamento").length
-  const insertPhotosTests = allTests.filter((test) => test.status === "Inserir Fotos").length
-  const pendingTests = allTests.filter((test) => test.status === "Pendente").length
-  const avgDataProgress = totalTests > 0 ? Math.round(allTests.reduce((sum, test) => sum + test.dataProgressPct, 0) / totalTests) : 0
-  const avgMediaProgress =
-    experiments.length > 0 ? Math.round(experiments.reduce((sum, experiment) => sum + experiment.mediaProgressPct, 0) / experiments.length) : 0
-  const avgChamberTemperature = average(allTests.map((test) => test.chamberTemperatureAvg))
-  const avgRiceTemperature = average(allTests.map((test) => test.riceTemperatureAvg))
-  const latestExperiment = [...experiments].sort((a, b) => b.number - a.number)[0]
-
-  const statusData = STATUS_ORDER.map((status) => ({
-    name: status,
-    value: allTests.filter((test) => test.status === status).length,
-    color: STATUS_COLORS[status],
-  })).filter((item) => item.value > 0)
-
-  const progressByExperiment = [...experiments]
-    .sort((a, b) => b.number - a.number)
-    .slice(0, 8)
-    .reverse()
-    .map((experiment) => ({
-      name: expLabel(experiment.number),
-      Concluídos: experiment.completedTests,
-      "Em andamento": experiment.inProgressTests,
-      "Inserir fotos": experiment.insertPhotosTests,
-      Pendentes: experiment.pendingTests,
-      progresso: percent(experiment.completedTests, experiment.totalTests),
-    }))
-
-  const temperatureByExperiment = [...experiments]
-    .sort((a, b) => b.number - a.number)
-    .slice(0, 8)
-    .reverse()
-    .map((experiment) => ({
-      name: expLabel(experiment.number),
-      Câmara: average(experiment.testsData.map((test) => test.chamberTemperatureAvg)),
-      Arroz: average(experiment.testsData.map((test) => test.riceTemperatureAvg)),
-    }))
-
-  const strainData = Object.values(
-    experiments.reduce<Record<string, { strain: string; experimentos: number; testes: number; concluidos: number; progresso: number }>>(
-      (acc, experiment) => {
-        const strain = experiment.strain || "Sem cepa"
-        if (!acc[strain]) acc[strain] = { strain, experimentos: 0, testes: 0, concluidos: 0, progresso: 0 }
-        acc[strain].experimentos += 1
-        acc[strain].testes += experiment.totalTests
-        acc[strain].concluidos += experiment.completedTests
-        acc[strain].progresso = percent(acc[strain].concluidos, acc[strain].testes)
-        return acc
-      },
-      {},
-    ),
-  ).sort((a, b) => b.testes - a.testes)
-
-  const weightByStrain = Object.values(
-    allTests.reduce<Record<string, { strain: string; umido: number[]; seco: number[]; conidio: number[] }>>((acc, test) => {
-      const strain = test.experimentStrain || "Sem cepa"
-      if (!acc[strain]) acc[strain] = { strain, umido: [], seco: [], conidio: [] }
-      if (typeof test.wetWeight === "number") acc[strain].umido.push(test.wetWeight)
-      if (typeof test.dryWeight === "number") acc[strain].seco.push(test.dryWeight)
-      if (typeof test.extractedConidiumWeight === "number") acc[strain].conidio.push(test.extractedConidiumWeight)
-      return acc
-    }, {}),
-  )
-    .map((item) => ({
-      strain: item.strain,
-      "Úmido": average(item.umido),
-      "Seco": average(item.seco),
-      "Conídio": average(item.conidio),
-    }))
-    .filter((item) => item["Úmido"] !== undefined || item["Seco"] !== undefined || item["Conídio"] !== undefined)
-    .slice(0, 8)
-
-  const recentTests = [...allTests]
-    .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())
-    .slice(0, 6)
-
-  return (
-    <div className="w-full overflow-x-hidden px-4 py-5 sm:px-6 lg:px-8">
+    <div className="container mx-auto space-y-6 p-4">
       <PageTitle title="Dashboard" />
 
-      <section className="mb-5 overflow-hidden rounded-3xl border border-blue-100 bg-gradient-to-br from-blue-600 via-indigo-600 to-purple-700 text-white shadow-lg">
-        <div className="relative p-5 sm:p-6">
-          <div className="absolute right-0 top-0 h-48 w-48 rounded-full bg-white/10 blur-2xl" />
-          <div className="absolute bottom-0 left-1/2 h-36 w-36 rounded-full bg-cyan-300/20 blur-2xl" />
-
-          <div className="relative flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
-            <div className="max-w-3xl space-y-3">
-              <div className="inline-flex items-center gap-2 rounded-full bg-white/15 px-3 py-1 text-xs font-semibold ring-1 ring-white/20">
-                <Activity className="h-3.5 w-3.5" />
-                Visão geral operacional do PDI
+      <section className="overflow-hidden rounded-3xl border bg-gradient-to-br from-blue-600 via-indigo-600 to-purple-700 text-white shadow-lg">
+        <div className="p-6 md:p-8">
+          <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
+            <div className="space-y-3">
+              <div className="inline-flex items-center gap-2 rounded-full bg-white/15 px-3 py-1 text-sm font-medium text-white/90 ring-1 ring-white/20">
+                <Microscope className="h-4 w-4" />
+                Produção, produtividade e temperatura
               </div>
               <div>
-                <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">Dashboard</h1>
-                <p className="mt-1 text-sm text-blue-50">
-                  Acompanhe experimentos, testes, mídias, temperaturas e resultados finais com dados atuais do sistema.
+                <h1 className="text-3xl font-bold tracking-tight md:text-4xl">Dashboard PDI</h1>
+                <p className="mt-2 max-w-3xl text-sm text-white/80 md:text-base">
+                  Leitura alinhada por fungo: temperatura do arroz, faixa ideal cadastrada e resultado final de produção.
                 </p>
               </div>
             </div>
 
-            <div className="flex flex-col gap-2 sm:flex-row">
-              <Button asChild className="rounded-2xl bg-white text-blue-700 shadow-sm hover:bg-blue-50">
-                <Link href="/experiments/new">
-                  <Plus className="mr-2 h-4 w-4" />
-                  Novo experimento
-                </Link>
-              </Button>
-              <Button asChild variant="outline" className="rounded-2xl border-white/40 bg-white/10 text-white hover:bg-white/20 hover:text-white">
-                <Link href="/tests">Ver testes</Link>
-              </Button>
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:min-w-[520px]">
+              <HeaderStat label="Experimentos" value={filteredExperiments.length} />
+              <HeaderStat label="Testes" value={totalTests} />
+              <HeaderStat label="Com produção" value={productionRows.length} />
+              <HeaderStat label="Concluídos" value={formatPercent(totalTests > 0 ? (completedTests / totalTests) * 100 : 0)} />
             </div>
           </div>
         </div>
       </section>
 
+      <section className="rounded-2xl border bg-card p-4 shadow-sm">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+          <div>
+            <h2 className="text-lg font-semibold">Filtros de análise</h2>
+            <p className="text-sm text-muted-foreground">
+              Os gráficos usam o fungo selecionado para comparar temperatura, faixa ideal e produção.
+            </p>
+          </div>
+
+          <div className="flex flex-wrap gap-2">
+            <Button
+              type="button"
+              size="sm"
+              variant={selectedFungusId === "all" ? "default" : "outline"}
+              className={selectedFungusId === "all" ? "bg-gradient-to-r from-blue-600 to-purple-600 text-white" : ""}
+              onClick={() => setSelectedFungusId("all")}
+            >
+              Todos os fungos
+            </Button>
+            {fungi.map((fungus) => (
+              <Button
+                key={fungus.id}
+                type="button"
+                size="sm"
+                variant={selectedFungusId === fungus.id ? "default" : "outline"}
+                className={selectedFungusId === fungus.id ? "bg-gradient-to-r from-blue-600 to-purple-600 text-white" : ""}
+                onClick={() => setSelectedFungusId(fungus.id)}
+              >
+                <span className="italic">{shortFungusName(fungus.scientificName)}</span>
+              </Button>
+            ))}
+          </div>
+        </div>
+
+        <div className="mt-4 flex flex-col gap-3 border-t pt-4 md:flex-row md:items-center md:justify-between">
+          <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
+            <span>Métrica principal:</span>
+            {(Object.keys(METRIC_LABEL) as ProductionMetric[]).map((item) => (
+              <Button
+                key={item}
+                type="button"
+                size="sm"
+                variant={metric === item ? "default" : "outline"}
+                className={metric === item ? "bg-gradient-to-r from-emerald-600 to-teal-600 text-white" : ""}
+                onClick={() => setMetric(item)}
+              >
+                {METRIC_LABEL[item]}
+              </Button>
+            ))}
+          </div>
+
+          {selectedFungus ? (
+            <div className="rounded-xl bg-muted px-3 py-2 text-sm">
+              <span className="font-medium italic">{selectedFungus.scientificName}</span>
+              <span className="ml-2 text-muted-foreground">
+                ótimo {formatNumber(selectedFungus.optimalTemperature)} ºC · faixa {formatNumber(selectedFungus.minTemperature)}–{formatNumber(selectedFungus.maxTemperature)} ºC
+              </span>
+            </div>
+          ) : (
+            <div className="rounded-xl bg-muted px-3 py-2 text-sm text-muted-foreground">
+              Selecione um fungo para visualizar linha ótima e faixa térmica específica.
+            </div>
+          )}
+        </div>
+      </section>
+
       {experiments.length === 0 ? (
-        <Card className="border-dashed bg-white/80 shadow-sm dark:bg-slate-950/60">
+        <Card>
           <CardHeader>
             <CardTitle>Nenhum dado disponível</CardTitle>
-            <CardDescription>Crie um experimento para começar a visualizar estatísticas.</CardDescription>
+            <CardDescription>Adicione experimentos para iniciar as análises de produção e temperatura.</CardDescription>
           </CardHeader>
         </Card>
       ) : (
-        <div className="space-y-5">
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-            <StatCard title="Experimentos" value={experiments.length} description={`${totalTests} teste(s) cadastrados`} icon={FlaskConical} tone="blue" />
-            <StatCard title="Concluídos" value={`${percent(completedTests, totalTests)}%`} description={`${completedTests} de ${totalTests} teste(s)`} icon={CheckCircle2} tone="green" />
-            <StatCard title="Dados médios" value={`${avgDataProgress}%`} description={`Mídias completas em média: ${avgMediaProgress}%`} icon={BarChart3} tone="purple" />
-            <StatCard
-              title="Temperaturas"
-              value={avgChamberTemperature !== undefined ? `${avgChamberTemperature.toFixed(1)} ºC` : "--"}
-              description={avgRiceTemperature !== undefined ? `Arroz médio: ${avgRiceTemperature.toFixed(1)} ºC` : "Sem dados de arroz"}
-              icon={Thermometer}
-              tone="amber"
+        <>
+          <section className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
+            <MetricCard
+              title="Pó úmido médio"
+              value={formatNumber(avgWet)}
+              description={`${productionRows.length} teste(s) com dado final`}
+              icon={PackageCheck}
+              tone="emerald"
             />
-          </div>
+            <MetricCard
+              title="Pó seco médio"
+              value={formatNumber(avgDry)}
+              description={isNumber(dryYield) ? `Rendimento seco/úmido: ${formatPercent(dryYield)}` : "Aguardando dados de úmido e seco"}
+              icon={Leaf}
+              tone="blue"
+            />
+            <MetricCard
+              title="Conídios médio"
+              value={formatNumber(avgConidium)}
+              description={isNumber(conidiumByDry) ? `${formatNumber(conidiumByDry, 2)} por unidade de pó seco` : "Aguardando pó seco e conídios"}
+              icon={Microscope}
+              tone="purple"
+            />
+            <MetricCard
+              title="Temperatura média do arroz"
+              value={`${formatNumber(avgRiceTemp)} ºC`}
+              description={`Câmara: ${formatNumber(avgChamberTemp)} ºC`}
+              icon={Thermometer}
+              tone="orange"
+            />
+          </section>
 
-          <div className="grid grid-cols-1 gap-5 xl:grid-cols-12">
-            <Card className="xl:col-span-8 border-slate-200/80 bg-white/90 shadow-sm dark:bg-slate-950/70">
-              <CardHeader className="pb-3">
-                <CardTitle className="flex items-center gap-2 text-lg">
-                  <Layers3 className="h-5 w-5 text-blue-600" />
-                  Progresso dos últimos experimentos
-                </CardTitle>
-                <CardDescription>Status dos testes por experimento.</CardDescription>
+          <section className="grid grid-cols-1 gap-6 xl:grid-cols-5">
+            <Card className="xl:col-span-3">
+              <CardHeader className="space-y-1">
+                <div className="flex items-center justify-between gap-3">
+                  <CardTitle className="flex items-center gap-2">
+                    <Activity className="h-5 w-5 text-blue-600" />
+                    Temperatura do arroz x {METRIC_LABEL[metric]}
+                  </CardTitle>
+                  <Badge variant="outline">Por teste</Badge>
+                </div>
+                <CardDescription>
+                  Cada ponto representa um teste. A temperatura usada é a média dos 14 dias do arroz.
+                </CardDescription>
               </CardHeader>
               <CardContent>
-                <div className="h-[320px]">
+                <div className="h-[360px]">
                   <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={progressByExperiment} margin={{ top: 8, right: 16, left: -20, bottom: 0 }}>
-                      <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                      <XAxis dataKey="name" tick={{ fontSize: 12 }} />
-                      <YAxis allowDecimals={false} tick={{ fontSize: 12 }} />
-                      <Tooltip content={<ChartTooltip />} />
-                      <Bar dataKey="Concluídos" stackId="a" fill="#10b981" radius={[0, 0, 4, 4]} />
-                      <Bar dataKey="Em andamento" stackId="a" fill="#2563eb" />
-                      <Bar dataKey="Inserir fotos" stackId="a" fill="#f59e0b" />
-                      <Bar dataKey="Pendentes" stackId="a" fill="#94a3b8" radius={[4, 4, 0, 0]} />
+                    <ScatterChart margin={{ top: 16, right: 28, bottom: 16, left: 12 }}>
+                      <CartesianGrid strokeDasharray="3 3" />
+                      <XAxis
+                        type="number"
+                        dataKey="avgRiceTemperature"
+                        name="Temp. arroz"
+                        unit=" ºC"
+                        domain={["dataMin - 1", "dataMax + 1"]}
+                      />
+                      <YAxis type="number" dataKey="productionValue" name={METRIC_LABEL[metric]} />
+                      <ZAxis type="number" dataKey="testNumber" range={[80, 220]} />
+                      <Tooltip content={<TemperatureProductionTooltip metric={metric} />} />
+                      {isNumber(selectedFungus?.minTemperature) && isNumber(selectedFungus?.maxTemperature) ? (
+                        <ReferenceArea
+                          x1={selectedFungus.minTemperature}
+                          x2={selectedFungus.maxTemperature}
+                          fill="#22c55e"
+                          fillOpacity={0.08}
+                        />
+                      ) : null}
+                      {isNumber(selectedFungus?.optimalTemperature) ? (
+                        <ReferenceLine
+                          x={selectedFungus.optimalTemperature}
+                          stroke="#16a34a"
+                          strokeDasharray="5 5"
+                          label={{ value: "ótima", position: "top" }}
+                        />
+                      ) : null}
+                      <Scatter name="Testes" data={temperatureProductionRows} fill="#2563eb">
+                        {temperatureProductionRows.map((entry, index) => (
+                          <Cell
+                            key={`cell-${entry.id}`}
+                            fill={entry.withinRange ? "#16a34a" : index % 2 === 0 ? "#2563eb" : "#9333ea"}
+                          />
+                        ))}
+                      </Scatter>
+                    </ScatterChart>
+                  </ResponsiveContainer>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card className="xl:col-span-2">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Thermometer className="h-5 w-5 text-orange-600" />
+                  Perfil térmico médio
+                </CardTitle>
+                <CardDescription>Temperatura média por dia nos testes filtrados.</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="h-[360px]">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <ComposedChart data={dailyTemperatureRows} margin={{ top: 16, right: 20, bottom: 8, left: 0 }}>
+                      <CartesianGrid strokeDasharray="3 3" />
+                      <XAxis dataKey="dayLabel" />
+                      <YAxis unit=" ºC" domain={["dataMin - 2", "dataMax + 2"]} />
+                      <Tooltip content={<DailyTemperatureTooltip />} />
+                      <Legend />
+                      {isNumber(selectedFungus?.minTemperature) && isNumber(selectedFungus?.maxTemperature) ? (
+                        <ReferenceArea y1={selectedFungus.minTemperature} y2={selectedFungus.maxTemperature} fill="#22c55e" fillOpacity={0.08} />
+                      ) : null}
+                      <Line type="monotone" dataKey="rice" name="Arroz" stroke="#f97316" strokeWidth={3} dot={{ r: 3 }} />
+                      <Line type="monotone" dataKey="chamber" name="Câmara" stroke="#2563eb" strokeWidth={2} dot={{ r: 3 }} />
+                      {isNumber(selectedFungus?.optimalTemperature) ? (
+                        <ReferenceLine y={selectedFungus.optimalTemperature} stroke="#16a34a" strokeDasharray="5 5" />
+                      ) : null}
+                    </ComposedChart>
+                  </ResponsiveContainer>
+                </div>
+                <p className="mt-3 text-xs text-muted-foreground">
+                  O arroz é a principal referência por ser o substrato de crescimento do fungo. A câmara aparece como controle ambiental.
+                </p>
+              </CardContent>
+            </Card>
+          </section>
+
+          <section className="grid grid-cols-1 gap-6 xl:grid-cols-5">
+            <Card className="xl:col-span-3">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <BarChart3 className="h-5 w-5 text-purple-600" />
+                  Produtividade por cepa
+                </CardTitle>
+                <CardDescription>Média por teste, agrupada por cepa dentro do filtro atual.</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="h-[340px]">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={strainSummary} margin={{ top: 14, right: 20, bottom: 28, left: 0 }}>
+                      <CartesianGrid strokeDasharray="3 3" />
+                      <XAxis dataKey="strain" angle={-15} textAnchor="end" height={56} />
+                      <YAxis />
+                      <Tooltip content={<StrainTooltip />} />
+                      <Legend />
+                      <Bar dataKey="avgWet" name="Pó úmido" fill="#10b981" radius={[6, 6, 0, 0]} />
+                      <Bar dataKey="avgDry" name="Pó seco" fill="#2563eb" radius={[6, 6, 0, 0]} />
+                      <Bar dataKey="avgConidium" name="Conídios" fill="#9333ea" radius={[6, 6, 0, 0]} />
                     </BarChart>
                   </ResponsiveContainer>
                 </div>
               </CardContent>
             </Card>
 
-            <Card className="xl:col-span-4 border-slate-200/80 bg-white/90 shadow-sm dark:bg-slate-950/70">
-              <CardHeader className="pb-3">
-                <CardTitle className="flex items-center gap-2 text-lg">
-                  <TestTube2 className="h-5 w-5 text-purple-600" />
-                  Situação dos testes
+            <Card className="xl:col-span-2">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <TrendingUp className="h-5 w-5 text-emerald-600" />
+                  Produção por experimento
                 </CardTitle>
-                <CardDescription>Distribuição atual por status.</CardDescription>
+                <CardDescription>Resultado médio dos testes com produção registrada.</CardDescription>
               </CardHeader>
               <CardContent>
-                <div className="h-[220px]">
+                <div className="h-[340px]">
                   <ResponsiveContainer width="100%" height="100%">
-                    <PieChart>
-                      <Pie data={statusData} dataKey="value" nameKey="name" innerRadius={58} outerRadius={86} paddingAngle={3}>
-                        {statusData.map((entry) => (
-                          <Cell key={entry.name} fill={entry.color} />
-                        ))}
-                      </Pie>
-                      <Tooltip content={<ChartTooltip />} />
-                    </PieChart>
+                    <ComposedChart data={productionByExperimentRows} margin={{ top: 14, right: 20, bottom: 24, left: 0 }}>
+                      <CartesianGrid strokeDasharray="3 3" />
+                      <XAxis dataKey="label" />
+                      <YAxis yAxisId="left" />
+                      <YAxis yAxisId="right" orientation="right" unit=" ºC" />
+                      <Tooltip content={<ExperimentProductionTooltip />} />
+                      <Legend />
+                      <Bar yAxisId="left" dataKey={METRIC_KEY[metric]} name={METRIC_LABEL[metric]} fill="#2563eb" radius={[6, 6, 0, 0]} />
+                      <Line yAxisId="right" type="monotone" dataKey="avgRiceTemperature" name="Temp. arroz" stroke="#f97316" strokeWidth={3} />
+                    </ComposedChart>
                   </ResponsiveContainer>
                 </div>
-                <div className="grid grid-cols-2 gap-2 text-xs">
-                  {STATUS_ORDER.map((status) => (
-                    <div key={status} className="flex items-center gap-2 rounded-xl border border-slate-200 p-2 dark:border-slate-800">
-                      <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: STATUS_COLORS[status] }} />
-                      <span className="truncate text-slate-600 dark:text-slate-300">{status}</span>
-                      <span className="ml-auto font-semibold">{allTests.filter((test) => test.status === status).length}</span>
+              </CardContent>
+            </Card>
+          </section>
+
+          <section className="grid grid-cols-1 gap-6 xl:grid-cols-5">
+            <Card className="xl:col-span-3">
+              <CardHeader>
+                <CardTitle>Resumo por fungo</CardTitle>
+                <CardDescription>Comparativo entre faixa térmica cadastrada, temperatura real e produção média.</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="overflow-x-auto">
+                  <table className="w-full min-w-[780px] text-sm">
+                    <thead>
+                      <tr className="border-b text-left text-xs uppercase tracking-wide text-muted-foreground">
+                        <th className="py-3 pr-4">Fungo</th>
+                        <th className="py-3 pr-4">Faixa / ótima</th>
+                        <th className="py-3 pr-4">Temp. arroz</th>
+                        <th className="py-3 pr-4">Dentro da faixa</th>
+                        <th className="py-3 pr-4">Pó seco méd.</th>
+                        <th className="py-3 pr-4">Conídios méd.</th>
+                        <th className="py-3 pr-0">Testes</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {fungusSummary.map((row) => (
+                        <tr key={row.fungusId} className="border-b last:border-0">
+                          <td className="py-3 pr-4 font-medium italic">{row.fungusName}</td>
+                          <td className="py-3 pr-4 text-muted-foreground">
+                            {formatNumber(row.minTemperature)}–{formatNumber(row.maxTemperature)} ºC · ótima {formatNumber(row.optimalTemperature)} ºC
+                          </td>
+                          <td className="py-3 pr-4">{formatNumber(row.avgRiceTemperature)} ºC</td>
+                          <td className="py-3 pr-4">
+                            <Badge variant="outline" className={row.withinRangePct >= 70 ? "border-emerald-200 bg-emerald-50 text-emerald-700" : "border-orange-200 bg-orange-50 text-orange-700"}>
+                              {formatPercent(row.withinRangePct)}
+                            </Badge>
+                          </td>
+                          <td className="py-3 pr-4">{formatNumber(row.avgDry)}</td>
+                          <td className="py-3 pr-4">{formatNumber(row.avgConidium)}</td>
+                          <td className="py-3 pr-0">{row.productionTests}/{row.totalTests}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card className="xl:col-span-2">
+              <CardHeader>
+                <CardTitle>Situação operacional</CardTitle>
+                <CardDescription>Continua mostrando andamento, mas como apoio à leitura produtiva.</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-5">
+                <div className="space-y-3">
+                  {statusRows.map((row) => (
+                    <div key={row.status} className="space-y-1">
+                      <div className="flex justify-between text-sm">
+                        <span className="font-medium">{row.status}</span>
+                        <span className="text-muted-foreground">{row.count} teste(s)</span>
+                      </div>
+                      <div className="h-2 overflow-hidden rounded-full bg-muted">
+                        <div className={row.className} style={{ width: `${row.percent}%` }} />
+                      </div>
                     </div>
                   ))}
                 </div>
-              </CardContent>
-            </Card>
-          </div>
 
-          <div className="grid grid-cols-1 gap-5 xl:grid-cols-12">
-            <Card className="xl:col-span-7 border-slate-200/80 bg-white/90 shadow-sm dark:bg-slate-950/70">
-              <CardHeader className="pb-3">
-                <CardTitle className="flex items-center gap-2 text-lg">
-                  <Thermometer className="h-5 w-5 text-blue-600" />
-                  Temperaturas por experimento
-                </CardTitle>
-                <CardDescription>Média dos 14 dias de câmara e arroz por experimento.</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="h-[300px]">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <LineChart data={temperatureByExperiment} margin={{ top: 8, right: 16, left: -20, bottom: 0 }}>
-                      <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                      <XAxis dataKey="name" tick={{ fontSize: 12 }} />
-                      <YAxis tick={{ fontSize: 12 }} unit="º" />
-                      <Tooltip content={<ChartTooltip />} />
-                      <Line type="monotone" dataKey="Câmara" stroke="#2563eb" strokeWidth={3} dot={{ r: 3 }} connectNulls />
-                      <Line type="monotone" dataKey="Arroz" stroke="#f59e0b" strokeWidth={3} dot={{ r: 3 }} connectNulls />
-                    </LineChart>
-                  </ResponsiveContainer>
-                </div>
-              </CardContent>
-            </Card>
-
-            <Card className="xl:col-span-5 border-slate-200/80 bg-white/90 shadow-sm dark:bg-slate-950/70">
-              <CardHeader className="pb-3">
-                <CardTitle className="flex items-center gap-2 text-lg">
-                  <Microscope className="h-5 w-5 text-emerald-600" />
-                  Resultados finais por cepa
-                </CardTitle>
-                <CardDescription>Médias de peso úmido, seco e conídio extraído.</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="h-[300px]">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <AreaChart data={weightByStrain} margin={{ top: 8, right: 16, left: -20, bottom: 0 }}>
-                      <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                      <XAxis dataKey="strain" tick={{ fontSize: 12 }} />
-                      <YAxis tick={{ fontSize: 12 }} />
-                      <Tooltip content={<ChartTooltip />} />
-                      <Area type="monotone" dataKey="Úmido" stroke="#2563eb" fill="#2563eb" fillOpacity={0.12} connectNulls />
-                      <Area type="monotone" dataKey="Seco" stroke="#7c3aed" fill="#7c3aed" fillOpacity={0.12} connectNulls />
-                      <Area type="monotone" dataKey="Conídio" stroke="#10b981" fill="#10b981" fillOpacity={0.12} connectNulls />
-                    </AreaChart>
-                  </ResponsiveContainer>
-                </div>
-              </CardContent>
-            </Card>
-          </div>
-
-          <div className="grid grid-cols-1 gap-5 xl:grid-cols-12">
-            <Card className="xl:col-span-7 border-slate-200/80 bg-white/90 shadow-sm dark:bg-slate-950/70">
-              <CardHeader className="pb-3">
-                <CardTitle className="flex items-center gap-2 text-lg">
-                  <TrendingUp className="h-5 w-5 text-purple-600" />
-                  Cepas em acompanhamento
-                </CardTitle>
-                <CardDescription>Volume de testes e avanço por cepa.</CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-3">
-                {strainData.length === 0 ? (
-                  <p className="text-sm text-slate-500">Sem dados suficientes para listar cepas.</p>
-                ) : (
-                  strainData.slice(0, 8).map((item) => (
-                    <div key={item.strain} className="rounded-2xl border border-slate-200 p-3 dark:border-slate-800">
-                      <div className="mb-2 flex items-center justify-between gap-3">
-                        <div className="min-w-0">
-                          <div className="truncate text-sm font-semibold text-slate-950 dark:text-white">{item.strain}</div>
-                          <div className="text-xs text-slate-500">
-                            {item.experimentos} experimento(s) • {item.concluidos} de {item.testes} teste(s) concluídos
-                          </div>
-                        </div>
-                        <Badge className="bg-gradient-to-r from-blue-600 to-purple-600 text-white">{item.progresso}%</Badge>
-                      </div>
-                      <div className="h-2 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">
-                        <div className="h-full rounded-full bg-gradient-to-r from-blue-500 to-purple-500" style={{ width: `${item.progresso}%` }} />
-                      </div>
+                <div className="rounded-2xl border bg-muted/40 p-4">
+                  <div className="flex items-start gap-3">
+                    <div className="rounded-xl bg-emerald-100 p-2 text-emerald-700">
+                      <Gauge className="h-5 w-5" />
                     </div>
-                  ))
-                )}
-              </CardContent>
-            </Card>
-
-            <Card className="xl:col-span-5 border-slate-200/80 bg-white/90 shadow-sm dark:bg-slate-950/70">
-              <CardHeader className="pb-3">
-                <CardTitle className="flex items-center gap-2 text-lg">
-                  <Clock3 className="h-5 w-5 text-blue-600" />
-                  Atividades recentes
-                </CardTitle>
-                <CardDescription>Últimos testes alterados no sistema.</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-3">
-                  {recentTests.length === 0 ? (
-                    <p className="text-sm text-slate-500">Nenhuma atividade recente.</p>
-                  ) : (
-                    recentTests.map((test) => (
-                      <Link
-                        key={test.id}
-                        href={test.viewHref}
-                        className="block rounded-2xl border border-slate-200 p-3 transition hover:border-blue-200 hover:bg-blue-50/40 dark:border-slate-800 dark:hover:bg-blue-950/20"
-                      >
-                        <div className="flex items-start justify-between gap-3">
-                          <div className="min-w-0">
-                            <div className="truncate text-sm font-semibold text-slate-950 dark:text-white">
-                              {expLabel(test.experimentNumber)} • Rep. {test.repetitionNumber} • Teste {test.testNumber}
-                            </div>
-                            <div className="mt-1 text-xs text-slate-500">
-                              {test.experimentStrain} • {formatDateTimeBR(test.updatedAt)}
-                            </div>
-                          </div>
-                          <Badge
-                            variant="outline"
-                            className="shrink-0"
-                            style={{ borderColor: STATUS_COLORS[test.status], color: STATUS_COLORS[test.status] }}
-                          >
-                            {test.status}
-                          </Badge>
-                        </div>
-                      </Link>
-                    ))
-                  )}
+                    <div>
+                      <p className="font-semibold">Melhor cepa por pó seco</p>
+                      <p className="text-sm text-muted-foreground">
+                        {mostProductiveStrain
+                          ? `${mostProductiveStrain.strain}: ${formatNumber(mostProductiveStrain.avgDry)} de pó seco médio em ${mostProductiveStrain.productionTests} teste(s).`
+                          : "Aguardando dados de produção final."}
+                      </p>
+                    </div>
+                  </div>
                 </div>
               </CardContent>
             </Card>
-          </div>
-
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-            <Card className="border-slate-200/80 bg-white/90 shadow-sm dark:bg-slate-950/70">
-              <CardContent className="flex items-center gap-3 p-4">
-                <div className="rounded-2xl bg-blue-50 p-3 text-blue-700 dark:bg-blue-950/30">
-                  <CalendarDays className="h-5 w-5" />
-                </div>
-                <div>
-                  <div className="text-xs uppercase tracking-[0.16em] text-slate-500">Último experimento</div>
-                  <div className="mt-1 font-semibold">{latestExperiment ? `${expLabel(latestExperiment.number)} • ${formatDateBR(latestExperiment.startDate)}` : "--"}</div>
-                </div>
-              </CardContent>
-            </Card>
-            <Card className="border-slate-200/80 bg-white/90 shadow-sm dark:bg-slate-950/70">
-              <CardContent className="flex items-center gap-3 p-4">
-                <div className="rounded-2xl bg-emerald-50 p-3 text-emerald-700 dark:bg-emerald-950/30">
-                  <ImageIcon className="h-5 w-5" />
-                </div>
-                <div>
-                  <div className="text-xs uppercase tracking-[0.16em] text-slate-500">Fotos completas</div>
-                  <div className="mt-1 font-semibold">{avgMediaProgress}% em média por experimento</div>
-                </div>
-              </CardContent>
-            </Card>
-            <Card className="border-slate-200/80 bg-white/90 shadow-sm dark:bg-slate-950/70">
-              <CardContent className="flex items-center gap-3 p-4">
-                <div className="rounded-2xl bg-amber-50 p-3 text-amber-700 dark:bg-amber-950/30">
-                  <FlaskConical className="h-5 w-5" />
-                </div>
-                <div>
-                  <div className="text-xs uppercase tracking-[0.16em] text-slate-500">Em atenção</div>
-                  <div className="mt-1 font-semibold">{pendingTests + insertPhotosTests} teste(s) pendente(s) ou sem fotos</div>
-                </div>
-              </CardContent>
-            </Card>
-          </div>
-        </div>
+          </section>
+        </>
       )}
+    </div>
+  )
+}
+
+function HeaderStat({ label, value }: { label: string; value: string | number }) {
+  return (
+    <div className="rounded-2xl bg-white/12 p-3 ring-1 ring-white/20 backdrop-blur">
+      <p className="text-xs uppercase tracking-wide text-white/70">{label}</p>
+      <p className="mt-1 text-2xl font-bold">{value}</p>
+    </div>
+  )
+}
+
+function MetricCard({
+  title,
+  value,
+  description,
+  icon: Icon,
+  tone,
+}: {
+  title: string
+  value: string | number
+  description: string
+  icon: typeof Microscope
+  tone: "emerald" | "blue" | "purple" | "orange"
+}) {
+  const toneClasses = {
+    emerald: "bg-emerald-100 text-emerald-700",
+    blue: "bg-blue-100 text-blue-700",
+    purple: "bg-purple-100 text-purple-700",
+    orange: "bg-orange-100 text-orange-700",
+  }
+
+  return (
+    <Card className="overflow-hidden shadow-sm">
+      <CardContent className="flex items-center gap-4 p-5">
+        <div className={`rounded-2xl p-3 ${toneClasses[tone]}`}>
+          <Icon className="h-6 w-6" />
+        </div>
+        <div className="min-w-0">
+          <p className="text-sm font-medium text-muted-foreground">{title}</p>
+          <p className="mt-1 text-2xl font-bold tracking-tight">{value}</p>
+          <p className="mt-1 text-xs text-muted-foreground">{description}</p>
+        </div>
+      </CardContent>
+    </Card>
+  )
+}
+
+function buildTemperatureProductionRows(data: ExperimentData[], metric: ProductionMetric) {
+  return data.flatMap((experiment) =>
+    (experiment.testsData ?? [])
+      .map((test) => {
+        const productionValue = getMetricValue(test, metric)
+        if (!isNumber(productionValue) || !isNumber(test.avgRiceTemperature)) return null
+
+        return {
+          id: test.id,
+          experimentNumber: experiment.number,
+          strain: experiment.strain,
+          fungusName: experiment.fungusName,
+          testLabel: `R${test.repetitionNumber ?? "-"} / T${test.testNumber ?? "-"}`,
+          avgRiceTemperature: Number(test.avgRiceTemperature.toFixed(1)),
+          avgChamberTemperature: isNumber(test.avgChamberTemperature) ? Number(test.avgChamberTemperature.toFixed(1)) : undefined,
+          productionValue: Number(productionValue.toFixed(1)),
+          wetWeight: test.wetWeight,
+          dryWeight: test.dryWeight,
+          extractedConidiumWeight: test.extractedConidiumWeight,
+          testNumber: test.testNumber ?? 1,
+          withinRange: withinRange(test.avgRiceTemperature, experiment.fungusMinTemperature, experiment.fungusMaxTemperature),
+        }
+      })
+      .filter(Boolean),
+  ) as Array<Record<string, any>>
+}
+
+function buildDailyTemperatureRows(data: ExperimentData[]) {
+  return Array.from({ length: 14 }, (_, index) => {
+    const day = index + 1
+    const chamberValues: number[] = []
+    const riceValues: number[] = []
+    const rangeMinValues: number[] = []
+    const rangeMaxValues: number[] = []
+
+    data.forEach((experiment) => {
+      if (isNumber(experiment.fungusMinTemperature)) rangeMinValues.push(experiment.fungusMinTemperature)
+      if (isNumber(experiment.fungusMaxTemperature)) rangeMaxValues.push(experiment.fungusMaxTemperature)
+
+      ;(experiment.testsData ?? []).forEach((test) => {
+        const dayTemp = (test.temperatureDays ?? []).find((item) => item.day === day)
+        if (isNumber(dayTemp?.chamber)) chamberValues.push(dayTemp.chamber)
+        if (isNumber(dayTemp?.rice)) riceValues.push(dayTemp.rice)
+      })
+    })
+
+    return {
+      day,
+      dayLabel: `${day}º`,
+      chamber: roundOrUndefined(average(chamberValues)),
+      rice: roundOrUndefined(average(riceValues)),
+      rangeMin: roundOrUndefined(average(rangeMinValues)),
+      rangeMax: roundOrUndefined(average(rangeMaxValues)),
+    }
+  })
+}
+
+function buildProductionByExperimentRows(data: ExperimentData[]) {
+  return data.map((experiment) => {
+    const tests = experiment.testsData ?? []
+    return {
+      label: `Exp. #${String(experiment.number).padStart(3, "0")}`,
+      strain: experiment.strain,
+      fungusName: experiment.fungusName,
+      wetWeight: roundOrUndefined(average(tests.map((test) => test.wetWeight))),
+      dryWeight: roundOrUndefined(average(tests.map((test) => test.dryWeight))),
+      extractedConidiumWeight: roundOrUndefined(average(tests.map((test) => test.extractedConidiumWeight))),
+      avgRiceTemperature: roundOrUndefined(average(tests.map((test) => test.avgRiceTemperature))),
+    }
+  })
+}
+
+function buildStrainSummary(data: ExperimentData[]) {
+  const map = new Map<string, any>()
+
+  data.forEach((experiment) => {
+    if (!map.has(experiment.strain)) {
+      map.set(experiment.strain, {
+        strain: experiment.strain,
+        fungusName: experiment.fungusName,
+        wetValues: [] as number[],
+        dryValues: [] as number[],
+        conidiumValues: [] as number[],
+        riceValues: [] as number[],
+        productionTests: 0,
+      })
+    }
+
+    const row = map.get(experiment.strain)
+    ;(experiment.testsData ?? []).forEach((test) => {
+      if (isNumber(test.wetWeight) || isNumber(test.dryWeight) || isNumber(test.extractedConidiumWeight)) row.productionTests += 1
+      if (isNumber(test.wetWeight)) row.wetValues.push(test.wetWeight)
+      if (isNumber(test.dryWeight)) row.dryValues.push(test.dryWeight)
+      if (isNumber(test.extractedConidiumWeight)) row.conidiumValues.push(test.extractedConidiumWeight)
+      if (isNumber(test.avgRiceTemperature)) row.riceValues.push(test.avgRiceTemperature)
+    })
+  })
+
+  return Array.from(map.values()).map((row) => ({
+    strain: row.strain,
+    fungusName: row.fungusName,
+    avgWet: roundOrUndefined(average(row.wetValues)),
+    avgDry: roundOrUndefined(average(row.dryValues)),
+    avgConidium: roundOrUndefined(average(row.conidiumValues)),
+    avgRiceTemperature: roundOrUndefined(average(row.riceValues)),
+    productionTests: row.productionTests,
+  }))
+}
+
+function buildFungusSummary(data: ExperimentData[]) {
+  const map = new Map<string, any>()
+
+  data.forEach((experiment) => {
+    const key = experiment.fungusId ?? "sem-fungo"
+    if (!map.has(key)) {
+      map.set(key, {
+        fungusId: key,
+        fungusName: experiment.fungusName,
+        optimalTemperature: experiment.fungusOptimalTemperature,
+        minTemperature: experiment.fungusMinTemperature,
+        maxTemperature: experiment.fungusMaxTemperature,
+        wetValues: [] as number[],
+        dryValues: [] as number[],
+        conidiumValues: [] as number[],
+        riceValues: [] as number[],
+        withinRangeCount: 0,
+        totalTemperatureTests: 0,
+        totalTests: 0,
+        productionTests: 0,
+      })
+    }
+
+    const row = map.get(key)
+    ;(experiment.testsData ?? []).forEach((test) => {
+      row.totalTests += 1
+      if (isNumber(test.avgRiceTemperature)) {
+        row.totalTemperatureTests += 1
+        row.riceValues.push(test.avgRiceTemperature)
+        if (withinRange(test.avgRiceTemperature, experiment.fungusMinTemperature, experiment.fungusMaxTemperature)) {
+          row.withinRangeCount += 1
+        }
+      }
+      if (isNumber(test.wetWeight) || isNumber(test.dryWeight) || isNumber(test.extractedConidiumWeight)) row.productionTests += 1
+      if (isNumber(test.wetWeight)) row.wetValues.push(test.wetWeight)
+      if (isNumber(test.dryWeight)) row.dryValues.push(test.dryWeight)
+      if (isNumber(test.extractedConidiumWeight)) row.conidiumValues.push(test.extractedConidiumWeight)
+    })
+  })
+
+  return Array.from(map.values()).map((row) => ({
+    fungusId: row.fungusId,
+    fungusName: row.fungusName,
+    optimalTemperature: row.optimalTemperature,
+    minTemperature: row.minTemperature,
+    maxTemperature: row.maxTemperature,
+    avgRiceTemperature: roundOrUndefined(average(row.riceValues)),
+    withinRangePct: row.totalTemperatureTests > 0 ? (row.withinRangeCount / row.totalTemperatureTests) * 100 : 0,
+    avgWet: roundOrUndefined(average(row.wetValues)),
+    avgDry: roundOrUndefined(average(row.dryValues)),
+    avgConidium: roundOrUndefined(average(row.conidiumValues)),
+    totalTests: row.totalTests,
+    productionTests: row.productionTests,
+  }))
+}
+
+function buildStatusRows(tests: UITest[]) {
+  const statuses = ["Concluído", "Em andamento", "Inserir Fotos", "Pendente"] as const
+  const total = tests.length || 1
+
+  const classes = {
+    "Concluído": "h-full rounded-full bg-emerald-500",
+    "Em andamento": "h-full rounded-full bg-blue-500",
+    "Inserir Fotos": "h-full rounded-full bg-orange-500",
+    Pendente: "h-full rounded-full bg-slate-400",
+  }
+
+  return statuses.map((status) => {
+    const count = tests.filter((test) => test.status === status).length
+    return { status, count, percent: (count / total) * 100, className: classes[status] }
+  })
+}
+
+function roundOrUndefined(value: number | undefined): number | undefined {
+  return isNumber(value) ? Number(value.toFixed(1)) : undefined
+}
+
+function TemperatureProductionTooltip({ active, payload, metric }: any & { metric: ProductionMetric }) {
+  if (!active || !payload?.length) return null
+  const row = payload[0]?.payload
+  return (
+    <div className="rounded-xl border bg-background p-3 text-sm shadow-lg">
+      <p className="font-semibold">Exp. #{row.experimentNumber} · {row.testLabel}</p>
+      <p className="text-muted-foreground"><span className="italic">{row.fungusName}</span> · {row.strain}</p>
+      <div className="mt-2 space-y-1">
+        <p>Temp. arroz: <span className="font-medium">{formatNumber(row.avgRiceTemperature)} ºC</span></p>
+        <p>Temp. câmara: <span className="font-medium">{formatNumber(row.avgChamberTemperature)} ºC</span></p>
+        <p>{METRIC_LABEL[metric]}: <span className="font-medium">{formatNumber(row.productionValue)}</span></p>
+        <p>Pó úmido/seco/conídios: <span className="font-medium">{formatNumber(row.wetWeight)} / {formatNumber(row.dryWeight)} / {formatNumber(row.extractedConidiumWeight)}</span></p>
+      </div>
+    </div>
+  )
+}
+
+function DailyTemperatureTooltip({ active, payload, label }: any) {
+  if (!active || !payload?.length) return null
+  const row = payload[0]?.payload
+  return (
+    <div className="rounded-xl border bg-background p-3 text-sm shadow-lg">
+      <p className="font-semibold">{label} dia</p>
+      <p>Arroz: <span className="font-medium">{formatNumber(row.rice)} ºC</span></p>
+      <p>Câmara: <span className="font-medium">{formatNumber(row.chamber)} ºC</span></p>
+      {isNumber(row.rangeMin) && isNumber(row.rangeMax) ? (
+        <p className="text-muted-foreground">Faixa: {formatNumber(row.rangeMin)}–{formatNumber(row.rangeMax)} ºC</p>
+      ) : null}
+    </div>
+  )
+}
+
+function StrainTooltip({ active, payload, label }: any) {
+  if (!active || !payload?.length) return null
+  const row = payload[0]?.payload
+  return (
+    <div className="rounded-xl border bg-background p-3 text-sm shadow-lg">
+      <p className="font-semibold">{label}</p>
+      <p className="italic text-muted-foreground">{row.fungusName}</p>
+      <div className="mt-2 space-y-1">
+        <p>Pó úmido: <span className="font-medium">{formatNumber(row.avgWet)}</span></p>
+        <p>Pó seco: <span className="font-medium">{formatNumber(row.avgDry)}</span></p>
+        <p>Conídios: <span className="font-medium">{formatNumber(row.avgConidium)}</span></p>
+        <p>Temp. arroz: <span className="font-medium">{formatNumber(row.avgRiceTemperature)} ºC</span></p>
+      </div>
+    </div>
+  )
+}
+
+function ExperimentProductionTooltip({ active, payload, label }: any) {
+  if (!active || !payload?.length) return null
+  const row = payload[0]?.payload
+  return (
+    <div className="rounded-xl border bg-background p-3 text-sm shadow-lg">
+      <p className="font-semibold">{label}</p>
+      <p className="text-muted-foreground">{row.strain} · <span className="italic">{row.fungusName}</span></p>
+      <div className="mt-2 space-y-1">
+        <p>Pó úmido: <span className="font-medium">{formatNumber(row.wetWeight)}</span></p>
+        <p>Pó seco: <span className="font-medium">{formatNumber(row.dryWeight)}</span></p>
+        <p>Conídios: <span className="font-medium">{formatNumber(row.extractedConidiumWeight)}</span></p>
+        <p>Temp. arroz: <span className="font-medium">{formatNumber(row.avgRiceTemperature)} ºC</span></p>
+      </div>
     </div>
   )
 }

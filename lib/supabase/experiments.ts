@@ -7,6 +7,9 @@ type DbExperimentRow = {
   id: string
   number: number
   strain: string
+  fungus_id?: string | null
+  strain_acronym?: string | null
+  strain_variable?: string | null
   start_date: string // date => string (YYYY-MM-DD)
   test_count: number
   repetition_count: number
@@ -99,6 +102,9 @@ export type Experiment = {
   id: string
   number: number
   strain: string
+  fungusId: string | null
+  strainAcronym: string | null
+  strainVariable: string | null
   startDate: string
   testCount: number
   repetitionCount: number
@@ -191,6 +197,9 @@ function mapExperiment(row: DbExperimentRow): Experiment {
     id: row.id,
     number: row.number,
     strain: row.strain,
+    fungusId: row.fungus_id ?? null,
+    strainAcronym: row.strain_acronym ?? null,
+    strainVariable: row.strain_variable ?? null,
     startDate: row.start_date,
     testCount: row.test_count,
     repetitionCount: row.repetition_count,
@@ -394,6 +403,9 @@ export async function getExperimentsWithTests(supabase: SupabaseClient): Promise
         id,
         number,
         strain,
+        fungus_id,
+        strain_acronym,
+        strain_variable,
         start_date,
         test_count,
         repetition_count,

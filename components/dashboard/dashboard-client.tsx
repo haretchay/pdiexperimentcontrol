@@ -804,7 +804,13 @@ function roundOrUndefined(value: number | undefined): number | undefined {
   return isNumber(value) ? Number(value.toFixed(1)) : undefined
 }
 
-function TemperatureProductionTooltip({ active, payload, metric }: any & { metric: ProductionMetric }) {
+type TemperatureProductionTooltipProps = {
+  active?: boolean
+  payload?: Array<{ payload?: any }>
+  metric: ProductionMetric
+}
+
+function TemperatureProductionTooltip({ active, payload, metric }: TemperatureProductionTooltipProps) {
   if (!active || !payload?.length) return null
   const row = payload[0]?.payload
   return (

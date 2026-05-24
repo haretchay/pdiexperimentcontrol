@@ -8,7 +8,16 @@ export type ExperimentRow = {
   repetition_count: number
 }
 
+export type TestPhotoRow = {
+  day: number
+  storage_path: string | null
+  created_at?: string | null
+  kind?: string | null
+  photo_index?: number | null
+}
+
 export type TestRow = {
+  [key: string]: unknown
   id: string
   experiment_id: string
   repetition_number: number
@@ -16,11 +25,23 @@ export type TestRow = {
   test_type: string | null
   unit: string | null
   requisition: string | null
+  test_lot: string | null
+  matrix_lot: string | null
   strain: string | null
+  mp_lot: string | null
+  average_humidity: number | null
+  bozo: number | null
+  sensorial: number | null
+  quantity: number | null
+  wet_weight: number | null
+  dry_weight: number | null
+  extracted_conidium_weight: number | null
   date_7_day: string | null
   date_14_day: string | null
   created_at: string
+  updated_at?: string | null
   experiments?: ExperimentRow | null
+  test_photos?: TestPhotoRow[] | null
 }
 
 export async function getAllTests(supabase: SupabaseClient) {
@@ -29,30 +50,27 @@ export async function getAllTests(supabase: SupabaseClient) {
       .from("tests")
       .select(
         `
-        id,
-        experiment_id,
-        repetition_number,
-        test_number,
-        test_type,
-        unit,
-        requisition,
-        strain,
-        date_7_day,
-        date_14_day,
-        created_at,
+        *,
         experiments (
           number,
           strain,
           start_date,
           test_count,
           repetition_count
+        ),
+        test_photos (
+          day,
+          storage_path,
+          created_at,
+          kind,
+          photo_index
         )
       `,
       )
       .order("created_at", { ascending: false })
 
     if (error) {
-      console.error("[v0] Supabase query error:", error)
+      console.error("[Tests] Supabase query error:", error)
       return []
     }
 
@@ -60,14 +78,13 @@ export async function getAllTests(supabase: SupabaseClient) {
       Omit<TestRow, "experiments"> & { experiments?: ExperimentRow[] | ExperimentRow | null }
     >
 
-    // Normaliza para sempre ficar ExperimentRow | null
     return raw.map((row) => {
       const exp = row.experiments
       const normalized = Array.isArray(exp) ? (exp[0] ?? null) : (exp ?? null)
       return { ...row, experiments: normalized }
     }) as TestRow[]
   } catch (error) {
-    console.error("[v0] Error fetching tests:", error)
+    console.error("[Tests] Error fetching tests:", error)
     return []
   }
 }

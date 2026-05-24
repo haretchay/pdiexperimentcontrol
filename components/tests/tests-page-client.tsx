@@ -5,7 +5,6 @@ import { useRouter } from "next/navigation"
 import {
   BarChart3,
   CalendarDays,
-  CheckCircle2,
   Clock3,
   Edit3,
   Eye,
@@ -132,13 +131,6 @@ function progressClasses(status: UITestRow["status"]) {
   return "bg-slate-400"
 }
 
-function statusIcon(status: UITestRow["status"]) {
-  if (status === "Concluído") return <CheckCircle2 className="h-4 w-4" />
-  if (status === "Em andamento") return <Clock3 className="h-4 w-4" />
-  if (status === "Inserir Fotos") return <ImageIcon className="h-4 w-4" />
-  return <TimerReset className="h-4 w-4" />
-}
-
 function FilterButton({
   active,
   children,
@@ -175,12 +167,9 @@ export function TestsPageClient({ initialTests }: { initialTests: UITestRow[] })
     const total = initialTests.length
     const completed = initialTests.filter((test) => test.status === "Concluído").length
     const inProgress = initialTests.filter((test) => test.status === "Em andamento").length
-    const needsPhotos = initialTests.filter((test) => test.status === "Inserir Fotos").length
-    const pending = initialTests.filter((test) => test.status === "Pendente").length
-    const mediaComplete = initialTests.filter((test) => test.photos7Count > 0 && test.photos14Count > 0).length
     const dataAvg = total > 0 ? Math.round(initialTests.reduce((sum, test) => sum + test.dataProgressPct, 0) / total) : 0
 
-    return { total, completed, inProgress, needsPhotos, pending, mediaComplete, dataAvg }
+    return { total, completed, inProgress, dataAvg }
   }, [initialTests])
 
   const filteredTests = useMemo(() => {
@@ -263,45 +252,6 @@ export function TestsPageClient({ initialTests }: { initialTests: UITestRow[] })
             </div>
           </div>
         </div>
-      </section>
-
-      <section className="mb-5 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-        <Card className="border-emerald-100 bg-emerald-50/70 shadow-sm">
-          <CardContent className="flex items-center justify-between p-4">
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-wide text-emerald-700">Concluídos</p>
-              <p className="mt-1 text-2xl font-bold text-emerald-800">{stats.completed}</p>
-            </div>
-            <CheckCircle2 className="h-8 w-8 text-emerald-600" />
-          </CardContent>
-        </Card>
-        <Card className="border-blue-100 bg-blue-50/70 shadow-sm">
-          <CardContent className="flex items-center justify-between p-4">
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-wide text-blue-700">Em andamento</p>
-              <p className="mt-1 text-2xl font-bold text-blue-800">{stats.inProgress}</p>
-            </div>
-            <Clock3 className="h-8 w-8 text-blue-600" />
-          </CardContent>
-        </Card>
-        <Card className="border-amber-100 bg-amber-50/70 shadow-sm">
-          <CardContent className="flex items-center justify-between p-4">
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-wide text-amber-700">Inserir fotos</p>
-              <p className="mt-1 text-2xl font-bold text-amber-800">{stats.needsPhotos}</p>
-            </div>
-            <ImageIcon className="h-8 w-8 text-amber-600" />
-          </CardContent>
-        </Card>
-        <Card className="border-slate-200 bg-white shadow-sm">
-          <CardContent className="flex items-center justify-between p-4">
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Pendentes</p>
-              <p className="mt-1 text-2xl font-bold text-slate-800">{stats.pending}</p>
-            </div>
-            <TimerReset className="h-8 w-8 text-slate-500" />
-          </CardContent>
-        </Card>
       </section>
 
       <Card className="mb-5 border-slate-200/80 bg-white/90 shadow-sm backdrop-blur">

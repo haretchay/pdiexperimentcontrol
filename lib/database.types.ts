@@ -660,6 +660,50 @@ export interface Database {
           },
         ]
       }
+      fungi: {
+        Row: {
+          id: string
+          scientific_name: string
+          optimal_temperature: number
+          min_temperature: number
+          max_temperature: number
+          acronyms: string[]
+          created_by: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          scientific_name: string
+          optimal_temperature: number
+          min_temperature: number
+          max_temperature: number
+          acronyms?: string[]
+          created_by?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          scientific_name?: string
+          optimal_temperature?: number
+          min_temperature?: number
+          max_temperature?: number
+          acronyms?: string[]
+          created_by?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "fungi_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       user_invitations: {
         Row: {
           id: string

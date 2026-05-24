@@ -480,19 +480,28 @@ export function MediaPageClient() {
                             </Button>
                           </DialogTrigger>
 
-                          <DialogContent className="max-w-5xl">
-                            <DialogTitle>{title}</DialogTitle>
-                            <DialogDescription asChild>
-                              <div className="space-y-3">
-                                <div className="text-xs text-slate-500">
-                                  Data: <span className="font-medium text-slate-950 dark:text-white">{fmtDate(referenceDate)}</span> • Cepa:{" "}
-                                  <span className="font-medium text-slate-950 dark:text-white">{strain}</span> • Unidade:{" "}
-                                  <span className="font-medium text-slate-950 dark:text-white">{photo.test.unit ?? "-"}</span>
+                          <DialogContent className="h-[100dvh] w-screen max-w-none translate-x-[-50%] translate-y-[-50%] gap-0 border-0 bg-slate-950 p-0 text-white shadow-none sm:rounded-none">
+                            <DialogTitle className="sr-only">{title}</DialogTitle>
+                            <DialogDescription className="sr-only">Visualização ampliada da foto em tela cheia.</DialogDescription>
+
+                            <div className="flex h-full min-h-0 flex-col">
+                              <div className="shrink-0 border-b border-white/10 bg-slate-950/95 px-4 py-3 pr-14 sm:px-6">
+                                <div className="text-base font-semibold text-white sm:text-xl">{title}</div>
+                                <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-xs text-slate-300 sm:text-sm">
+                                  <span>Data: <span className="font-medium text-white">{fmtDate(referenceDate)}</span></span>
+                                  <span>Cepa: <span className="font-medium text-white">{strain}</span></span>
+                                  <span>Unidade: <span className="font-medium text-white">{photo.test.unit ?? "-"}</span></span>
                                 </div>
-                                {photo.url ? <ZoomableImage src={photo.url} title={title} /> : null}
-                                {photo.day === 14 ? <FinalMetrics photo={photo} /> : null}
                               </div>
-                            </DialogDescription>
+
+                              {photo.url ? <ZoomableImage src={photo.url} title={title} className="min-h-0 flex-1" /> : null}
+
+                              {photo.day === 14 ? (
+                                <div className="shrink-0 border-t border-white/10 bg-slate-950/95 px-4 py-3 sm:px-6">
+                                  <FinalMetrics photo={photo} />
+                                </div>
+                              ) : null}
+                            </div>
                           </DialogContent>
                         </Dialog>
                       </div>

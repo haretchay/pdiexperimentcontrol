@@ -100,32 +100,44 @@ export function PhotoGridDisplay({ photos, annotations, testInfo, showCaption = 
             </div>
           </DialogTrigger>
 
-          <DialogContent className="max-w-5xl">
-            <DialogTitle>{`Foto ${testInfo.day}º dia`}</DialogTitle>
-            <DialogDescription className="sr-only">Visualização ampliada da foto.</DialogDescription>
+          <DialogContent className="h-[100dvh] w-screen max-w-none translate-x-[-50%] translate-y-[-50%] gap-0 border-0 bg-slate-950 p-0 text-white shadow-none sm:rounded-none">
+            <DialogTitle className="sr-only">{`Foto ${testInfo.day}º dia`}</DialogTitle>
+            <DialogDescription className="sr-only">Visualização ampliada da foto em tela cheia.</DialogDescription>
 
-            <ZoomableImage src={photo0 || "/placeholder.svg"} title={`Foto ${testInfo.day}º dia`} />
-
-            {hasAnn0 && (
-              <div className="mt-3 rounded-lg border bg-muted/30 p-4">
-                <div className="flex items-center justify-between gap-3 mb-2">
-                  <div className="font-semibold">Legendas</div>
-                  <div className="text-xs text-muted-foreground">
-                    {ann0.filter((a) => (a.caption ?? "").trim().length > 0).length} item(ns)
-                  </div>
+            <div className="flex h-full min-h-0 flex-col">
+              <div className="shrink-0 border-b border-white/10 bg-slate-950/95 px-4 py-3 pr-14 sm:px-6">
+                <div className="text-base font-semibold text-white sm:text-xl">{`Foto ${testInfo.day}º dia`}</div>
+                <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-xs text-slate-300 sm:text-sm">
+                  <span>Exp. #{testInfo.experimentNumber}</span>
+                  <span>Rep. {testInfo.repetitionNumber}</span>
+                  <span>Teste {testInfo.testNumber}</span>
+                  <span>Cepa: <span className="font-medium text-white">{testInfo.strain || "N/A"}</span></span>
                 </div>
-                <ul className="space-y-2 text-sm">
-                  {ann0
-                    .filter((a) => (a.caption ?? "").trim().length > 0)
-                    .map((a, i) => (
-                      <li key={i} className="flex items-start gap-2">
-                        <span className="mt-1 h-2.5 w-2.5 rounded-full shrink-0" style={{ backgroundColor: a.color || "#FF0033" }} />
-                        <span className="leading-snug">{a.caption}</span>
-                      </li>
-                    ))}
-                </ul>
               </div>
-            )}
+
+              <ZoomableImage src={photo0 || "/placeholder.svg"} title={`Foto ${testInfo.day}º dia`} className="min-h-0 flex-1" />
+
+              {hasAnn0 && (
+                <div className="max-h-[30dvh] shrink-0 overflow-y-auto border-t border-white/10 bg-slate-950/95 px-4 py-3 sm:px-6">
+                  <div className="mb-2 flex items-center justify-between gap-3">
+                    <div className="font-semibold text-white">Legendas</div>
+                    <div className="text-xs text-slate-400">
+                      {ann0.filter((a) => (a.caption ?? "").trim().length > 0).length} item(ns)
+                    </div>
+                  </div>
+                  <ul className="space-y-2 text-sm text-slate-200">
+                    {ann0
+                      .filter((a) => (a.caption ?? "").trim().length > 0)
+                      .map((a, i) => (
+                        <li key={i} className="flex items-start gap-2">
+                          <span className="mt-1 h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: a.color || "#FF0033" }} />
+                          <span className="leading-snug">{a.caption}</span>
+                        </li>
+                      ))}
+                  </ul>
+                </div>
+              )}
+            </div>
           </DialogContent>
         </Dialog>
       ) : (
@@ -158,32 +170,44 @@ export function PhotoGridDisplay({ photos, annotations, testInfo, showCaption = 
                   </div>
                 </DialogTrigger>
 
-                <DialogContent className="max-w-5xl">
-                  <DialogTitle>{`Foto ${index + 1} • ${testInfo.day}º dia`}</DialogTitle>
-                  <DialogDescription className="sr-only">Visualização ampliada da foto.</DialogDescription>
+                <DialogContent className="h-[100dvh] w-screen max-w-none translate-x-[-50%] translate-y-[-50%] gap-0 border-0 bg-slate-950 p-0 text-white shadow-none sm:rounded-none">
+                  <DialogTitle className="sr-only">{`Foto ${index + 1} • ${testInfo.day}º dia`}</DialogTitle>
+                  <DialogDescription className="sr-only">Visualização ampliada da foto em tela cheia.</DialogDescription>
 
-                  <ZoomableImage src={photo || "/placeholder.svg"} title={`Foto ${index + 1}`} />
-
-                  {hasAnn && (
-                    <div className="mt-3 rounded-lg border bg-muted/30 p-4">
-                      <div className="flex items-center justify-between gap-3 mb-2">
-                        <div className="font-semibold">Legendas da Foto {index + 1}</div>
-                        <div className="text-xs text-muted-foreground">
-                          {ann.filter((a) => (a.caption ?? "").trim().length > 0).length} item(ns)
-                        </div>
+                  <div className="flex h-full min-h-0 flex-col">
+                    <div className="shrink-0 border-b border-white/10 bg-slate-950/95 px-4 py-3 pr-14 sm:px-6">
+                      <div className="text-base font-semibold text-white sm:text-xl">{`Foto ${index + 1} • ${testInfo.day}º dia`}</div>
+                      <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-xs text-slate-300 sm:text-sm">
+                        <span>Exp. #{testInfo.experimentNumber}</span>
+                        <span>Rep. {testInfo.repetitionNumber}</span>
+                        <span>Teste {testInfo.testNumber}</span>
+                        <span>Cepa: <span className="font-medium text-white">{testInfo.strain || "N/A"}</span></span>
                       </div>
-                      <ul className="space-y-2 text-sm">
-                        {ann
-                          .filter((a) => (a.caption ?? "").trim().length > 0)
-                          .map((a, i) => (
-                            <li key={i} className="flex items-start gap-2">
-                              <span className="mt-1 h-2.5 w-2.5 rounded-full shrink-0" style={{ backgroundColor: a.color || "#FF0033" }} />
-                              <span className="leading-snug">{a.caption}</span>
-                            </li>
-                          ))}
-                      </ul>
                     </div>
-                  )}
+
+                    <ZoomableImage src={photo || "/placeholder.svg"} title={`Foto ${index + 1}`} className="min-h-0 flex-1" />
+
+                    {hasAnn && (
+                      <div className="max-h-[30dvh] shrink-0 overflow-y-auto border-t border-white/10 bg-slate-950/95 px-4 py-3 sm:px-6">
+                        <div className="mb-2 flex items-center justify-between gap-3">
+                          <div className="font-semibold text-white">Legendas da Foto {index + 1}</div>
+                          <div className="text-xs text-slate-400">
+                            {ann.filter((a) => (a.caption ?? "").trim().length > 0).length} item(ns)
+                          </div>
+                        </div>
+                        <ul className="space-y-2 text-sm text-slate-200">
+                          {ann
+                            .filter((a) => (a.caption ?? "").trim().length > 0)
+                            .map((a, i) => (
+                              <li key={i} className="flex items-start gap-2">
+                                <span className="mt-1 h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: a.color || "#FF0033" }} />
+                                <span className="leading-snug">{a.caption}</span>
+                              </li>
+                            ))}
+                        </ul>
+                      </div>
+                    )}
+                  </div>
                 </DialogContent>
               </Dialog>
             )

@@ -42,6 +42,14 @@ function clampCount(value: number) {
   return Math.max(MIN_COUNT, Math.min(MAX_COUNT, Math.round(value)))
 }
 
+function getTodayDateInputValue() {
+  const today = new Date()
+  const year = today.getFullYear()
+  const month = String(today.getMonth() + 1).padStart(2, "0")
+  const day = String(today.getDate()).padStart(2, "0")
+  return `${year}-${month}-${day}`
+}
+
 function CountSelector({
   label,
   description,
@@ -121,7 +129,7 @@ export default function NewExperimentPage() {
   const [loading, setLoading] = useState(false)
   const [initialLoading, setInitialLoading] = useState(true)
   const [nextNumber, setNextNumber] = useState<number>(1)
-  const [startDate, setStartDate] = useState("")
+  const [startDate, setStartDate] = useState(() => getTodayDateInputValue())
   const [testCount, setTestCount] = useState(1)
   const [repetitionCount, setRepetitionCount] = useState(1)
   const [fungi, setFungi] = useState<FungusOption[]>([])

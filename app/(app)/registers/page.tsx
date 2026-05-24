@@ -1,5 +1,5 @@
 import Link from "next/link"
-import { ArrowRight, FileClock, ShieldCheck, UserCog, UserRound } from "lucide-react"
+import { ArrowRight, FileClock, Settings2, ShieldCheck, UserCog, UserRound } from "lucide-react"
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { PageTitle } from "@/components/page-title"
@@ -55,6 +55,26 @@ export default function RegistersPage() {
             <CardContent>
               <div className="inline-flex items-center text-sm font-medium text-blue-700 group-hover:text-purple-700 dark:text-blue-300 dark:group-hover:text-purple-300">
                 Abrir usuários <ArrowRight className="ml-1 h-4 w-4 transition-transform group-hover:translate-x-1" />
+              </div>
+            </CardContent>
+          </Card>
+        </Link>
+
+
+        <Link href="/registers/parameters" className="group block">
+          <Card className="h-full rounded-2xl border-blue-100/80 shadow-sm transition-all hover:-translate-y-0.5 hover:border-blue-300 hover:shadow-lg dark:border-slate-800 dark:hover:border-blue-800">
+            <CardHeader>
+              <div className="mb-3 flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-blue-600 to-purple-700 text-white shadow-md">
+                <Settings2 className="h-6 w-6" />
+              </div>
+              <CardTitle>Cadastro Parâmetros</CardTitle>
+              <CardDescription>
+                Acesse os cadastros diversos do sistema, como fungos, siglas e parâmetros técnicos.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="inline-flex items-center text-sm font-medium text-blue-700 group-hover:text-purple-700 dark:text-blue-300 dark:group-hover:text-purple-300">
+                Abrir parâmetros <ArrowRight className="ml-1 h-4 w-4 transition-transform group-hover:translate-x-1" />
               </div>
             </CardContent>
           </Card>

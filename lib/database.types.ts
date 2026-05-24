@@ -73,6 +73,9 @@ export interface Database {
           id: string
           number: number
           strain: string
+          fungus_id: string | null
+          strain_acronym: string | null
+          strain_variable: string | null
           start_date: string
           test_count: number
           repetition_count: number
@@ -85,6 +88,9 @@ export interface Database {
           id?: string
           number: number
           strain: string
+          fungus_id?: string | null
+          strain_acronym?: string | null
+          strain_variable?: string | null
           start_date: string
           test_count: number
           repetition_count: number
@@ -97,6 +103,9 @@ export interface Database {
           id?: string
           number?: number
           strain?: string
+          fungus_id?: string | null
+          strain_acronym?: string | null
+          strain_variable?: string | null
           start_date?: string
           test_count?: number
           repetition_count?: number
@@ -111,6 +120,13 @@ export interface Database {
             columns: ["created_by"]
             isOneToOne: false
             referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "experiments_fungus_id_fkey"
+            columns: ["fungus_id"]
+            isOneToOne: false
+            referencedRelation: "fungi"
             referencedColumns: ["id"]
           },
           {

@@ -7,6 +7,7 @@ import { useParams, useRouter } from "next/navigation"
 import {
   AlertTriangle,
   ArrowLeft,
+  BarChart3,
   CalendarDays,
   CheckCircle2,
   ClipboardList,
@@ -19,6 +20,7 @@ import {
   LockKeyhole,
   Share2,
   Sparkles,
+  Thermometer,
   TrendingUp,
 } from "lucide-react"
 
@@ -27,7 +29,6 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Badge } from "@/components/ui/badge"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { ExportExperimentQRCodesButton } from "@/components/experiments/qr-export-buttons"
-import { EditExperimentDialog } from "@/components/experiments/edit-experiment-dialog"
 
 import { useIsMobile } from "@/hooks/use-mobile"
 import { useToast } from "@/hooks/use-toast"
@@ -42,9 +43,6 @@ type DbExperimentRow = {
   test_count: number
   start_date: string
   strain: string
-  fungus_id?: string | null
-  strain_acronym?: string | null
-  strain_variable?: string | null
 }
 
 type DbTestPhotoRow = {
@@ -101,9 +99,6 @@ type ExperimentUI = {
   testTypes: string[] // (por enquanto vazio; o tipo real do teste vem de tests.test_type)
   startDate: string
   strain: string
-  fungusId?: string | null
-  strainAcronym?: string | null
-  strainVariable?: string | null
   totalTests: number
 }
 
@@ -410,9 +405,6 @@ export default function ExperimentDetailPage() {
           testTypes: [], // por enquanto não vem de experiments
           startDate: expRow.start_date,
           strain: expRow.strain,
-          fungusId: expRow.fungus_id ?? null,
-          strainAcronym: expRow.strain_acronym ?? null,
-          strainVariable: expRow.strain_variable ?? null,
           totalTests: expRow.repetition_count * expRow.test_count,
         }
 
@@ -956,24 +948,12 @@ export default function ExperimentDetailPage() {
                   </div>
                 </div>
 
-                <div className="flex flex-col gap-2 sm:min-w-[220px] lg:items-stretch lg:justify-end">
+                <div className="flex flex-wrap gap-2 lg:justify-end">
                   <ExportExperimentQRCodesButton
                     experimentId={experiment.id}
                     experimentNumber={experiment.number}
                     experimentStrain={experiment.strain}
                     tests={qrTests}
-                  />
-                  <EditExperimentDialog
-                    experimentId={experiment.id}
-                    experimentNumber={experiment.number}
-                    startDate={experiment.startDate}
-                    testCount={experiment.testCount}
-                    repetitionCount={experiment.repetitionCount}
-                    strain={experiment.strain}
-                    fungusId={experiment.fungusId}
-                    strainAcronym={experiment.strainAcronym}
-                    strainVariable={experiment.strainVariable}
-                    onSaved={() => window.location.reload()}
                   />
                 </div>
               </div>
@@ -1012,14 +992,14 @@ export default function ExperimentDetailPage() {
 
             <div className="grid grid-cols-2 gap-3">
               <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-950">
-                <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Dados preenchidos</p>
+                <p className="min-w-0 truncate text-[10px] font-medium uppercase tracking-wide text-muted-foreground sm:text-xs">Dados preenchidos</p>
                 <div className="mt-2 flex items-end justify-between gap-2">
                   <span className="text-3xl font-black text-slate-950 dark:text-white">{experimentStats.dataPct}%</span>
                   <ClipboardList className="h-5 w-5 text-blue-600" />
                 </div>
               </div>
               <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-950">
-                <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Mídias completas</p>
+                <p className="min-w-0 truncate text-[10px] font-medium uppercase tracking-wide text-muted-foreground sm:text-xs">Mídias completas</p>
                 <div className="mt-2 flex items-end justify-between gap-2">
                   <span className="text-3xl font-black text-slate-950 dark:text-white">{experimentStats.photoPct}%</span>
                   <ImageIcon className="h-5 w-5 text-purple-600" />
@@ -1029,68 +1009,108 @@ export default function ExperimentDetailPage() {
           </CardContent>
         </Card>
 
-        <div className="mb-5 grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
+        <div className="mb-4 grid grid-cols-3 gap-2 sm:mb-5 sm:grid-cols-2 sm:gap-3 md:grid-cols-3 xl:grid-cols-6">
           <Card className="border-emerald-100 bg-white shadow-sm dark:border-emerald-950 dark:bg-slate-950">
-            <CardContent className="p-4">
+            <CardContent className="p-2.5 sm:p-4">
               <div className="flex items-center justify-between gap-2">
-                <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Concluídos</p>
-                <CheckCircle2 className="h-4 w-4 text-emerald-600" />
+                <p className="min-w-0 truncate text-[10px] font-medium uppercase tracking-wide text-muted-foreground sm:text-xs">Concluídos</p>
+                <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600 sm:h-4 sm:w-4" />
               </div>
-              <p className="mt-2 text-2xl font-black text-emerald-700 dark:text-emerald-300">{experimentStats.completed}</p>
+              <p className="mt-1 text-xl font-black text-emerald-700 sm:mt-2 sm:text-2xl dark:text-emerald-300">{experimentStats.completed}</p>
             </CardContent>
           </Card>
 
           <Card className="border-blue-100 bg-white shadow-sm dark:border-blue-950 dark:bg-slate-950">
-            <CardContent className="p-4">
+            <CardContent className="p-2.5 sm:p-4">
               <div className="flex items-center justify-between gap-2">
-                <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Em andamento</p>
-                <Clock3 className="h-4 w-4 text-blue-600" />
+                <p className="min-w-0 truncate text-[10px] font-medium uppercase tracking-wide text-muted-foreground sm:text-xs">Em andamento</p>
+                <Clock3 className="h-3.5 w-3.5 text-blue-600 sm:h-4 sm:w-4" />
               </div>
-              <p className="mt-2 text-2xl font-black text-blue-700 dark:text-blue-300">{experimentStats.inProgress}</p>
+              <p className="mt-1 text-xl font-black text-blue-700 sm:mt-2 sm:text-2xl dark:text-blue-300">{experimentStats.inProgress}</p>
             </CardContent>
           </Card>
 
           <Card className="border-amber-100 bg-white shadow-sm dark:border-amber-950 dark:bg-slate-950">
-            <CardContent className="p-4">
+            <CardContent className="p-2.5 sm:p-4">
               <div className="flex items-center justify-between gap-2">
-                <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Inserir fotos</p>
-                <AlertTriangle className="h-4 w-4 text-amber-600" />
+                <p className="min-w-0 truncate text-[10px] font-medium uppercase tracking-wide text-muted-foreground sm:text-xs">Inserir fotos</p>
+                <AlertTriangle className="h-3.5 w-3.5 text-amber-600 sm:h-4 sm:w-4" />
               </div>
-              <p className="mt-2 text-2xl font-black text-amber-700 dark:text-amber-300">{experimentStats.needsPhotos}</p>
+              <p className="mt-1 text-xl font-black text-amber-700 sm:mt-2 sm:text-2xl dark:text-amber-300">{experimentStats.needsPhotos}</p>
             </CardContent>
           </Card>
 
           <Card className="border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-950">
-            <CardContent className="p-4">
+            <CardContent className="p-2.5 sm:p-4">
               <div className="flex items-center justify-between gap-2">
-                <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Pendentes</p>
-                <ClipboardList className="h-4 w-4 text-slate-500" />
+                <p className="min-w-0 truncate text-[10px] font-medium uppercase tracking-wide text-muted-foreground sm:text-xs">Pendentes</p>
+                <ClipboardList className="h-3.5 w-3.5 text-slate-500 sm:h-4 sm:w-4" />
               </div>
-              <p className="mt-2 text-2xl font-black text-slate-800 dark:text-slate-100">{experimentStats.pending}</p>
+              <p className="mt-1 text-xl font-black text-slate-800 sm:mt-2 sm:text-2xl dark:text-slate-100">{experimentStats.pending}</p>
             </CardContent>
           </Card>
 
           <Card className="border-purple-100 bg-white shadow-sm dark:border-purple-950 dark:bg-slate-950">
-            <CardContent className="p-4">
+            <CardContent className="p-2.5 sm:p-4">
               <div className="flex items-center justify-between gap-2">
-                <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Repetições</p>
-                <Layers3 className="h-4 w-4 text-purple-600" />
+                <p className="min-w-0 truncate text-[10px] font-medium uppercase tracking-wide text-muted-foreground sm:text-xs">Repetições</p>
+                <Layers3 className="h-3.5 w-3.5 text-purple-600 sm:h-4 sm:w-4" />
               </div>
-              <p className="mt-2 text-2xl font-black text-purple-700 dark:text-purple-300">
+              <p className="mt-1 text-xl font-black text-purple-700 sm:mt-2 sm:text-2xl dark:text-purple-300">
                 {experimentStats.repetitionsCompleted}/{experiment.repetitionCount}
               </p>
             </CardContent>
           </Card>
 
           <Card className="border-cyan-100 bg-white shadow-sm dark:border-cyan-950 dark:bg-slate-950">
-            <CardContent className="p-4">
+            <CardContent className="p-2.5 sm:p-4">
               <div className="flex items-center justify-between gap-2">
-                <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Fotos 7º/14º</p>
-                <ImageIcon className="h-4 w-4 text-cyan-600" />
+                <p className="min-w-0 truncate text-[10px] font-medium uppercase tracking-wide text-muted-foreground sm:text-xs">Fotos 7º/14º</p>
+                <ImageIcon className="h-3.5 w-3.5 text-cyan-600 sm:h-4 sm:w-4" />
               </div>
-              <p className="mt-2 text-2xl font-black text-cyan-700 dark:text-cyan-300">
+              <p className="mt-1 text-xl font-black text-cyan-700 sm:mt-2 sm:text-2xl dark:text-cyan-300">
                 {experimentStats.photos7}/{experimentStats.photos14}
               </p>
+            </CardContent>
+          </Card>
+        </div>
+
+        <div className="mb-5 grid gap-3 lg:grid-cols-3">
+          <Card className="border-slate-200 bg-white/90 shadow-sm dark:border-slate-800 dark:bg-slate-950/90">
+            <CardContent className="flex items-center gap-3 p-4">
+              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-200">
+                <Thermometer className="h-5 w-5" />
+              </div>
+              <div className="min-w-0">
+                <p className="text-sm font-semibold">Temperaturas monitoradas</p>
+                <p className="text-xs text-muted-foreground">14 dias de câmara + manhã/tarde do arroz.</p>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className="border-slate-200 bg-white/90 shadow-sm dark:border-slate-800 dark:bg-slate-950/90">
+            <CardContent className="flex items-center gap-3 p-4">
+              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-purple-100 text-purple-700 dark:bg-purple-950 dark:text-purple-200">
+                <BarChart3 className="h-5 w-5" />
+              </div>
+              <div className="min-w-0">
+                <p className="text-sm font-semibold">Unidades com testes</p>
+                <p className="truncate text-xs text-muted-foreground">
+                  {experimentStats.units.length > 0 ? experimentStats.units.join(" • ") : "Ainda sem unidade informada"}
+                </p>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className="border-slate-200 bg-white/90 shadow-sm dark:border-slate-800 dark:bg-slate-950/90">
+            <CardContent className="flex items-center gap-3 p-4">
+              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-200">
+                <Eye className="h-5 w-5" />
+              </div>
+              <div className="min-w-0">
+                <p className="text-sm font-semibold">Acesso rápido</p>
+                <p className="text-xs text-muted-foreground">Clique no card para visualizar. Use “Editar” para preencher.</p>
+              </div>
             </CardContent>
           </Card>
         </div>
@@ -1116,6 +1136,9 @@ export default function ExperimentDetailPage() {
           </div>
 
           {repetitions.map((repetition) => {
+            const repetitionCompleted = repetition.tests.filter((test) => test.completed).length
+            const repetitionProgress = pct(repetitionCompleted, repetition.tests.length)
+
             return (
               <TabsContent key={repetition.id} value={`repetition-${repetition.id}`} className="m-0 w-full p-0">
                 {!repetition.unlocked ? (
@@ -1132,6 +1155,21 @@ export default function ExperimentDetailPage() {
                   </Card>
                 ) : (
                   <div className="space-y-4">
+                    <div className="rounded-2xl border border-slate-200 bg-white/85 p-4 shadow-sm dark:border-slate-800 dark:bg-slate-950/85">
+                      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                        <div>
+                          <h2 className="text-lg font-bold text-slate-950 dark:text-white">Repetição {repetition.number}</h2>
+                          <p className="text-sm text-muted-foreground">{repetitionCompleted} de {repetition.tests.length} teste(s) concluído(s)</p>
+                        </div>
+                        <div className="flex min-w-[220px] items-center gap-3">
+                          <div className="h-2.5 flex-1 overflow-hidden rounded-full bg-slate-200 dark:bg-slate-800">
+                            <div className="h-full rounded-full bg-gradient-to-r from-emerald-500 to-green-500" style={{ width: `${repetitionProgress}%` }} />
+                          </div>
+                          <span className="w-10 text-right text-sm font-bold text-slate-800 dark:text-slate-100">{repetitionProgress}%</span>
+                        </div>
+                      </div>
+                    </div>
+
                     <div className="grid w-full grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
                       {repetition.tests.map((test) => {
                         const key = `${repetition.id}_${test.id}`

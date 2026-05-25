@@ -22,6 +22,10 @@ type Annotation = { x: number; y: number; size: string; caption: string; color?:
 type AnnotationsByPhotoIndex = Record<number, Annotation[]>
 
 const TEMPERATURE_DAYS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14] as const
+const CHAMBER_PERIODS = [
+  { key: "Morning", column: "morning", label: "Manhã", shortLabel: "M" },
+  { key: "Afternoon", column: "afternoon", label: "Tarde", shortLabel: "T" },
+] as const
 const RICE_PERIODS = [
   { key: "Morning", column: "morning", label: "Manhã", shortLabel: "M" },
   { key: "Afternoon", column: "afternoon", label: "Tarde", shortLabel: "T" },
@@ -36,13 +40,16 @@ const DISCARD_OPTIONS = [
 ] as const
 
 type TemperatureDay = (typeof TEMPERATURE_DAYS)[number]
+type ChamberPeriod = (typeof CHAMBER_PERIODS)[number]["key"]
 type RicePeriod = (typeof RICE_PERIODS)[number]["key"]
 type RiceSlot = (typeof RICE_SLOTS)[number]
 type DiscardKind = (typeof DISCARD_OPTIONS)[number]["key"]
-type ChamberFieldName = `temp${TemperatureDay}Chamber`
+type ChamberMeasurementFieldName = `temp${TemperatureDay}Chamber${ChamberPeriod}`
 type RiceMeasurementFieldName = `temp${TemperatureDay}Rice${RicePeriod}T${RiceSlot}`
-type TemperatureFieldName = ChamberFieldName | RiceMeasurementFieldName
-type DiscardContaminations = Record<string, Partial<Record<DiscardKind, boolean>>>
+type TemperatureFieldName = ChamberMeasurementFieldName | RiceMeasurementFieldName
+type DiscardWeightKey = `${DiscardKind}Kg`
+type DiscardContaminationDay = Partial<Record<DiscardKind, boolean>> & Partial<Record<DiscardWeightKey, number | string>>
+type DiscardContaminations = Record<string, DiscardContaminationDay>
 
 const toNumberOrUndefined = (v: unknown) => {
   if (v === "" || v === null || v === undefined) return undefined
@@ -58,7 +65,10 @@ const toNumberOrUndefined = (v: unknown) => {
 
 const temperatureSchemaFields = Object.fromEntries(
   TEMPERATURE_DAYS.flatMap((day) => [
-    [`temp${day}Chamber`, z.preprocess(toNumberOrUndefined, z.number().optional())],
+    ...CHAMBER_PERIODS.map((period) => [
+      `temp${day}Chamber${period.key}`,
+      z.preprocess(toNumberOrUndefined, z.number().optional()),
+    ]),
     ...RICE_PERIODS.flatMap((period) =>
       RICE_SLOTS.map((slot) => [
         `temp${day}Rice${period.key}T${slot}`,
@@ -132,16 +142,21 @@ function NumberInputWithSuffix({
   )
 }
 
-function getChamberFieldName(day: TemperatureDay): ChamberFieldName {
-  return `temp${day}Chamber` as ChamberFieldName
+function getChamberFieldName(day: TemperatureDay, period: ChamberPeriod): ChamberMeasurementFieldName {
+  return `temp${day}Chamber${period}` as ChamberMeasurementFieldName
 }
 
 function getRiceMeasurementFieldName(day: TemperatureDay, period: RicePeriod, slot: RiceSlot): RiceMeasurementFieldName {
   return `temp${day}Rice${period}T${slot}` as RiceMeasurementFieldName
 }
 
-function getChamberColumnName(day: TemperatureDay) {
+function getChamberGeneralColumnName(day: TemperatureDay) {
   return `temp${day}_chamber`
+}
+
+function getChamberPeriodColumnName(day: TemperatureDay, period: ChamberPeriod) {
+  const periodColumn = period === "Morning" ? "morning" : "afternoon"
+  return `temp${day}_chamber_${periodColumn}`
 }
 
 function getRiceMeasurementColumnName(day: TemperatureDay, period: RicePeriod, slot: RiceSlot) {
@@ -157,7 +172,13 @@ function getTemperatureDefaults(row?: any) {
   const values: Partial<Record<TemperatureFieldName, number | undefined>> = {}
 
   for (const day of TEMPERATURE_DAYS) {
-    values[getChamberFieldName(day)] = row?.[getChamberColumnName(day)] ?? undefined
+    const legacyChamberValue = row?.[getChamberGeneralColumnName(day)] ?? undefined
+
+    for (const period of CHAMBER_PERIODS) {
+      const field = getChamberFieldName(day, period.key)
+      const storedValue = row?.[getChamberPeriodColumnName(day, period.key)]
+      values[field] = storedValue ?? (period.key === "Morning" ? legacyChamberValue : undefined)
+    }
 
     for (const period of RICE_PERIODS) {
       for (const slot of RICE_SLOTS) {
@@ -184,6 +205,10 @@ function averageTemperature(values: unknown[]) {
   return Math.round((total / numbers.length) * 10) / 10
 }
 
+function getChamberAverage(values: Partial<Record<TemperatureFieldName, unknown>>, day: TemperatureDay) {
+  return averageTemperature(CHAMBER_PERIODS.map((period) => values[getChamberFieldName(day, period.key)]))
+}
+
 function getRicePeriodAverage(values: Partial<Record<TemperatureFieldName, unknown>>, day: TemperatureDay, period: RicePeriod) {
   return averageTemperature(RICE_SLOTS.map((slot) => values[getRiceMeasurementFieldName(day, period, slot)]))
 }
@@ -206,11 +231,16 @@ function getTemperaturePayload(values: FormValues) {
   const temperatureValues = values as unknown as Partial<Record<TemperatureFieldName, unknown>>
 
   for (const day of TEMPERATURE_DAYS) {
-    const chamberField = getChamberFieldName(day)
+    const chamberAverage = getChamberAverage(temperatureValues, day)
     const generalAverage = getRiceGeneralAverage(temperatureValues, day)
 
-    payload[getChamberColumnName(day)] = toNumberOrUndefined((values as any)[chamberField]) ?? null
+    payload[getChamberGeneralColumnName(day)] = chamberAverage ?? null
     payload[getRiceGeneralColumnName(day)] = generalAverage ?? null
+
+    for (const period of CHAMBER_PERIODS) {
+      const field = getChamberFieldName(day, period.key)
+      payload[getChamberPeriodColumnName(day, period.key)] = toNumberOrUndefined((values as any)[field]) ?? null
+    }
 
     for (const period of RICE_PERIODS) {
       for (const slot of RICE_SLOTS) {
@@ -223,6 +253,10 @@ function getTemperaturePayload(values: FormValues) {
   return payload
 }
 
+function getDiscardWeightKey(kind: DiscardKind): DiscardWeightKey {
+  return `${kind}Kg` as DiscardWeightKey
+}
+
 function normalizeDiscardContaminations(value: unknown): DiscardContaminations {
   if (!value || typeof value !== "object" || Array.isArray(value)) return {}
   const result: DiscardContaminations = {}
@@ -231,15 +265,41 @@ function normalizeDiscardContaminations(value: unknown): DiscardContaminations {
     const row = (value as any)[String(day)]
     if (!row || typeof row !== "object" || Array.isArray(row)) continue
 
-    const normalized: Partial<Record<DiscardKind, boolean>> = {}
+    const normalized: DiscardContaminationDay = {}
     for (const option of DISCARD_OPTIONS) {
-      if (Boolean(row[option.key])) normalized[option.key] = true
+      if (Boolean(row[option.key])) {
+        const weightKey = getDiscardWeightKey(option.key)
+        const weightValue = toNumberOrUndefined(row[weightKey] ?? row[`${option.key}_kg`] ?? row[`${option.key}Weight`])
+
+        normalized[option.key] = true
+        if (weightValue !== undefined) normalized[weightKey] = weightValue
+      }
     }
 
     if (Object.keys(normalized).length > 0) result[String(day)] = normalized
   }
 
   return result
+}
+
+function getDiscardTotals(value: DiscardContaminations) {
+  const totals = Object.fromEntries(DISCARD_OPTIONS.map((option) => [option.key, 0])) as Record<DiscardKind, number>
+
+  for (const day of TEMPERATURE_DAYS) {
+    const row = value[String(day)]
+    if (!row) continue
+
+    for (const option of DISCARD_OPTIONS) {
+      if (!row[option.key]) continue
+      totals[option.key] += toNumberOrUndefined(row[getDiscardWeightKey(option.key)]) ?? 0
+    }
+  }
+
+  return totals
+}
+
+function formatWeightValue(value: number) {
+  return `${value.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 3 })} kg`
 }
 
 function getExperimentDayDate(startDate: string | null | undefined, day: number) {
@@ -360,6 +420,7 @@ const formSchema = z.object({
   wetWeight: z.preprocess(toNumberOrUndefined, z.number().optional()),
   dryWeight: z.preprocess(toNumberOrUndefined, z.number().optional()),
   extractedConidiumWeight: z.preprocess(toNumberOrUndefined, z.number().optional()),
+  temperatureObservations: z.string().optional(),
 })
 
 type FormValues = z.output<typeof formSchema>
@@ -434,6 +495,7 @@ export default function TestEditPage() {
       wetWeight: undefined,
       dryWeight: undefined,
       extractedConidiumWeight: undefined,
+      temperatureObservations: "",
     },
   })
 
@@ -519,6 +581,7 @@ export default function TestEditPage() {
           wetWeight: currentTest.wet_weight ?? undefined,
           dryWeight: currentTest.dry_weight ?? undefined,
           extractedConidiumWeight: currentTest.extracted_conidium_weight ?? undefined,
+          temperatureObservations: currentTest.temperature_observations ?? "",
         })
 
         const { data: existingPhotos } = await supabase
@@ -635,11 +698,12 @@ export default function TestEditPage() {
         wet_weight: values.wetWeight ?? null,
         dry_weight: values.dryWeight ?? null,
         extracted_conidium_weight: values.extractedConidiumWeight ?? null,
+        temperature_observations: values.temperatureObservations?.trim() || null,
 
         // ✅ AGORA SALVA AS ANOTAÇÕES NO TESTE (jsonb)
         annotations_7_day: annotations7Day && Object.keys(annotations7Day).length ? annotations7Day : null,
         annotations_14_day: annotations14Day && Object.keys(annotations14Day).length ? annotations14Day : null,
-        discard_contaminations: discardContaminations ?? {},
+        discard_contaminations: normalizeDiscardContaminations(discardContaminations),
 
         updated_at: new Date().toISOString(),
       }
@@ -750,6 +814,22 @@ export default function TestEditPage() {
     })
   }
 
+  const setDiscardWeight = (day: TemperatureDay, kind: DiscardKind, value: string) => {
+    setDiscardContaminations((current) => {
+      const dayKey = String(day)
+      const currentDay = current[dayKey] ?? {}
+      if (!currentDay[kind]) return current
+
+      return {
+        ...current,
+        [dayKey]: {
+          ...currentDay,
+          [getDiscardWeightKey(kind)]: value,
+        },
+      }
+    })
+  }
+
   const renderDiscardButton = (day: TemperatureDay, option: (typeof DISCARD_OPTIONS)[number]) => {
     const selected = Boolean(discardContaminations[String(day)]?.[option.key])
 
@@ -765,6 +845,26 @@ export default function TestEditPage() {
       >
         {option.label}
       </Button>
+    )
+  }
+
+  const renderDiscardWeightInput = (day: TemperatureDay, option: (typeof DISCARD_OPTIONS)[number]) => {
+    const selected = Boolean(discardContaminations[String(day)]?.[option.key])
+
+    if (!selected) {
+      return <span className="text-xs text-muted-foreground">-</span>
+    }
+
+    return (
+      <NumberInputWithSuffix
+        value={discardContaminations[String(day)]?.[getDiscardWeightKey(option.key)] ?? ""}
+        onChange={(value: string) => setDiscardWeight(day, option.key, value)}
+        step="0.001"
+        suffix="kg"
+        inputClassName="h-8 !pl-1.5 !pr-5 text-left text-xs"
+        suffixClassName="!right-1 text-[10px]"
+        maxDecimalPlaces={3}
+      />
     )
   }
 
@@ -878,6 +978,11 @@ export default function TestEditPage() {
   }
 
   const watchedTemperatureValues = form.watch() as unknown as Partial<Record<TemperatureFieldName, unknown>>
+  const activeDiscardOptions = useMemo(
+    () => DISCARD_OPTIONS.filter((option) => TEMPERATURE_DAYS.some((day) => Boolean(discardContaminations[String(day)]?.[option.key]))),
+    [discardContaminations],
+  )
+  const discardTotals = useMemo(() => getDiscardTotals(discardContaminations), [discardContaminations])
 
   return (
     <div className="container mx-auto w-full max-w-7xl px-4 py-6">
@@ -1100,17 +1205,19 @@ export default function TestEditPage() {
                 </div>
 
                 <div className="overflow-x-auto p-3">
-                  <table className="min-w-[1240px] w-full border-collapse overflow-hidden rounded-xl text-sm">
+                  <table className="min-w-[1720px] w-full border-collapse overflow-hidden rounded-xl text-sm">
                     <thead>
                       <tr className="bg-slate-100 text-xs font-semibold text-slate-700 dark:bg-slate-900 dark:text-slate-200">
                         <th rowSpan={2} className="w-[150px] border border-slate-200 px-2 py-2 text-left align-middle dark:border-slate-800">Dia</th>
-                        <th rowSpan={2} className="w-[96px] border border-slate-200 px-2 py-2 text-center align-middle dark:border-slate-800">Temp. Câmara</th>
+                        <th colSpan={2} className="border border-slate-200 px-2 py-2 text-center dark:border-slate-800">Temp. Câmara</th>
                         <th colSpan={4} className="border border-slate-200 px-2 py-2 text-center dark:border-slate-800">Temp. Arroz (Manhã)</th>
                         <th colSpan={4} className="border border-slate-200 px-2 py-2 text-center dark:border-slate-800">Temp. Arroz (Tarde)</th>
                         <th rowSpan={2} className="w-[82px] border border-slate-200 px-2 py-2 text-center align-middle dark:border-slate-800">Média Geral</th>
-                        <th colSpan={4} className="border border-slate-200 px-2 py-2 text-center dark:border-slate-800">Descarte (contaminações)</th>
+                        <th colSpan={4 + activeDiscardOptions.length} className="border border-slate-200 px-2 py-2 text-center dark:border-slate-800">Descarte (contaminações)</th>
                       </tr>
                       <tr className="bg-slate-50 text-[11px] font-semibold text-slate-600 dark:bg-slate-900/70 dark:text-slate-300">
+                        <th className="w-[72px] border border-slate-200 px-1.5 py-1.5 text-center dark:border-slate-800">M</th>
+                        <th className="w-[72px] border border-slate-200 px-1.5 py-1.5 text-center dark:border-slate-800">T</th>
                         <th className="w-[72px] border border-slate-200 px-1.5 py-1.5 text-center dark:border-slate-800">T1</th>
                         <th className="w-[72px] border border-slate-200 px-1.5 py-1.5 text-center dark:border-slate-800">T2</th>
                         <th className="w-[72px] border border-slate-200 px-1.5 py-1.5 text-center dark:border-slate-800">T3</th>
@@ -1123,12 +1230,16 @@ export default function TestEditPage() {
                         <th className="w-[72px] border border-slate-200 px-1.5 py-1.5 text-center dark:border-slate-800">Tri.</th>
                         <th className="w-[72px] border border-slate-200 px-1.5 py-1.5 text-center dark:border-slate-800">Bac.</th>
                         <th className="w-[76px] border border-slate-200 px-1.5 py-1.5 text-center dark:border-slate-800">Outros</th>
+                        {activeDiscardOptions.map((option) => (
+                          <th key={`discard-kg-head-${option.key}`} className="w-[112px] border border-slate-200 px-1.5 py-1.5 text-center dark:border-slate-800">
+                            {option.label} Descarte (kg)
+                          </th>
+                        ))}
                       </tr>
                     </thead>
                     <tbody>
                       {TEMPERATURE_DAYS.map((day) => {
                         const dayDate = getExperimentDayDate(experiment?.start_date, day)
-                        const chamberName = getChamberFieldName(day)
                         const morningAverage = getRicePeriodAverage(watchedTemperatureValues, day, "Morning")
                         const afternoonAverage = getRicePeriodAverage(watchedTemperatureValues, day, "Afternoon")
                         const generalAverage = getRiceGeneralAverage(watchedTemperatureValues, day)
@@ -1140,27 +1251,32 @@ export default function TestEditPage() {
                               <div className="text-[11px] text-muted-foreground">{formatShortDate(dayDate)}</div>
                             </td>
 
-                            <td className="border border-slate-200 p-1 align-middle dark:border-slate-800">
-                              <FormField
-                                control={form.control}
-                                name={chamberName as any}
-                                render={({ field }) => (
-                                  <FormItem>
-                                    <FormControl>
-                                      <NumberInputWithSuffix
-                                        value={field.value}
-                                        onChange={field.onChange}
-                                        step="0.1"
-                                        suffix="ºC"
-                                        inputClassName="h-8 !pl-1.5 !pr-4 text-left text-xs"
-                                        suffixClassName="!right-1 text-[10px]"
-                                        maxDecimalPlaces={1}
-                                      />
-                                    </FormControl>
-                                  </FormItem>
-                                )}
-                              />
-                            </td>
+                            {CHAMBER_PERIODS.map((period) => {
+                              const fieldName = getChamberFieldName(day, period.key)
+                              return (
+                                <td key={`${day}-chamber-${period.key}`} className="border border-slate-200 p-1 align-middle dark:border-slate-800">
+                                  <FormField
+                                    control={form.control}
+                                    name={fieldName as any}
+                                    render={({ field }) => (
+                                      <FormItem>
+                                        <FormControl>
+                                          <NumberInputWithSuffix
+                                            value={field.value}
+                                            onChange={field.onChange}
+                                            step="0.1"
+                                            suffix="ºC"
+                                            inputClassName="h-8 !pl-1.5 !pr-4 text-left text-xs"
+                                            suffixClassName="!right-1 text-[10px]"
+                                            maxDecimalPlaces={1}
+                                          />
+                                        </FormControl>
+                                      </FormItem>
+                                    )}
+                                  />
+                                </td>
+                              )
+                            })}
 
                             {RICE_PERIODS.flatMap((period) => {
                               const periodAverage = period.key === "Morning" ? morningAverage : afternoonAverage
@@ -1222,11 +1338,50 @@ export default function TestEditPage() {
                                 {renderDiscardButton(day, option)}
                               </td>
                             ))}
+
+                            {activeDiscardOptions.map((option) => (
+                              <td key={`${day}-${option.key}-kg`} className="border border-slate-200 p-1 text-center align-middle dark:border-slate-800">
+                                {renderDiscardWeightInput(day, option)}
+                              </td>
+                            ))}
                           </tr>
                         )
                       })}
                     </tbody>
                   </table>
+                </div>
+
+                <div className="border-t border-slate-200 p-3 dark:border-slate-800 sm:p-4">
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                    {DISCARD_OPTIONS.map((option) => (
+                      <div key={`discard-total-${option.key}`} className="rounded-2xl border border-slate-200 bg-slate-50/70 p-3 shadow-sm dark:border-slate-800 dark:bg-slate-900/30">
+                        <div className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Total de descarte</div>
+                        <div className="mt-1 text-sm font-semibold text-slate-700 dark:text-slate-200">{option.label.replace(".", "")}</div>
+                        <div className="mt-2 text-2xl font-bold text-slate-950 dark:text-slate-50">{formatWeightValue(discardTotals[option.key])}</div>
+                      </div>
+                    ))}
+                  </div>
+
+                  <div className="mt-4">
+                    <FormField
+                      control={form.control}
+                      name="temperatureObservations"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Observações</FormLabel>
+                          <FormControl>
+                            <textarea
+                              {...field}
+                              rows={3}
+                              placeholder="Informe observações sobre temperaturas, descartes ou contaminações, se necessário."
+                              className="min-h-[88px] w-full rounded-xl border border-input bg-background px-3 py-2 text-sm shadow-sm outline-none transition focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+                            />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  </div>
                 </div>
               </section>
 

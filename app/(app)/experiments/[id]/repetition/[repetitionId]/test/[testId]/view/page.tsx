@@ -46,6 +46,10 @@ type FungusReference = {
 }
 
 const TEMPERATURE_DAYS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14] as const
+const CHAMBER_PERIODS = [
+  { key: "Morning", column: "morning", label: "Manhã", shortLabel: "M" },
+  { key: "Afternoon", column: "afternoon", label: "Tarde", shortLabel: "T" },
+] as const
 const RICE_PERIODS = [
   { key: "morning", label: "Manhã" },
   { key: "afternoon", label: "Tarde" },
@@ -59,10 +63,13 @@ const DISCARD_OPTIONS = [
 ] as const
 
 type TemperatureDay = (typeof TEMPERATURE_DAYS)[number]
+type ChamberPeriod = (typeof CHAMBER_PERIODS)[number]["key"]
 type RicePeriod = (typeof RICE_PERIODS)[number]["key"]
 type RiceSlot = (typeof RICE_SLOTS)[number]
 type DiscardKind = (typeof DISCARD_OPTIONS)[number]["key"]
-type DiscardContaminations = Record<string, Partial<Record<DiscardKind, boolean>>>
+type DiscardWeightKey = `${DiscardKind}Kg`
+type DiscardContaminationDay = Partial<Record<DiscardKind, boolean>> & Partial<Record<DiscardWeightKey, number | string>>
+type DiscardContaminations = Record<string, DiscardContaminationDay>
 
 function toNumberOrUndefined(v: unknown) {
   if (v === "" || v === null || v === undefined) return undefined
@@ -89,6 +96,15 @@ function riceMeasurementColumn(day: TemperatureDay, period: RicePeriod, slot: Ri
   return `temp${day}_rice_${period}_t${slot}`
 }
 
+function chamberPeriodColumn(day: TemperatureDay, period: ChamberPeriod) {
+  const periodColumn = period === "Morning" ? "morning" : "afternoon"
+  return `temp${day}_chamber_${periodColumn}`
+}
+
+function getDiscardWeightKey(kind: DiscardKind): DiscardWeightKey {
+  return `${kind}Kg` as DiscardWeightKey
+}
+
 function normalizeDiscardContaminations(value: unknown): DiscardContaminations {
   if (!value || typeof value !== "object" || Array.isArray(value)) return {}
   const result: DiscardContaminations = {}
@@ -97,15 +113,41 @@ function normalizeDiscardContaminations(value: unknown): DiscardContaminations {
     const row = (value as any)[String(day)]
     if (!row || typeof row !== "object" || Array.isArray(row)) continue
 
-    const normalized: Partial<Record<DiscardKind, boolean>> = {}
+    const normalized: DiscardContaminationDay = {}
     for (const option of DISCARD_OPTIONS) {
-      if (Boolean(row[option.key])) normalized[option.key] = true
+      if (Boolean(row[option.key])) {
+        const weightKey = getDiscardWeightKey(option.key)
+        const weightValue = toNumberOrUndefined(row[weightKey] ?? row[`${option.key}_kg`] ?? row[`${option.key}Weight`])
+
+        normalized[option.key] = true
+        if (weightValue !== undefined) normalized[weightKey] = weightValue
+      }
     }
 
     if (Object.keys(normalized).length > 0) result[String(day)] = normalized
   }
 
   return result
+}
+
+function getDiscardTotals(value: DiscardContaminations) {
+  const totals = Object.fromEntries(DISCARD_OPTIONS.map((option) => [option.key, 0])) as Record<DiscardKind, number>
+
+  for (const day of TEMPERATURE_DAYS) {
+    const row = value[String(day)]
+    if (!row) continue
+
+    for (const option of DISCARD_OPTIONS) {
+      if (!row[option.key]) continue
+      totals[option.key] += toNumberOrUndefined(row[getDiscardWeightKey(option.key)]) ?? 0
+    }
+  }
+
+  return totals
+}
+
+function formatWeightValue(value: number) {
+  return `${value.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 3 })} kg`
 }
 
 function getExperimentDayDate(startDate: string | null | undefined, day: number) {
@@ -376,6 +418,9 @@ const mapped = {
           temp14Chamber: t.temp14_chamber,
           temp14Rice: t.temp14_rice,
           temperatures: TEMPERATURE_DAYS.map((day) => {
+            const chamberMorning = (t as any)[chamberPeriodColumn(day, "Morning")]
+            const chamberAfternoon = (t as any)[chamberPeriodColumn(day, "Afternoon")]
+            const chamberAverage = toNumberOrUndefined((t as any)[`temp${day}_chamber`]) ?? averageTemperature([chamberMorning, chamberAfternoon])
             const morningValues = RICE_SLOTS.map((slot) => (t as any)[riceMeasurementColumn(day, "morning", slot)])
             const afternoonValues = RICE_SLOTS.map((slot) => (t as any)[riceMeasurementColumn(day, "afternoon", slot)])
             const morningAverage = averageTemperature(morningValues)
@@ -385,7 +430,9 @@ const mapped = {
             return {
               day,
               date: getExperimentDayDate(exp?.start_date, day),
-              chamber: (t as any)[`temp${day}_chamber`],
+              chamber: chamberAverage,
+              chamberMorning: chamberMorning ?? (chamberAfternoon === null || chamberAfternoon === undefined ? (t as any)[`temp${day}_chamber`] : undefined),
+              chamberAfternoon,
               morningValues,
               afternoonValues,
               morningAverage,
@@ -394,6 +441,7 @@ const mapped = {
             }
           }),
           discardContaminations: normalizeDiscardContaminations((t as any).discard_contaminations),
+          temperatureObservations: t.temperature_observations,
           wetWeight: t.wet_weight,
           dryWeight: t.dry_weight,
           extractedConidiumWeight: t.extracted_conidium_weight,
@@ -537,6 +585,11 @@ const mapped = {
   const fungusMaxTemperature = toNumberOrUndefined(fungusReference?.max_temperature)
   const hasFungusReferenceRange = fungusMinTemperature !== undefined && fungusMaxTemperature !== undefined
   const hasFungusReference = fungusReference !== null
+  const activeDiscardOptions = useMemo(
+    () => DISCARD_OPTIONS.filter((option) => TEMPERATURE_DAYS.some((day) => Boolean(testData?.discardContaminations?.[String(day)]?.[option.key]))),
+    [testData?.discardContaminations],
+  )
+  const discardTotals = useMemo(() => getDiscardTotals(testData?.discardContaminations ?? {}), [testData?.discardContaminations])
 
   if (loading) return <div className="container mx-auto p-4">Carregando detalhes do teste...</div>
   if (!testData) return <div className="container mx-auto p-4">Teste não encontrado</div>
@@ -889,17 +942,19 @@ const mapped = {
             </div>
           ) : (
             <div className="overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-800">
-              <table className="min-w-[1240px] w-full border-collapse text-sm">
+              <table className="min-w-[1720px] w-full border-collapse text-sm">
                 <thead>
                   <tr className="bg-slate-100 text-xs font-semibold text-slate-700 dark:bg-slate-900 dark:text-slate-200">
                     <th rowSpan={2} className="w-[150px] border border-slate-200 px-2 py-2 text-left align-middle dark:border-slate-800">Dia</th>
-                    <th rowSpan={2} className="w-[96px] border border-slate-200 px-2 py-2 text-center align-middle dark:border-slate-800">Temp. Câmara</th>
+                    <th colSpan={2} className="border border-slate-200 px-2 py-2 text-center dark:border-slate-800">Temp. Câmara</th>
                     <th colSpan={4} className="border border-slate-200 px-2 py-2 text-center dark:border-slate-800">Temp. Arroz (Manhã)</th>
                     <th colSpan={4} className="border border-slate-200 px-2 py-2 text-center dark:border-slate-800">Temp. Arroz (Tarde)</th>
                     <th rowSpan={2} className="w-[82px] border border-slate-200 px-2 py-2 text-center align-middle dark:border-slate-800">Média Geral</th>
-                    <th colSpan={4} className="border border-slate-200 px-2 py-2 text-center dark:border-slate-800">Descarte (contaminações)</th>
+                    <th colSpan={4 + activeDiscardOptions.length} className="border border-slate-200 px-2 py-2 text-center dark:border-slate-800">Descarte (contaminações)</th>
                   </tr>
                   <tr className="bg-slate-50 text-[11px] font-semibold text-slate-600 dark:bg-slate-900/70 dark:text-slate-300">
+                    <th className="w-[72px] border border-slate-200 px-1.5 py-1.5 text-center dark:border-slate-800">M</th>
+                    <th className="w-[72px] border border-slate-200 px-1.5 py-1.5 text-center dark:border-slate-800">T</th>
                     <th className="w-[72px] border border-slate-200 px-1.5 py-1.5 text-center dark:border-slate-800">T1</th>
                     <th className="w-[72px] border border-slate-200 px-1.5 py-1.5 text-center dark:border-slate-800">T2</th>
                     <th className="w-[72px] border border-slate-200 px-1.5 py-1.5 text-center dark:border-slate-800">T3</th>
@@ -912,6 +967,11 @@ const mapped = {
                     <th className="w-[72px] border border-slate-200 px-1.5 py-1.5 text-center dark:border-slate-800">Tri.</th>
                     <th className="w-[72px] border border-slate-200 px-1.5 py-1.5 text-center dark:border-slate-800">Bac.</th>
                     <th className="w-[76px] border border-slate-200 px-1.5 py-1.5 text-center dark:border-slate-800">Outros</th>
+                    {activeDiscardOptions.map((option) => (
+                      <th key={`discard-kg-head-${option.key}`} className="w-[112px] border border-slate-200 px-1.5 py-1.5 text-center dark:border-slate-800">
+                        {option.label} Descarte (kg)
+                      </th>
+                    ))}
                   </tr>
                 </thead>
                 <tbody>
@@ -920,7 +980,8 @@ const mapped = {
                       <td className="border border-slate-200 px-2 py-1.5 font-medium dark:border-slate-800">
                         {row.day}º dia <span className="text-xs font-normal text-muted-foreground">({formatShortDate(row.date)})</span>
                       </td>
-                      <td className="border border-slate-200 px-2 py-1.5 text-center dark:border-slate-800">{formatTemperatureValue(row.chamber)}</td>
+                      <td className="border border-slate-200 px-2 py-1.5 text-center dark:border-slate-800">{formatTemperatureValue(row.chamberMorning)}</td>
+                      <td className="border border-slate-200 px-2 py-1.5 text-center dark:border-slate-800">{formatTemperatureValue(row.chamberAfternoon)}</td>
                       {row.morningValues.map((value: any, index: number) => (
                         <td key={`m-${row.day}-${index}`} className="border border-slate-200 px-2 py-1.5 text-center dark:border-slate-800">{formatTemperatureValue(value)}</td>
                       ))}
@@ -940,12 +1001,38 @@ const mapped = {
                           </td>
                         )
                       })}
+                      {activeDiscardOptions.map((option) => {
+                        const active = Boolean(testData.discardContaminations?.[String(row.day)]?.[option.key])
+                        const weightValue = toNumberOrUndefined(testData.discardContaminations?.[String(row.day)]?.[getDiscardWeightKey(option.key)])
+                        return (
+                          <td key={`${row.day}-${option.key}-kg`} className="border border-slate-200 px-1.5 py-1.5 text-center font-semibold dark:border-slate-800">
+                            {active ? formatWeightValue(weightValue ?? 0) : "-"}
+                          </td>
+                        )
+                      })}
                     </tr>
                   ))}
                 </tbody>
               </table>
             </div>
           )}
+
+          <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+            {DISCARD_OPTIONS.map((option) => (
+              <div key={`discard-total-${option.key}`} className="rounded-2xl border border-slate-200 bg-slate-50/70 p-3 shadow-sm dark:border-slate-800 dark:bg-slate-900/30">
+                <div className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Total de descarte</div>
+                <div className="mt-1 text-sm font-semibold text-slate-700 dark:text-slate-200">{option.label.replace(".", "")}</div>
+                <div className="mt-2 text-2xl font-bold text-slate-950 dark:text-slate-50">{formatWeightValue(discardTotals[option.key])}</div>
+              </div>
+            ))}
+          </div>
+
+          <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50/70 p-4 dark:border-slate-800 dark:bg-slate-900/30">
+            <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Observações</div>
+            <div className="mt-2 whitespace-pre-wrap text-sm leading-6 text-slate-800 dark:text-slate-100">
+              {testData.temperatureObservations?.trim() || "Sem observações registradas."}
+            </div>
+          </div>
         </CardContent>
       </Card>
 

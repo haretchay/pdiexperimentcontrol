@@ -124,6 +124,28 @@ function formatShortDate(dateString: string) {
   return `${date}/${month}/${year.slice(-2)}`
 }
 
+function formatPhotoDate(value: unknown, fallback?: unknown) {
+  const source = value ?? fallback
+  if (!source) return "--/--/--"
+
+  const raw = String(source)
+  const datePart = raw.slice(0, 10)
+
+  if (/^\d{4}-\d{2}-\d{2}$/.test(datePart)) {
+    const [year, month, date] = datePart.split("-")
+    return `${date}/${month}/${year.slice(-2)}`
+  }
+
+  const parsed = new Date(raw)
+  if (Number.isNaN(parsed.getTime())) return "--/--/--"
+
+  return parsed.toLocaleDateString("pt-BR", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "2-digit",
+  })
+}
+
 function formatTemperatureValue(value: any) {
   if (value === null || value === undefined || value === "") return "-"
   const n = Number(value)
@@ -519,6 +541,11 @@ const mapped = {
   if (loading) return <div className="container mx-auto p-4">Carregando detalhes do teste...</div>
   if (!testData) return <div className="container mx-auto p-4">Teste não encontrado</div>
 
+  const temperatureDay7 = testData.temperatures?.find((row: any) => row.day === 7)?.date
+  const temperatureDay14 = testData.temperatures?.find((row: any) => row.day === 14)?.date
+  const photoDate7 = formatPhotoDate(testData.date7Day, temperatureDay7)
+  const photoDate14 = formatPhotoDate(testData.date14Day, temperatureDay14)
+
   return (
     <div className="container mx-auto w-full max-w-7xl p-4">
       <div className="mb-6 overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-lg shadow-slate-200/60 dark:border-slate-800 dark:bg-slate-950 dark:shadow-none">
@@ -572,24 +599,54 @@ const mapped = {
           </div>
         </div>
 
-        <div className="grid gap-3 p-4 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-6">
+        <div className="grid gap-3 p-4 lg:grid-cols-3">
           {[
-            { label: "Unidade", value: testData.unit === "americana" ? "Americana" : "Salto" },
-            { label: "Requisição", value: testData.requisition === "interna" ? "Interna" : "Externa" },
-            { label: "Data", value: currentDate.toLocaleDateString("pt-BR") },
-            { label: "Semana", value: weekNumber },
-            { label: "Lote Teste", value: testData.testLot || "Não informado" },
-            { label: "Lote Matriz", value: testData.matrixLot || "Não informado" },
-            { label: "Lote MP", value: testData.mpLot || "Não informado" },
-            { label: "Quantidade", value: fmt(testData.quantity, "kg") },
-            { label: "Bozo", value: fmt(testData.bozo, "min") },
-            { label: "Média umidade", value: fmt(testData.averageHumidity, "%") },
-            { label: "Sensorial", value: fmt(testData.sensorial, "pts") },
-            { label: "Cepa", value: testData.strain || "Não informada" },
-          ].map((item) => (
-            <div key={item.label} className="rounded-2xl border border-slate-200 bg-slate-50/80 p-3 dark:border-slate-800 dark:bg-slate-900/40">
-              <div className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">{item.label}</div>
-              <div className="mt-1 truncate text-sm font-bold text-slate-900 dark:text-slate-100">{item.value}</div>
+            {
+              title: "Identificação",
+              tone: "from-blue-50 to-indigo-50 dark:from-blue-950/20 dark:to-indigo-950/10",
+              fields: [
+                { label: "Cepa", value: testData.strain || "Não informada" },
+                { label: "Unidade", value: testData.unit === "americana" ? "Americana" : "Salto" },
+                { label: "Requisição", value: testData.requisition === "interna" ? "Interna" : "Externa" },
+                { label: "Semana", value: weekNumber },
+              ],
+            },
+            {
+              title: "Lotes e tipo",
+              tone: "from-purple-50 to-slate-50 dark:from-purple-950/20 dark:to-slate-950/10",
+              fields: [
+                { label: "Lote Teste", value: testData.testLot || "Não informado" },
+                { label: "Lote Matriz", value: testData.matrixLot || "Não informado" },
+                { label: "Lote MP", value: testData.mpLot || "Não informado" },
+                { label: "Tipo de Teste", value: testData.testType || "Não informado" },
+              ],
+            },
+            {
+              title: "Medições iniciais",
+              tone: "from-emerald-50 to-slate-50 dark:from-emerald-950/20 dark:to-slate-950/10",
+              fields: [
+                { label: "Média Umidade", value: fmt(testData.averageHumidity, "%") },
+                { label: "Bozo", value: fmt(testData.bozo, "min") },
+                { label: "Sensorial", value: fmt(testData.sensorial, "pts") },
+                { label: "Quantidade", value: fmt(testData.quantity, "kg") },
+              ],
+            },
+          ].map((group) => (
+            <div
+              key={group.title}
+              className={`rounded-2xl border border-slate-200 bg-gradient-to-br ${group.tone} p-3 shadow-sm dark:border-slate-800`}
+            >
+              <div className="mb-2 text-xs font-bold uppercase tracking-[0.16em] text-slate-500 dark:text-slate-400">
+                {group.title}
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                {group.fields.map((item) => (
+                  <div key={item.label} className="min-w-0 rounded-xl bg-white/70 p-2 dark:bg-slate-950/30">
+                    <div className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">{item.label}</div>
+                    <div className="mt-0.5 truncate text-sm font-bold text-slate-900 dark:text-slate-100">{item.value}</div>
+                  </div>
+                ))}
+              </div>
             </div>
           ))}
         </div>
@@ -659,9 +716,7 @@ const mapped = {
             <div className="rounded-2xl border border-amber-200 bg-amber-50/80 p-3 dark:border-amber-900/60 dark:bg-amber-950/20">
               <div className="text-xs font-semibold uppercase tracking-wide text-amber-700 dark:text-amber-300">Referência do fungo</div>
               <div className="mt-1 truncate text-sm font-bold italic text-amber-950 dark:text-amber-100">{formatScientificName(fungusReference?.scientific_name)}</div>
-              <div className="mt-1 text-xs text-amber-800 dark:text-amber-200">
-                Ótima: <b>{formatChartTemperature(fungusOptimalTemperature)}</b> • Faixa: <b>{formatChartTemperature(fungusMinTemperature)}</b> a <b>{formatChartTemperature(fungusMaxTemperature)}</b>
-              </div>
+
             </div>
           </div>
 
@@ -894,29 +949,14 @@ const mapped = {
         </CardContent>
       </Card>
 
-      <Card className="mb-6">
-        <CardHeader>
-          <CardTitle>Dados do 7º dia</CardTitle>
+      <Card className="mb-6 overflow-hidden border-slate-200 shadow-sm dark:border-slate-800">
+        <CardHeader className="border-b bg-slate-50/80 px-4 py-3 dark:bg-slate-950/40">
+          <CardTitle className="flex flex-col gap-1 text-lg sm:flex-row sm:items-center sm:justify-between">
+            <span>Fotos do 7º dia</span>
+            <span className="text-sm font-semibold text-muted-foreground">{photoDate7}</span>
+          </CardTitle>
         </CardHeader>
-        <CardContent className="space-y-4">
-          <div>
-            <h3 className="text-sm font-medium text-muted-foreground">Data do 7º dia</h3>
-            <p className="font-medium">
-              {testData.date7Day ? new Date(testData.date7Day).toLocaleDateString("pt-BR") : "Não informada"}
-            </p>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <h3 className="text-sm font-medium text-muted-foreground">Temp 7º dia - Câmara</h3>
-              <p className="font-medium">{testData.temp7Chamber === null || testData.temp7Chamber === undefined ? "Não informado" : `${testData.temp7Chamber} ºC`}</p>
-            </div>
-            <div>
-              <h3 className="text-sm font-medium text-muted-foreground">Temp 7º dia - Arroz</h3>
-              <p className="font-medium">{testData.temp7Rice === null || testData.temp7Rice === undefined ? "Não informado" : `${testData.temp7Rice} ºC`}</p>
-            </div>
-          </div>
-
+        <CardContent className="p-3 sm:p-4">
           {testData.photos7Day?.length > 0 ? (
             <PhotoGridDisplay
               photos={testData.photos7Day}
@@ -930,44 +970,28 @@ const mapped = {
                 unit: testData.unit,
                 testLot: testData.testLot,
                 matrixLot: testData.matrixLot,
-                date: testData.date7Day ? new Date(testData.date7Day).toLocaleDateString("pt-BR") : undefined,
-                temperature: { chamber: testData.temp7Chamber, rice: testData.temp7Rice },
+                date: photoDate7,
               }}
             />
           ) : (
             <div className="flex justify-center">
-              <div className="bg-muted/50 rounded-lg p-8 flex flex-col items-center justify-center w-full">
-                <Camera className="h-8 w-8 text-muted-foreground mb-2" />
-                <p className="text-muted-foreground text-center">Foto do 7º dia não disponível</p>
+              <div className="flex w-full flex-col items-center justify-center rounded-2xl bg-muted/50 p-8">
+                <Camera className="mb-2 h-8 w-8 text-muted-foreground" />
+                <p className="text-center text-muted-foreground">Foto do 7º dia não disponível</p>
               </div>
             </div>
           )}
         </CardContent>
       </Card>
 
-      <Card className="mb-6">
-        <CardHeader>
-          <CardTitle>Dados do 14º dia</CardTitle>
+      <Card className="mb-6 overflow-hidden border-slate-200 shadow-sm dark:border-slate-800">
+        <CardHeader className="border-b bg-slate-50/80 px-4 py-3 dark:bg-slate-950/40">
+          <CardTitle className="flex flex-col gap-1 text-lg sm:flex-row sm:items-center sm:justify-between">
+            <span>Fotos do 14º dia</span>
+            <span className="text-sm font-semibold text-muted-foreground">{photoDate14}</span>
+          </CardTitle>
         </CardHeader>
-        <CardContent className="space-y-4">
-          <div>
-            <h3 className="text-sm font-medium text-muted-foreground">Data do 14º dia</h3>
-            <p className="font-medium">
-              {testData.date14Day ? new Date(testData.date14Day).toLocaleDateString("pt-BR") : "Não informada"}
-            </p>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <h3 className="text-sm font-medium text-muted-foreground">Temp 14º dia - Câmara</h3>
-              <p className="font-medium">{testData.temp14Chamber === null || testData.temp14Chamber === undefined ? "Não informado" : `${testData.temp14Chamber} ºC`}</p>
-            </div>
-            <div>
-              <h3 className="text-sm font-medium text-muted-foreground">Temp 14º dia - Arroz</h3>
-              <p className="font-medium">{testData.temp14Rice === null || testData.temp14Rice === undefined ? "Não informado" : `${testData.temp14Rice} ºC`}</p>
-            </div>
-          </div>
-
+        <CardContent className="p-3 sm:p-4">
           {testData.photos14Day?.length > 0 ? (
             <PhotoGridDisplay
               photos={testData.photos14Day}
@@ -981,44 +1005,34 @@ const mapped = {
                 unit: testData.unit,
                 testLot: testData.testLot,
                 matrixLot: testData.matrixLot,
-                date: testData.date14Day ? new Date(testData.date14Day).toLocaleDateString("pt-BR") : undefined,
-                temperature: { chamber: testData.temp14Chamber, rice: testData.temp14Rice },
+                date: photoDate14,
               }}
             />
           ) : (
             <div className="flex justify-center">
-              <div className="bg-muted/50 rounded-lg p-8 flex flex-col items-center justify-center w-full">
-                <Camera className="h-8 w-8 text-muted-foreground mb-2" />
-                <p className="text-muted-foreground text-center">Foto do 14º dia não disponível</p>
+              <div className="flex w-full flex-col items-center justify-center rounded-2xl bg-muted/50 p-8">
+                <Camera className="mb-2 h-8 w-8 text-muted-foreground" />
+                <p className="text-center text-muted-foreground">Foto do 14º dia não disponível</p>
               </div>
             </div>
           )}
         </CardContent>
       </Card>
 
-      <Card className="mb-6">
-        <CardHeader>
-          <CardTitle>Medições de Peso</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div>
-              <h3 className="text-sm font-medium text-muted-foreground">Peso Úmido</h3>
-              <p className="font-medium">{fmt(testData.wetWeight, "kg")}</p>
-            </div>
-            <div>
-              <h3 className="text-sm font-medium text-muted-foreground">Peso Seco</h3>
-              <p className="font-medium">{fmt(testData.dryWeight, "kg")}</p>
-            </div>
-            <div>
-              <h3 className="text-sm font-medium text-muted-foreground">Peso Conídio Extraído</h3>
-              <p className="font-medium">
-                {fmt(testData.extractedConidiumWeight, "kg")}
-              </p>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
+      <div className="mb-6 grid grid-cols-2 gap-3 md:grid-cols-3">
+        <div className="rounded-2xl border border-emerald-100 bg-gradient-to-br from-emerald-50 to-white p-4 shadow-sm dark:border-emerald-900/50 dark:from-emerald-950/20 dark:to-slate-950">
+          <div className="text-xs font-bold uppercase tracking-[0.16em] text-emerald-700 dark:text-emerald-300">Peso Úmido</div>
+          <div className="mt-2 text-2xl font-black text-slate-950 dark:text-slate-100">{fmt(testData.wetWeight, "kg")}</div>
+        </div>
+        <div className="rounded-2xl border border-blue-100 bg-gradient-to-br from-blue-50 to-white p-4 shadow-sm dark:border-blue-900/50 dark:from-blue-950/20 dark:to-slate-950">
+          <div className="text-xs font-bold uppercase tracking-[0.16em] text-blue-700 dark:text-blue-300">Peso Seco</div>
+          <div className="mt-2 text-2xl font-black text-slate-950 dark:text-slate-100">{fmt(testData.dryWeight, "kg")}</div>
+        </div>
+        <div className="col-span-2 rounded-2xl border border-purple-100 bg-gradient-to-br from-purple-50 to-white p-4 shadow-sm dark:border-purple-900/50 dark:from-purple-950/20 dark:to-slate-950 md:col-span-1">
+          <div className="text-xs font-bold uppercase tracking-[0.16em] text-purple-700 dark:text-purple-300">Peso Conídio Extraído</div>
+          <div className="mt-2 text-2xl font-black text-slate-950 dark:text-slate-100">{fmt(testData.extractedConidiumWeight, "kg")}</div>
+        </div>
+      </div>
     </div>
   )
 }

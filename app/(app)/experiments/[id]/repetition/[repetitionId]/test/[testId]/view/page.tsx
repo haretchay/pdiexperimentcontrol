@@ -942,11 +942,11 @@ const mapped = {
             </div>
           ) : (
             <div className="overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-800">
-              <table className="min-w-[1720px] w-full border-collapse text-sm">
+              <table className="min-w-[1800px] w-full border-collapse text-sm">
                 <thead>
                   <tr className="bg-slate-100 text-xs font-semibold text-slate-700 dark:bg-slate-900 dark:text-slate-200">
                     <th rowSpan={2} className="w-[150px] border border-slate-200 px-2 py-2 text-left align-middle dark:border-slate-800">Dia</th>
-                    <th colSpan={2} className="border border-slate-200 px-2 py-2 text-center dark:border-slate-800">Temp. Câmara</th>
+                    <th colSpan={3} className="border border-slate-200 px-2 py-2 text-center dark:border-slate-800">Temp. Câmara</th>
                     <th colSpan={4} className="border border-slate-200 px-2 py-2 text-center dark:border-slate-800">Temp. Arroz (Manhã)</th>
                     <th colSpan={4} className="border border-slate-200 px-2 py-2 text-center dark:border-slate-800">Temp. Arroz (Tarde)</th>
                     <th rowSpan={2} className="w-[82px] border border-slate-200 px-2 py-2 text-center align-middle dark:border-slate-800">Média Geral</th>
@@ -955,6 +955,7 @@ const mapped = {
                   <tr className="bg-slate-50 text-[11px] font-semibold text-slate-600 dark:bg-slate-900/70 dark:text-slate-300">
                     <th className="w-[72px] border border-slate-200 px-1.5 py-1.5 text-center dark:border-slate-800">M</th>
                     <th className="w-[72px] border border-slate-200 px-1.5 py-1.5 text-center dark:border-slate-800">T</th>
+                    <th className="w-[76px] border border-slate-200 px-1.5 py-1.5 text-center dark:border-slate-800">Média</th>
                     <th className="w-[72px] border border-slate-200 px-1.5 py-1.5 text-center dark:border-slate-800">T1</th>
                     <th className="w-[72px] border border-slate-200 px-1.5 py-1.5 text-center dark:border-slate-800">T2</th>
                     <th className="w-[72px] border border-slate-200 px-1.5 py-1.5 text-center dark:border-slate-800">T3</th>
@@ -982,6 +983,7 @@ const mapped = {
                       </td>
                       <td className="border border-slate-200 px-2 py-1.5 text-center dark:border-slate-800">{formatTemperatureValue(row.chamberMorning)}</td>
                       <td className="border border-slate-200 px-2 py-1.5 text-center dark:border-slate-800">{formatTemperatureValue(row.chamberAfternoon)}</td>
+                      <td className="border border-slate-200 bg-violet-50/70 px-2 py-1.5 text-center font-semibold dark:border-slate-800 dark:bg-violet-950/20">{formatTemperatureValue(row.chamber)}</td>
                       {row.morningValues.map((value: any, index: number) => (
                         <td key={`m-${row.day}-${index}`} className="border border-slate-200 px-2 py-1.5 text-center dark:border-slate-800">{formatTemperatureValue(value)}</td>
                       ))}

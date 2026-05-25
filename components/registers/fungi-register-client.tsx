@@ -374,7 +374,7 @@ export function FungiRegisterClient({ fungi, setupError }: FungiRegisterClientPr
 
               <div className="grid gap-4 sm:grid-cols-3">
                 <div className="space-y-2">
-                  <Label htmlFor="optimalTemperature">Temperatura ótima</Label>
+                  <Label htmlFor="optimalTemperature">Temp. ótima</Label>
                   <TemperatureInput
                     id="optimalTemperature"
                     value={form.optimalTemperature}

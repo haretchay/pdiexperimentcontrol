@@ -97,11 +97,23 @@ export default async function FungiRegisterPage() {
   }
 
   const createdByIds = Array.from(new Set(rows.map((row) => row.created_by).filter((id): id is string => Boolean(id))))
+  const fungusIds = rows.map((row) => row.id)
   let profilesById = new Map<string, string>()
+  let experimentCountByFungusId = new Map<string, number>()
 
   if (createdByIds.length > 0) {
     const { data: profiles } = await admin.from("profiles").select("user_id, full_name").in("user_id", createdByIds)
     profilesById = new Map((profiles ?? []).map((profile: ProfileRow) => [profile.user_id, profile.full_name ?? "Usuário sem nome"]))
+  }
+
+  if (fungusIds.length > 0) {
+    const { data: linkedExperiments } = await admin.from("experiments").select("fungus_id").in("fungus_id", fungusIds)
+
+    for (const experiment of linkedExperiments ?? []) {
+      const fungusId = (experiment as { fungus_id?: string | null }).fungus_id
+      if (!fungusId) continue
+      experimentCountByFungusId.set(fungusId, (experimentCountByFungusId.get(fungusId) ?? 0) + 1)
+    }
   }
 
   const fungi: FungusView[] = rows.map((row) => ({
@@ -113,6 +125,7 @@ export default async function FungiRegisterPage() {
     acronyms: Array.isArray(row.acronyms) ? row.acronyms : [],
     created_by: row.created_by,
     created_by_name: row.created_by ? profilesById.get(row.created_by) ?? null : null,
+    experiment_count: experimentCountByFungusId.get(row.id) ?? 0,
     created_at: row.created_at,
     updated_at: row.updated_at,
   }))

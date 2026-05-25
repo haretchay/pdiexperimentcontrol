@@ -227,9 +227,6 @@ export function TestsPageClient({ initialTests }: { initialTests: UITestRow[] })
               </div>
               <div>
                 <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">Testes do PDI</h1>
-                <p className="mt-1 max-w-2xl text-sm text-blue-50">
-                  Visualize rapidamente o andamento, filtre por período, unidade e status, e acesse a edição ou visualização de cada teste.
-                </p>
               </div>
             </div>
 

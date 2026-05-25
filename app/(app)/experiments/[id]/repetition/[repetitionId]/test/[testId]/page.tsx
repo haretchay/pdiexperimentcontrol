@@ -502,6 +502,13 @@ export default function TestEditPage() {
   const date7FromExperiment = useMemo(() => getExperimentDayDate(experiment?.start_date, 7), [experiment?.start_date])
   const date14FromExperiment = useMemo(() => getExperimentDayDate(experiment?.start_date, 14), [experiment?.start_date])
 
+  const watchedTemperatureValues = form.watch() as unknown as Partial<Record<TemperatureFieldName, unknown>>
+  const activeDiscardOptions = useMemo(
+    () => DISCARD_OPTIONS.filter((option) => TEMPERATURE_DAYS.some((day) => Boolean(discardContaminations[String(day)]?.[option.key]))),
+    [discardContaminations],
+  )
+  const discardTotals = useMemo(() => getDiscardTotals(discardContaminations), [discardContaminations])
+
   useEffect(() => {
     let cancelled = false
     ;(async () => {
@@ -977,13 +984,6 @@ export default function TestEditPage() {
     )
   }
 
-  const watchedTemperatureValues = form.watch() as unknown as Partial<Record<TemperatureFieldName, unknown>>
-  const activeDiscardOptions = useMemo(
-    () => DISCARD_OPTIONS.filter((option) => TEMPERATURE_DAYS.some((day) => Boolean(discardContaminations[String(day)]?.[option.key]))),
-    [discardContaminations],
-  )
-  const discardTotals = useMemo(() => getDiscardTotals(discardContaminations), [discardContaminations])
-
   return (
     <div className="container mx-auto w-full max-w-7xl px-4 py-6">
       <Card className="overflow-hidden border-slate-200 shadow-sm dark:border-slate-800">
@@ -1205,11 +1205,11 @@ export default function TestEditPage() {
                 </div>
 
                 <div className="overflow-x-auto p-3">
-                  <table className="min-w-[1720px] w-full border-collapse overflow-hidden rounded-xl text-sm">
+                  <table className="min-w-[1800px] w-full border-collapse overflow-hidden rounded-xl text-sm">
                     <thead>
                       <tr className="bg-slate-100 text-xs font-semibold text-slate-700 dark:bg-slate-900 dark:text-slate-200">
                         <th rowSpan={2} className="w-[150px] border border-slate-200 px-2 py-2 text-left align-middle dark:border-slate-800">Dia</th>
-                        <th colSpan={2} className="border border-slate-200 px-2 py-2 text-center dark:border-slate-800">Temp. Câmara</th>
+                        <th colSpan={3} className="border border-slate-200 px-2 py-2 text-center dark:border-slate-800">Temp. Câmara</th>
                         <th colSpan={4} className="border border-slate-200 px-2 py-2 text-center dark:border-slate-800">Temp. Arroz (Manhã)</th>
                         <th colSpan={4} className="border border-slate-200 px-2 py-2 text-center dark:border-slate-800">Temp. Arroz (Tarde)</th>
                         <th rowSpan={2} className="w-[82px] border border-slate-200 px-2 py-2 text-center align-middle dark:border-slate-800">Média Geral</th>
@@ -1218,6 +1218,7 @@ export default function TestEditPage() {
                       <tr className="bg-slate-50 text-[11px] font-semibold text-slate-600 dark:bg-slate-900/70 dark:text-slate-300">
                         <th className="w-[72px] border border-slate-200 px-1.5 py-1.5 text-center dark:border-slate-800">M</th>
                         <th className="w-[72px] border border-slate-200 px-1.5 py-1.5 text-center dark:border-slate-800">T</th>
+                        <th className="w-[76px] border border-slate-200 px-1.5 py-1.5 text-center dark:border-slate-800">Média</th>
                         <th className="w-[72px] border border-slate-200 px-1.5 py-1.5 text-center dark:border-slate-800">T1</th>
                         <th className="w-[72px] border border-slate-200 px-1.5 py-1.5 text-center dark:border-slate-800">T2</th>
                         <th className="w-[72px] border border-slate-200 px-1.5 py-1.5 text-center dark:border-slate-800">T3</th>
@@ -1240,6 +1241,7 @@ export default function TestEditPage() {
                     <tbody>
                       {TEMPERATURE_DAYS.map((day) => {
                         const dayDate = getExperimentDayDate(experiment?.start_date, day)
+                        const chamberAverage = getChamberAverage(watchedTemperatureValues, day)
                         const morningAverage = getRicePeriodAverage(watchedTemperatureValues, day, "Morning")
                         const afternoonAverage = getRicePeriodAverage(watchedTemperatureValues, day, "Afternoon")
                         const generalAverage = getRiceGeneralAverage(watchedTemperatureValues, day)
@@ -1277,6 +1279,18 @@ export default function TestEditPage() {
                                 </td>
                               )
                             })}
+
+                            <td className="border border-slate-200 bg-violet-50/70 p-1 align-middle dark:border-slate-800 dark:bg-violet-950/20">
+                              <div className="relative">
+                                <Input
+                                  value={formatComputedTemperature(chamberAverage)}
+                                  readOnly
+                                  tabIndex={-1}
+                                  className="h-8 bg-white/70 !pl-1.5 !pr-4 text-left text-xs font-semibold dark:bg-slate-950/40"
+                                />
+                                <div className="pointer-events-none absolute inset-y-0 right-1 flex items-center text-[10px] text-muted-foreground">ºC</div>
+                              </div>
+                            </td>
 
                             {RICE_PERIODS.flatMap((period) => {
                               const periodAverage = period.key === "Morning" ? morningAverage : afternoonAverage

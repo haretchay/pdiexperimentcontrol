@@ -118,6 +118,28 @@ export async function DELETE(_request: Request, context: RouteContext) {
   if (!id) return NextResponse.json({ ok: false, error: "ID do fungo não informado." }, { status: 400 })
 
   try {
+    const { count, error: usageError } = await auth.admin
+      .from("experiments")
+      .select("id", { count: "exact", head: true })
+      .eq("fungus_id", id)
+
+    if (usageError) {
+      return NextResponse.json(
+        { ok: false, error: usageError.message || "Não foi possível verificar o uso do fungo em experimentos." },
+        { status: 500 },
+      )
+    }
+
+    if ((count ?? 0) > 0) {
+      return NextResponse.json(
+        {
+          ok: false,
+          error: `Este fungo já está vinculado a ${count} experimento${count === 1 ? "" : "s"} e não pode ser excluído.`,
+        },
+        { status: 409 },
+      )
+    }
+
     const { error } = await auth.admin.from("fungi").delete().eq("id", id)
 
     if (error) {

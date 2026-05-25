@@ -34,6 +34,7 @@ export interface FungusView {
   acronyms: string[]
   created_by: string | null
   created_by_name: string | null
+  experiment_count: number
   created_at: string
   updated_at: string
 }
@@ -280,6 +281,14 @@ export function FungiRegisterClient({ fungi, setupError }: FungiRegisterClientPr
   }
 
   async function handleDelete(fungus: FungusView) {
+    if (fungus.experiment_count > 0) {
+      setError(
+        `Este fungo já está vinculado a ${fungus.experiment_count} experimento${fungus.experiment_count === 1 ? "" : "s"} e não pode ser excluído.`,
+      )
+      setSuccess(null)
+      return
+    }
+
     const confirmed = window.confirm(`Deseja excluir o cadastro de ${fungus.scientific_name}?`)
     if (!confirmed) return
 
@@ -355,6 +364,9 @@ export function FungiRegisterClient({ fungi, setupError }: FungiRegisterClientPr
         <Card className="border-blue-100 shadow-sm">
           <CardHeader>
             <CardTitle>{editingId ? "Editar fungo" : "Novo fungo"}</CardTitle>
+            <CardDescription>
+              Cadastre as temperaturas com no máximo 1 casa decimal e siglas com 3 a 6 letras maiúsculas.
+            </CardDescription>
           </CardHeader>
           <CardContent>
             <form className="space-y-5" onSubmit={handleSubmit}>
@@ -371,7 +383,7 @@ export function FungiRegisterClient({ fungi, setupError }: FungiRegisterClientPr
 
               <div className="grid gap-4 sm:grid-cols-3">
                 <div className="space-y-2">
-                  <Label htmlFor="optimalTemperature">Temp. ótima</Label>
+                  <Label htmlFor="optimalTemperature">Temperatura ótima</Label>
                   <TemperatureInput
                     id="optimalTemperature"
                     value={form.optimalTemperature}
@@ -400,7 +412,7 @@ export function FungiRegisterClient({ fungi, setupError }: FungiRegisterClientPr
                 <div className="flex items-center justify-between gap-3">
                   <div>
                     <Label>Sigla</Label>
-                    <p className="text-xs text-slate-500">Clique em "Adicionar" para acrescentar mais campos de sigla.</p>
+                    <p className="text-xs text-slate-500">Use de 3 a 6 letras maiúsculas. Adicione quantas forem necessárias.</p>
                   </div>
                   <Button type="button" variant="outline" size="sm" onClick={addAcronym}>
                     <Plus className="mr-1 h-4 w-4" /> Adicionar
@@ -453,6 +465,7 @@ export function FungiRegisterClient({ fungi, setupError }: FungiRegisterClientPr
           <CardHeader className="gap-4 lg:flex-row lg:items-center lg:justify-between">
             <div>
               <CardTitle>Fungos cadastrados</CardTitle>
+              <CardDescription>Consulte, edite ou remova parâmetros já cadastrados.</CardDescription>
             </div>
             <div className="relative w-full lg:max-w-xs">
               <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
@@ -488,6 +501,11 @@ export function FungiRegisterClient({ fungi, setupError }: FungiRegisterClientPr
                               {acronym}
                             </Badge>
                           ))}
+                          {fungus.experiment_count > 0 ? (
+                            <Badge variant="outline" className="border-amber-200 bg-amber-50 text-amber-700">
+                              Em uso em {fungus.experiment_count} experimento{fungus.experiment_count === 1 ? "" : "s"}
+                            </Badge>
+                          ) : null}
                         </div>
 
                         <div className="mt-4 grid gap-3 sm:grid-cols-3">
@@ -521,7 +539,12 @@ export function FungiRegisterClient({ fungi, setupError }: FungiRegisterClientPr
                           size="sm"
                           className="border-red-200 text-red-700 hover:bg-red-50"
                           onClick={() => handleDelete(fungus)}
-                          disabled={deletingId === fungus.id}
+                          disabled={deletingId === fungus.id || fungus.experiment_count > 0}
+                          title={
+                            fungus.experiment_count > 0
+                              ? `Este fungo está vinculado a ${fungus.experiment_count} experimento${fungus.experiment_count === 1 ? "" : "s"}.`
+                              : "Excluir fungo"
+                          }
                         >
                           {deletingId === fungus.id ? <Loader2 className="mr-1 h-4 w-4 animate-spin" /> : <Trash2 className="mr-1 h-4 w-4" />}
                           Excluir

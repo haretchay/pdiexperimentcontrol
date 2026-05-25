@@ -604,9 +604,6 @@ const mapped = {
               </div>
               <div>
                 <CardTitle className="text-xl">Temperaturas</CardTitle>
-                <CardDescription>
-                  Acompanhamento diário da câmara e das médias do arroz, com comparação histórica filtrada pelo fungo do experimento.
-                </CardDescription>
               </div>
             </div>
 

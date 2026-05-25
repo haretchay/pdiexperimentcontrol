@@ -355,9 +355,6 @@ export function FungiRegisterClient({ fungi, setupError }: FungiRegisterClientPr
         <Card className="border-blue-100 shadow-sm">
           <CardHeader>
             <CardTitle>{editingId ? "Editar fungo" : "Novo fungo"}</CardTitle>
-            <CardDescription>
-              Cadastre as temperaturas com no máximo 1 casa decimal e siglas com 3 a 6 letras maiúsculas.
-            </CardDescription>
           </CardHeader>
           <CardContent>
             <form className="space-y-5" onSubmit={handleSubmit}>
@@ -403,7 +400,7 @@ export function FungiRegisterClient({ fungi, setupError }: FungiRegisterClientPr
                 <div className="flex items-center justify-between gap-3">
                   <div>
                     <Label>Sigla</Label>
-                    <p className="text-xs text-slate-500">Use de 3 a 6 letras maiúsculas. Adicione quantas forem necessárias.</p>
+                    <p className="text-xs text-slate-500">Clique em "Adicionar" para acrescentar mais campos de sigla.</p>
                   </div>
                   <Button type="button" variant="outline" size="sm" onClick={addAcronym}>
                     <Plus className="mr-1 h-4 w-4" /> Adicionar
@@ -456,7 +453,6 @@ export function FungiRegisterClient({ fungi, setupError }: FungiRegisterClientPr
           <CardHeader className="gap-4 lg:flex-row lg:items-center lg:justify-between">
             <div>
               <CardTitle>Fungos cadastrados</CardTitle>
-              <CardDescription>Consulte, edite ou remova parâmetros já cadastrados.</CardDescription>
             </div>
             <div className="relative w-full lg:max-w-xs">
               <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />

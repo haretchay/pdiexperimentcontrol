@@ -344,13 +344,13 @@ export default function NewExperimentPage() {
                   <div className="grid gap-3 sm:grid-cols-2">
                     <CountSelector
                       label="Nº de testes"
-                      description="Quantidade de testes por repetição."
+                      description="Testes por repetição."
                       value={testCount}
                       onChange={setTestCount}
                     />
                     <CountSelector
                       label="Nº de repetições"
-                      description="Quantidade de repetições do experimento."
+                      description="Quant. de repetições."
                       value={repetitionCount}
                       onChange={setRepetitionCount}
                     />

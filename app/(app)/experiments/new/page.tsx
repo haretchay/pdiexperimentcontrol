@@ -337,7 +337,6 @@ export default function NewExperimentPage() {
                     <CalendarDays className="h-5 w-5 text-blue-600" />
                     Data e quantidade
                   </CardTitle>
-                  <CardDescription>Defina a data inicial e a estrutura de testes/repetições.</CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-4">
                   <div className="space-y-2">
@@ -368,7 +367,6 @@ export default function NewExperimentPage() {
                     <FlaskConical className="h-5 w-5 text-purple-600" />
                     Fungo e cepa
                   </CardTitle>
-                  <CardDescription>O nome científico e as siglas são carregados do Cadastro de Fungos.</CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-5">
                   <div>
@@ -419,7 +417,6 @@ export default function NewExperimentPage() {
                       <div className="mb-3 flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
                         <div>
                           <Label className="text-sm font-bold">Sigla da cepa</Label>
-                          <p className="text-xs text-muted-foreground">Selecione uma sigla cadastrada para o fungo.</p>
                         </div>
                         <Badge variant="outline" className="w-fit bg-white dark:bg-slate-950">
                           {acronymOptions.length} sigla(s)
@@ -460,7 +457,6 @@ export default function NewExperimentPage() {
                             <Hash className="h-5 w-5 text-blue-600" />
                             {strain || "--"}
                           </div>
-                          <p className="mt-1 text-xs text-muted-foreground">Formato: sigla + variável.</p>
                         </div>
                       </div>
 
@@ -473,7 +469,6 @@ export default function NewExperimentPage() {
                           placeholder="Registre observações específicas da cepa formada, quando necessário."
                           className="min-h-[96px] w-full resize-y rounded-2xl border border-slate-200 bg-white px-3 py-3 text-sm shadow-sm outline-none transition placeholder:text-slate-400 focus:border-blue-400 focus:ring-2 focus:ring-blue-100 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-50 dark:placeholder:text-slate-500 dark:focus:border-blue-700 dark:focus:ring-blue-950"
                         />
-                        <p className="text-xs text-muted-foreground">Essa observação fica vinculada à CEPA do experimento, não aos testes individuais.</p>
                       </div>
                     </div>
                   ) : null}

@@ -303,9 +303,6 @@ export default function NewExperimentPage() {
                   Cadastro de experimento
                 </Badge>
                 <h1 className="text-2xl font-black tracking-tight sm:text-4xl">Novo Experimento #{formatExperimentNumber(nextNumber)}</h1>
-                <p className="mt-2 max-w-2xl text-sm text-blue-50">
-                  Selecione o fungo cadastrado, escolha a sigla da cepa e informe a variável para formar automaticamente a CEPA do experimento.
-                </p>
               </div>
 
               <div className="grid grid-cols-2 gap-3 sm:min-w-[360px]">

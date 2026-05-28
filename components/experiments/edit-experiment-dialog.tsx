@@ -37,6 +37,7 @@ type Props = {
   fungusId?: string | null
   strainAcronym?: string | null
   strainVariable?: string | null
+  strainObservation?: string | null
   onSaved?: () => void
 }
 
@@ -111,6 +112,7 @@ export function EditExperimentDialog({
   fungusId,
   strainAcronym,
   strainVariable,
+  strainObservation,
   onSaved,
 }: Props) {
   const supabase = useMemo(() => createClient(), [])
@@ -122,6 +124,7 @@ export function EditExperimentDialog({
   const [selectedAcronym, setSelectedAcronym] = useState(strainAcronym ?? "")
   const [variable, setVariable] = useState(strainVariable ?? "")
   const [legacyStrain, setLegacyStrain] = useState(strain)
+  const [observation, setObservation] = useState(strainObservation ?? "")
   const [testsToAdd, setTestsToAdd] = useState(0)
   const [repetitionsToAdd, setRepetitionsToAdd] = useState(0)
 
@@ -160,9 +163,10 @@ export function EditExperimentDialog({
     setSelectedAcronym(strainAcronym ?? "")
     setVariable(strainVariable ?? "")
     setLegacyStrain(strain)
+    setObservation(strainObservation ?? "")
     setTestsToAdd(0)
     setRepetitionsToAdd(0)
-  }, [open, startDate, strain, strainAcronym, strainVariable])
+  }, [open, startDate, strain, strainAcronym, strainVariable, strainObservation])
 
   const selectedFungus = useMemo(() => fungi.find((fungus) => fungus.id === fungusId) ?? null, [fungi, fungusId])
   const acronymOptions = useMemo(() => (Array.isArray(selectedFungus?.acronyms) ? selectedFungus.acronyms : []), [selectedFungus])
@@ -245,6 +249,7 @@ export function EditExperimentDialog({
         strain: newStrain,
         strain_acronym: fungusId ? selectedAcronym : null,
         strain_variable: fungusId ? variable : null,
+        strain_observation: observation.trim() || null,
         updated_by: user.id,
         updated_at: now,
       }
@@ -395,19 +400,43 @@ export function EditExperimentDialog({
                       </div>
                     </div>
                   </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="editStrainObservation">Observação da CEPA formada</Label>
+                    <textarea
+                      id="editStrainObservation"
+                      value={observation}
+                      onChange={(event) => setObservation(event.target.value)}
+                      placeholder="Registre observações específicas da cepa formada, quando necessário."
+                      className="min-h-[96px] w-full resize-y rounded-2xl border border-slate-200 bg-white px-3 py-3 text-sm shadow-sm outline-none transition placeholder:text-slate-400 focus:border-blue-400 focus:ring-2 focus:ring-blue-100 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-50 dark:placeholder:text-slate-500 dark:focus:border-blue-700 dark:focus:ring-blue-950"
+                    />
+                  </div>
                 </div>
               ) : (
-                <div className="space-y-2">
-                  <Label htmlFor="legacyStrain">Cepa</Label>
-                  <Input
-                    id="legacyStrain"
-                    value={legacyStrain}
-                    onChange={(event) => setLegacyStrain(normalizeVariable(event.target.value))}
-                    className="h-12 rounded-2xl text-lg font-black uppercase"
-                  />
-                  <p className="text-xs text-muted-foreground">
-                    Este experimento é anterior ao vínculo com Cadastro de Fungos. O fungo não será alterado.
-                  </p>
+                <div className="space-y-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="legacyStrain">Cepa</Label>
+                    <Input
+                      id="legacyStrain"
+                      value={legacyStrain}
+                      onChange={(event) => setLegacyStrain(normalizeVariable(event.target.value))}
+                      className="h-12 rounded-2xl text-lg font-black uppercase"
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      Este experimento é anterior ao vínculo com Cadastro de Fungos. O fungo não será alterado.
+                    </p>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="editLegacyStrainObservation">Observação da CEPA formada</Label>
+                    <textarea
+                      id="editLegacyStrainObservation"
+                      value={observation}
+                      onChange={(event) => setObservation(event.target.value)}
+                      placeholder="Registre observações específicas da cepa formada, quando necessário."
+                      className="min-h-[96px] w-full resize-y rounded-2xl border border-slate-200 bg-white px-3 py-3 text-sm shadow-sm outline-none transition placeholder:text-slate-400 focus:border-blue-400 focus:ring-2 focus:ring-blue-100 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-50 dark:placeholder:text-slate-500 dark:focus:border-blue-700 dark:focus:ring-blue-950"
+                    />
+                  </div>
                 </div>
               )}
             </div>

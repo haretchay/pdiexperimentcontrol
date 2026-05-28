@@ -76,6 +76,7 @@ export interface Database {
           fungus_id: string | null
           strain_acronym: string | null
           strain_variable: string | null
+          strain_observation: string | null
           start_date: string
           test_count: number
           repetition_count: number
@@ -91,6 +92,7 @@ export interface Database {
           fungus_id?: string | null
           strain_acronym?: string | null
           strain_variable?: string | null
+          strain_observation?: string | null
           start_date: string
           test_count: number
           repetition_count: number
@@ -106,6 +108,7 @@ export interface Database {
           fungus_id?: string | null
           strain_acronym?: string | null
           strain_variable?: string | null
+          strain_observation?: string | null
           start_date?: string
           test_count?: number
           repetition_count?: number
@@ -790,4 +793,3 @@ export interface Database {
     CompositeTypes: Record<string, never>
   }
 }
-

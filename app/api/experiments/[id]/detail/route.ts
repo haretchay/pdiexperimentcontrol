@@ -27,7 +27,7 @@ export async function GET(
 
     const { data: experiment, error: expErr } = await dbClient
       .from("experiments")
-      .select("id, number, repetition_count, test_count, start_date, strain")
+      .select("id, number, repetition_count, test_count, start_date, strain, fungus_id, strain_acronym, strain_variable, strain_observation")
       .eq("id", experimentId)
       .maybeSingle()
 

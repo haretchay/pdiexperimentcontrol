@@ -45,6 +45,7 @@ type DbExperimentRow = {
   fungus_id?: string | null
   strain_acronym?: string | null
   strain_variable?: string | null
+  strain_observation?: string | null
 }
 
 type DbTestPhotoRow = {
@@ -104,6 +105,7 @@ type ExperimentUI = {
   fungusId?: string | null
   strainAcronym?: string | null
   strainVariable?: string | null
+  strainObservation?: string | null
   totalTests: number
 }
 
@@ -413,6 +415,7 @@ export default function ExperimentDetailPage() {
           fungusId: expRow.fungus_id ?? null,
           strainAcronym: expRow.strain_acronym ?? null,
           strainVariable: expRow.strain_variable ?? null,
+          strainObservation: expRow.strain_observation ?? null,
           totalTests: expRow.repetition_count * expRow.test_count,
         }
 
@@ -954,6 +957,11 @@ export default function ExperimentDetailPage() {
                       {experiment.repetitionCount} repetição(ões) × {experiment.testCount} teste(s)
                     </span>
                   </div>
+                  {experiment.strainObservation ? (
+                    <div className="mt-3 max-w-3xl rounded-2xl border border-white/20 bg-white/10 px-3 py-2 text-sm text-blue-50">
+                      <span className="font-semibold text-white">Observação da CEPA:</span> {experiment.strainObservation}
+                    </div>
+                  ) : null}
                 </div>
 
                 <div className="flex flex-col gap-2 sm:min-w-[220px] lg:items-stretch lg:justify-end">
@@ -973,6 +981,7 @@ export default function ExperimentDetailPage() {
                     fungusId={experiment.fungusId}
                     strainAcronym={experiment.strainAcronym}
                     strainVariable={experiment.strainVariable}
+                    strainObservation={experiment.strainObservation}
                     onSaved={() => window.location.reload()}
                   />
                 </div>

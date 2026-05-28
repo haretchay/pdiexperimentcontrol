@@ -147,6 +147,7 @@ export default function NewExperimentPage() {
   const [selectedFungusId, setSelectedFungusId] = useState("")
   const [selectedAcronym, setSelectedAcronym] = useState("")
   const [strainVariable, setStrainVariable] = useState("")
+  const [strainObservation, setStrainObservation] = useState("")
   const [setupError, setSetupError] = useState<string | null>(null)
 
   useEffect(() => {
@@ -202,6 +203,7 @@ export default function NewExperimentPage() {
     setSelectedFungusId(fungusId)
     setSelectedAcronym("")
     setStrainVariable("")
+    setStrainObservation("")
   }
 
   async function onSubmit() {
@@ -245,6 +247,7 @@ export default function NewExperimentPage() {
         fungus_id: selectedFungus.id,
         strain_acronym: selectedAcronym,
         strain_variable: strainVariable,
+        strain_observation: strainObservation.trim() || null,
         start_date: startDate,
         test_count: testCount,
         repetition_count: repetitionCount,
@@ -459,6 +462,18 @@ export default function NewExperimentPage() {
                           </div>
                           <p className="mt-1 text-xs text-muted-foreground">Formato: sigla + variável.</p>
                         </div>
+                      </div>
+
+                      <div className="space-y-2">
+                        <Label htmlFor="strainObservation">Observação da CEPA formada</Label>
+                        <textarea
+                          id="strainObservation"
+                          value={strainObservation}
+                          onChange={(event) => setStrainObservation(event.target.value)}
+                          placeholder="Registre observações específicas da cepa formada, quando necessário."
+                          className="min-h-[96px] w-full resize-y rounded-2xl border border-slate-200 bg-white px-3 py-3 text-sm shadow-sm outline-none transition placeholder:text-slate-400 focus:border-blue-400 focus:ring-2 focus:ring-blue-100 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-50 dark:placeholder:text-slate-500 dark:focus:border-blue-700 dark:focus:ring-blue-950"
+                        />
+                        <p className="text-xs text-muted-foreground">Essa observação fica vinculada à CEPA do experimento, não aos testes individuais.</p>
                       </div>
                     </div>
                   ) : null}

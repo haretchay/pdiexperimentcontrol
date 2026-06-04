@@ -1,10 +1,11 @@
 "use client"
 
 import { useState } from "react"
+import type { ChangeEvent } from "react"
 import { CameraInterface } from "./camera-interface"
 import { PhotoAnnotationEditor } from "./photo-annotation-editor"
 import { Button } from "@/components/ui/button"
-import { Camera, RefreshCw, Check, X, Edit2 } from "lucide-react"
+import { Camera, RefreshCw, Check, X, Edit2, Upload } from "lucide-react"
 import { cn } from "@/lib/utils"
 
 interface PhotoCaptureWorkflowProps {
@@ -203,25 +204,68 @@ export function PhotoCaptureWorkflow({ onComplete, onCancel, testInfo }: PhotoCa
     }
   }
 
+  const readImageFileAsDataUrl = (file: File): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader()
+      reader.onload = () => {
+        const result = reader.result
+        if (typeof result === "string" && result.startsWith("data:image/")) {
+          resolve(result)
+          return
+        }
+        reject(new Error("Arquivo de imagem inválido."))
+      }
+      reader.onerror = () => reject(reader.error ?? new Error("Não foi possível ler a imagem."))
+      reader.readAsDataURL(file)
+    })
+  }
+
+  const setPhotoAtIndex = (index: number, imageSrc: string) => {
+    const newPhotos = [...photos]
+    newPhotos[index] = imageSrc
+    setPhotos(newPhotos)
+
+    setPhotoAnnotations((current) => {
+      if (!current[index]) return current
+      const next = { ...current }
+      delete next[index]
+      return next
+    })
+
+    const allPhotosSelected = newPhotos.filter(Boolean).length === totalPhotos
+    if (index < totalPhotos - 1 && !allPhotosSelected) {
+      setCurrentPhotoIndex(index + 1)
+    } else {
+      setCurrentPhotoIndex(index)
+    }
+  }
+
   const handleCapture = (imageSrc: string) => {
     try {
-      const newPhotos = [...photos]
-      newPhotos[currentPhotoIndex] = imageSrc
-      setPhotos(newPhotos)
+      setPhotoAtIndex(currentPhotoIndex, imageSrc)
       setIsCameraOpen(false)
-
-      // Verificar se todas as fotos foram capturadas
-      const allPhotosCaptured = newPhotos.filter(Boolean).length === totalPhotos
-
-      if (currentPhotoIndex === totalPhotos - 1 || allPhotosCaptured) {
-        // Se estamos na última foto ou todas as fotos foram capturadas, não avançamos automaticamente
-      } else {
-        // Caso contrário, avançamos para a próxima foto
-        setCurrentPhotoIndex(currentPhotoIndex + 1)
-      }
     } catch (error) {
       console.error("Erro ao capturar foto:", error)
       setIsCameraOpen(false)
+    }
+  }
+
+  const handleUpload = async (index: number, event: ChangeEvent<HTMLInputElement>) => {
+    try {
+      const file = event.target.files?.[0]
+      event.target.value = ""
+
+      if (!file) return
+      if (!file.type.startsWith("image/")) {
+        alert("Selecione um arquivo de imagem válido.")
+        return
+      }
+
+      const imageSrc = await readImageFileAsDataUrl(file)
+      setPhotoAtIndex(index, imageSrc)
+    } catch (error) {
+      console.error("Erro ao carregar foto:", error)
+      alert(error instanceof Error ? error.message : "Não foi possível carregar a foto selecionada.")
     }
   }
 
@@ -366,6 +410,13 @@ export function PhotoCaptureWorkflow({ onComplete, onCancel, testInfo }: PhotoCa
             <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
               {Array.from({ length: totalPhotos }).map((_, index) => (
                 <div key={index} className="aspect-square relative border rounded-md overflow-hidden bg-muted/30">
+                  <input
+                    id={`photo-upload-${testInfo.day}-${index}`}
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={(event) => handleUpload(index, event)}
+                  />
                   {photos[index] ? (
                     <>
                       {/* Usar um elemento img simples em vez de background-image */}
@@ -383,7 +434,7 @@ export function PhotoCaptureWorkflow({ onComplete, onCancel, testInfo }: PhotoCa
                         )}
                       </div>
                       <div className="absolute inset-0 flex items-center justify-center opacity-0 hover:opacity-100 bg-black/50 transition-opacity">
-                        <div className="flex gap-2">
+                        <div className="flex flex-col items-center gap-2 sm:flex-row">
                           <Button
                             variant="outline"
                             size="icon"
@@ -402,6 +453,15 @@ export function PhotoCaptureWorkflow({ onComplete, onCancel, testInfo }: PhotoCa
                             <RefreshCw className="h-4 w-4 mr-1" />
                             Refazer
                           </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="bg-black/70 text-white border-white"
+                            onClick={() => document.getElementById(`photo-upload-${testInfo.day}-${index}`)?.click()}
+                          >
+                            <Upload className="h-4 w-4 mr-1" />
+                            Upload
+                          </Button>
                         </div>
                       </div>
                       <div className="absolute top-2 left-2 bg-black/50 text-white px-2 py-1 text-xs rounded">
@@ -409,8 +469,8 @@ export function PhotoCaptureWorkflow({ onComplete, onCancel, testInfo }: PhotoCa
                       </div>
                     </>
                   ) : (
-                    <div className="absolute inset-0 flex flex-col items-center justify-center">
-                      <span className="text-lg font-medium mb-2">Foto {index + 1}</span>
+                    <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 px-3">
+                      <span className="text-lg font-medium">Foto {index + 1}</span>
                       <Button
                         variant="outline"
                         size="sm"
@@ -421,6 +481,15 @@ export function PhotoCaptureWorkflow({ onComplete, onCancel, testInfo }: PhotoCa
                       >
                         <Camera className="h-4 w-4 mr-1" />
                         Capturar
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="bg-white/90"
+                        onClick={() => document.getElementById(`photo-upload-${testInfo.day}-${index}`)?.click()}
+                      >
+                        <Upload className="h-4 w-4 mr-1" />
+                        Upload
                       </Button>
                     </div>
                   )}

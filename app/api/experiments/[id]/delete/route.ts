@@ -1,68 +1,44 @@
 import { NextResponse } from "next/server"
+
+import { createAdminClient } from "@/lib/supabase/admin"
 import { createClient } from "@/lib/supabase/server"
 
 // POST /api/experiments/:id/delete
-// - apaga test_photos + tests + experiment
-// - remove arquivos do bucket test-photos (best-effort)
+// Compatibilidade com versões antigas da UI: agora NÃO apaga registros.
+// A ação da lixeira cancela/inativa o experimento, preservando tests, fotos e histórico.
+export const dynamic = "force-dynamic"
 
-export async function POST(_req: Request, ctx: { params: { id: string } }) {
-  const id = ctx.params.id
-  const supabase = await createClient()
-
-  const {
-    data: { user },
-    error: userError,
-  } = await supabase.auth.getUser()
-
-  if (userError || !user) {
-    return NextResponse.json({ error: "unauthorized" }, { status: 401 })
-  }
-
+export async function POST(_req: Request, { params }: { params: { id: string } }) {
   try {
-    // 1) pega testes do experimento (para limpar storage)
-    const { data: tests, error: testsErr } = await supabase
-      .from("tests")
-      .select("id, created_by")
-      .eq("experiment_id", id)
+    const supabase = await createClient()
+    const {
+      data: { user },
+      error: authError,
+    } = await supabase.auth.getUser()
 
-    if (testsErr) throw testsErr
-
-    const testIds = (tests ?? []).map((t: any) => String(t.id)).filter(Boolean)
-
-    // 2) remove arquivos do bucket (best-effort)
-    for (const t of tests ?? []) {
-      const testId = String(t.id)
-      if (!testId) continue
-
-      const ownerId = (t.created_by ? String(t.created_by) : user.id).trim()
-      const folder = `${ownerId}/${testId}`
-
-      const { data: objects, error: listErr } = await supabase.storage.from("test-photos").list(folder, { limit: 1000 })
-      if (listErr || !objects?.length) continue
-
-      const paths = objects
-        .filter((o: any) => typeof o?.name === "string" && o.name.length)
-        .map((o: any) => `${folder}/${o.name}`)
-
-      if (paths.length) {
-        await supabase.storage.from("test-photos").remove(paths)
-      }
+    if (authError || !user) {
+      return NextResponse.json({ ok: false, error: "Usuário não autenticado." }, { status: 401 })
     }
 
-    // 3) apaga registros do banco (ordem segura)
-    if (testIds.length) {
-      const { error: delPhotosErr } = await supabase.from("test_photos").delete().in("test_id", testIds)
-      if (delPhotosErr) throw delPhotosErr
-    }
+    const dbClient = createAdminClient() ?? supabase
+    const now = new Date().toISOString()
 
-    const { error: delTestsErr } = await supabase.from("tests").delete().eq("experiment_id", id)
-    if (delTestsErr) throw delTestsErr
+    const { error } = await dbClient
+      .from("experiments")
+      .update({
+        status: "canceled",
+        canceled_at: now,
+        canceled_by: user.id,
+        updated_by: user.id,
+        updated_at: now,
+      })
+      .eq("id", params.id)
 
-    const { error: delExpErr } = await supabase.from("experiments").delete().eq("id", id)
-    if (delExpErr) throw delExpErr
+    if (error) throw error
 
-    return NextResponse.json({ ok: true })
-  } catch (e: any) {
-    return NextResponse.json({ error: e?.message ?? "delete_failed" }, { status: 500 })
+    return NextResponse.json({ ok: true, mode: "canceled" })
+  } catch (error: any) {
+    console.error("[api/experiments/delete-as-cancel] unexpected", error)
+    return NextResponse.json({ ok: false, error: error?.message ?? "cancel_failed" }, { status: 500 })
   }
 }

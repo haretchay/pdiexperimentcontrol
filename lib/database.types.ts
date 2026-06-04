@@ -77,6 +77,9 @@ export interface Database {
           strain_acronym: string | null
           strain_variable: string | null
           strain_observation: string | null
+          status: string
+          canceled_at: string | null
+          canceled_by: string | null
           start_date: string
           test_count: number
           repetition_count: number
@@ -93,6 +96,9 @@ export interface Database {
           strain_acronym?: string | null
           strain_variable?: string | null
           strain_observation?: string | null
+          status?: string
+          canceled_at?: string | null
+          canceled_by?: string | null
           start_date: string
           test_count: number
           repetition_count: number
@@ -109,6 +115,9 @@ export interface Database {
           strain_acronym?: string | null
           strain_variable?: string | null
           strain_observation?: string | null
+          status?: string
+          canceled_at?: string | null
+          canceled_by?: string | null
           start_date?: string
           test_count?: number
           repetition_count?: number

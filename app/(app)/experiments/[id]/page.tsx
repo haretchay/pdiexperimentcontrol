@@ -46,6 +46,9 @@ type DbExperimentRow = {
   strain_acronym?: string | null
   strain_variable?: string | null
   strain_observation?: string | null
+  status?: string | null
+  canceled_at?: string | null
+  canceled_by?: string | null
 }
 
 type DbTestPhotoRow = {
@@ -106,6 +109,9 @@ type ExperimentUI = {
   strainAcronym?: string | null
   strainVariable?: string | null
   strainObservation?: string | null
+  status: string
+  canceledAt?: string | null
+  canceledBy?: string | null
   totalTests: number
 }
 
@@ -416,6 +422,9 @@ export default function ExperimentDetailPage() {
           strainAcronym: expRow.strain_acronym ?? null,
           strainVariable: expRow.strain_variable ?? null,
           strainObservation: expRow.strain_observation ?? null,
+          status: expRow.status ?? "active",
+          canceledAt: expRow.canceled_at ?? null,
+          canceledBy: expRow.canceled_by ?? null,
           totalTests: expRow.repetition_count * expRow.test_count,
         }
 
@@ -611,12 +620,24 @@ export default function ExperimentDetailPage() {
     return base
   }, [experiment, repetitions, testData])
 
+  const isExperimentCanceled = experiment?.status === "canceled"
+
   const handleCardClick = (repetitionId: number, testId: number) => {
     router.push(`/experiments/${experimentId}/repetition/${repetitionId}/test/${testId}/view`)
   }
 
   const handleEditClick = (e: MouseEvent, repetitionId: number, testId: number) => {
     e.stopPropagation()
+
+    if (isExperimentCanceled) {
+      toast({
+        title: "Experimento cancelado",
+        description: "Reative o experimento antes de editar os testes.",
+        variant: "destructive",
+      })
+      return
+    }
+
     router.push(`/experiments/${experimentId}/repetition/${repetitionId}/test/${testId}`)
   }
 
@@ -971,19 +992,25 @@ export default function ExperimentDetailPage() {
                     experimentStrain={experiment.strain}
                     tests={qrTests}
                   />
-                  <EditExperimentDialog
-                    experimentId={experiment.id}
-                    experimentNumber={experiment.number}
-                    startDate={experiment.startDate}
-                    testCount={experiment.testCount}
-                    repetitionCount={experiment.repetitionCount}
-                    strain={experiment.strain}
-                    fungusId={experiment.fungusId}
-                    strainAcronym={experiment.strainAcronym}
-                    strainVariable={experiment.strainVariable}
-                    strainObservation={experiment.strainObservation}
-                    onSaved={() => window.location.reload()}
-                  />
+                  {!isExperimentCanceled ? (
+                    <EditExperimentDialog
+                      experimentId={experiment.id}
+                      experimentNumber={experiment.number}
+                      startDate={experiment.startDate}
+                      testCount={experiment.testCount}
+                      repetitionCount={experiment.repetitionCount}
+                      strain={experiment.strain}
+                      fungusId={experiment.fungusId}
+                      strainAcronym={experiment.strainAcronym}
+                      strainVariable={experiment.strainVariable}
+                      strainObservation={experiment.strainObservation}
+                      onSaved={() => window.location.reload()}
+                    />
+                  ) : (
+                    <Badge variant="outline" className="rounded-full border-red-200 bg-red-50 px-3 py-2 text-red-700">
+                      Experimento cancelado
+                    </Badge>
+                  )}
                 </div>
               </div>
             </div>
@@ -1037,6 +1064,19 @@ export default function ExperimentDetailPage() {
             </div>
           </CardContent>
         </Card>
+
+        {isExperimentCanceled ? (
+          <Card className="border-red-200 bg-red-50/80 shadow-sm dark:border-red-950 dark:bg-red-950/20">
+            <CardContent className="flex flex-col gap-2 p-4 text-sm text-red-800 dark:text-red-200 sm:flex-row sm:items-center sm:justify-between">
+              <div className="flex items-center gap-2">
+                <AlertTriangle className="h-4 w-4" />
+                <span className="font-semibold">Experimento cancelado/inativo.</span>
+                <span className="text-red-700/80 dark:text-red-200/80">A visualização permanece disponível, mas a edição dos testes está pausada.</span>
+              </div>
+              {experiment.canceledAt ? <span className="text-xs">Cancelado em {formatDateBR(experiment.canceledAt)}</span> : null}
+            </CardContent>
+          </Card>
+        ) : null}
 
         <Tabs defaultValue="repetition-1" className="w-full">
           <div className="mb-4 overflow-x-auto rounded-2xl border border-slate-200 bg-white/80 p-2 shadow-sm dark:border-slate-800 dark:bg-slate-950/80">
@@ -1182,10 +1222,11 @@ export default function ExperimentDetailPage() {
                                   <Button
                                     size="sm"
                                     onClick={(e) => handleEditClick(e, repetition.id, test.id)}
-                                    className="rounded-xl bg-gradient-to-r from-blue-600 to-purple-600 px-4 font-bold text-white shadow-md shadow-blue-950/20 hover:from-blue-700 hover:to-purple-700"
+                                    disabled={isExperimentCanceled}
+                                    className="rounded-xl bg-gradient-to-r from-blue-600 to-purple-600 px-4 font-bold text-white shadow-md shadow-blue-950/20 hover:from-blue-700 hover:to-purple-700 disabled:cursor-not-allowed disabled:opacity-50"
                                   >
                                     <Edit className="mr-1 h-4 w-4" />
-                                    Editar
+                                    {isExperimentCanceled ? "Pausado" : "Editar"}
                                   </Button>
                                 </div>
                               </div>

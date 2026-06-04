@@ -148,16 +148,30 @@ function withinRange(value: number | undefined, min: number | null, max: number 
   return value >= min && value <= max
 }
 
+function buildNumericDomain(values: Array<number | null | undefined>, padding: number): [number, number] {
+  const valid = values.filter(isNumber)
+  if (valid.length === 0) return [0, 1]
+
+  const min = Math.min(...valid)
+  const max = Math.max(...valid)
+
+  if (min === max) return [Math.floor(min - padding), Math.ceil(max + padding)]
+
+  return [Math.floor(min - padding), Math.ceil(max + padding)]
+}
+
 export function DashboardClient({ experiments, experimentData, fungi }: DashboardClientProps) {
-  const [selectedFungusId, setSelectedFungusId] = useState<string>("all")
+  const firstFungusId = fungi[0]?.id ?? ""
+  const [selectedFungusId, setSelectedFungusId] = useState<string>(firstFungusId)
   const [metric, setMetric] = useState<ProductionMetric>("dry")
 
-  const selectedFungus = fungi.find((fungus) => fungus.id === selectedFungusId) ?? null
+  const selectedFungus = fungi.find((fungus) => fungus.id === selectedFungusId) ?? fungi[0] ?? null
+  const selectedFungusKey = selectedFungus?.id ?? ""
 
   const filteredExperiments = useMemo(() => {
-    if (selectedFungusId === "all") return experimentData
-    return experimentData.filter((experiment) => experiment.fungusId === selectedFungusId)
-  }, [experimentData, selectedFungusId])
+    if (!selectedFungusKey) return []
+    return experimentData.filter((experiment) => experiment.fungusId === selectedFungusKey)
+  }, [experimentData, selectedFungusKey])
 
   const testRows = useMemo(() => {
     return filteredExperiments.flatMap((experiment) =>
@@ -195,6 +209,51 @@ export function DashboardClient({ experiments, experimentData, fungi }: Dashboar
   const dailyTemperatureRows = useMemo(() => buildDailyTemperatureRows(filteredExperiments), [filteredExperiments])
   const productionByExperimentRows = useMemo(() => buildProductionByExperimentRows(filteredExperiments), [filteredExperiments])
   const statusRows = useMemo(() => buildStatusRows(testRows), [testRows])
+  const thermalRange = useMemo(() => {
+    const fromSelected = {
+      min: selectedFungus?.minTemperature ?? null,
+      max: selectedFungus?.maxTemperature ?? null,
+      optimal: selectedFungus?.optimalTemperature ?? null,
+    }
+
+    if (isNumber(fromSelected.min) && isNumber(fromSelected.max)) return fromSelected
+
+    const fromExperiment = filteredExperiments.find(
+      (experiment) => isNumber(experiment.fungusMinTemperature) && isNumber(experiment.fungusMaxTemperature),
+    )
+
+    return {
+      min: fromExperiment?.fungusMinTemperature ?? fromSelected.min,
+      max: fromExperiment?.fungusMaxTemperature ?? fromSelected.max,
+      optimal: fromExperiment?.fungusOptimalTemperature ?? fromSelected.optimal,
+    }
+  }, [filteredExperiments, selectedFungus])
+  const scatterTemperatureDomain = useMemo(
+    () =>
+      buildNumericDomain(
+        [
+          ...temperatureProductionRows.map((row) => row.avgRiceTemperature),
+          thermalRange.min,
+          thermalRange.max,
+          thermalRange.optimal,
+        ],
+        1,
+      ),
+    [temperatureProductionRows, thermalRange],
+  )
+  const dailyTemperatureDomain = useMemo(
+    () =>
+      buildNumericDomain(
+        [
+          ...dailyTemperatureRows.flatMap((row) => [row.rice, row.chamber]),
+          thermalRange.min,
+          thermalRange.max,
+          thermalRange.optimal,
+        ],
+        2,
+      ),
+    [dailyTemperatureRows, thermalRange],
+  )
 
   const mostProductiveStrain = strainSummary.reduce<(typeof strainSummary)[number] | null>((best, row) => {
     if (!best) return row
@@ -241,22 +300,13 @@ export function DashboardClient({ experiments, experimentData, fungi }: Dashboar
           </div>
 
           <div className="flex flex-wrap gap-2">
-            <Button
-              type="button"
-              size="sm"
-              variant={selectedFungusId === "all" ? "default" : "outline"}
-              className={selectedFungusId === "all" ? "bg-gradient-to-r from-blue-600 to-purple-600 text-white" : ""}
-              onClick={() => setSelectedFungusId("all")}
-            >
-              Todos os fungos
-            </Button>
             {fungi.map((fungus) => (
               <Button
                 key={fungus.id}
                 type="button"
                 size="sm"
-                variant={selectedFungusId === fungus.id ? "default" : "outline"}
-                className={selectedFungusId === fungus.id ? "bg-gradient-to-r from-blue-600 to-purple-600 text-white" : ""}
+                variant={selectedFungusKey === fungus.id ? "default" : "outline"}
+                className={selectedFungusKey === fungus.id ? "bg-gradient-to-r from-blue-600 to-purple-600 text-white" : ""}
                 onClick={() => setSelectedFungusId(fungus.id)}
               >
                 <span className="italic">{shortFungusName(fungus.scientificName)}</span>
@@ -284,14 +334,15 @@ export function DashboardClient({ experiments, experimentData, fungi }: Dashboar
 
           {selectedFungus ? (
             <div className="rounded-xl bg-muted px-3 py-2 text-sm">
+              <span className="text-muted-foreground">Fungo visualizado: </span>
               <span className="font-medium italic">{selectedFungus.scientificName}</span>
               <span className="ml-2 text-muted-foreground">
-                ótimo {formatNumber(selectedFungus.optimalTemperature)} ºC · faixa {formatNumber(selectedFungus.minTemperature)}–{formatNumber(selectedFungus.maxTemperature)} ºC
+                ótimo {formatNumber(thermalRange.optimal)} ºC · faixa {formatNumber(thermalRange.min)}–{formatNumber(thermalRange.max)} ºC
               </span>
             </div>
           ) : (
             <div className="rounded-xl bg-muted px-3 py-2 text-sm text-muted-foreground">
-              Selecione um fungo para visualizar linha ótima e faixa térmica específica.
+              Cadastre ou selecione um fungo para visualizar linha ótima e faixa térmica específica.
             </div>
           )}
         </div>
@@ -361,22 +412,22 @@ export function DashboardClient({ experiments, experimentData, fungi }: Dashboar
                         dataKey="avgRiceTemperature"
                         name="Temp. arroz"
                         unit=" ºC"
-                        domain={["dataMin - 1", "dataMax + 1"]}
+                        domain={scatterTemperatureDomain}
                       />
                       <YAxis type="number" dataKey="productionValue" name={METRIC_LABEL[metric]} />
                       <ZAxis type="number" dataKey="testNumber" range={[80, 220]} />
                       <Tooltip content={<TemperatureProductionTooltip metric={metric} />} />
-                      {isNumber(selectedFungus?.minTemperature) && isNumber(selectedFungus?.maxTemperature) ? (
+                      {isNumber(thermalRange.min) && isNumber(thermalRange.max) ? (
                         <ReferenceArea
-                          x1={selectedFungus.minTemperature}
-                          x2={selectedFungus.maxTemperature}
+                          x1={thermalRange.min}
+                          x2={thermalRange.max}
                           fill="#22c55e"
                           fillOpacity={0.08}
                         />
                       ) : null}
-                      {isNumber(selectedFungus?.optimalTemperature) ? (
+                      {isNumber(thermalRange.optimal) ? (
                         <ReferenceLine
-                          x={selectedFungus.optimalTemperature}
+                          x={thermalRange.optimal}
                           stroke="#16a34a"
                           strokeDasharray="5 5"
                           label={{ value: "ótima", position: "top" }}
@@ -402,7 +453,7 @@ export function DashboardClient({ experiments, experimentData, fungi }: Dashboar
                   <Thermometer className="h-5 w-5 text-orange-600" />
                   Perfil térmico médio
                 </CardTitle>
-                <CardDescription>Temperatura média por dia nos testes filtrados.</CardDescription>
+                <CardDescription>Temperatura média por dia nos testes filtrados para o fungo selecionado.</CardDescription>
               </CardHeader>
               <CardContent>
                 <div className="h-[360px]">
@@ -410,16 +461,16 @@ export function DashboardClient({ experiments, experimentData, fungi }: Dashboar
                     <ComposedChart data={dailyTemperatureRows} margin={{ top: 16, right: 20, bottom: 8, left: 0 }}>
                       <CartesianGrid strokeDasharray="3 3" />
                       <XAxis dataKey="dayLabel" />
-                      <YAxis unit=" ºC" domain={["dataMin - 2", "dataMax + 2"]} />
+                      <YAxis unit=" ºC" domain={dailyTemperatureDomain} />
                       <Tooltip content={<DailyTemperatureTooltip />} />
                       <Legend />
-                      {isNumber(selectedFungus?.minTemperature) && isNumber(selectedFungus?.maxTemperature) ? (
-                        <ReferenceArea y1={selectedFungus.minTemperature} y2={selectedFungus.maxTemperature} fill="#22c55e" fillOpacity={0.08} />
+                      {isNumber(thermalRange.min) && isNumber(thermalRange.max) ? (
+                        <ReferenceArea y1={thermalRange.min} y2={thermalRange.max} fill="#22c55e" fillOpacity={0.08} />
                       ) : null}
                       <Line type="monotone" dataKey="rice" name="Arroz" stroke="#f97316" strokeWidth={3} dot={{ r: 3 }} />
                       <Line type="monotone" dataKey="chamber" name="Câmara" stroke="#2563eb" strokeWidth={2} dot={{ r: 3 }} />
-                      {isNumber(selectedFungus?.optimalTemperature) ? (
-                        <ReferenceLine y={selectedFungus.optimalTemperature} stroke="#16a34a" strokeDasharray="5 5" />
+                      {isNumber(thermalRange.optimal) ? (
+                        <ReferenceLine y={thermalRange.optimal} stroke="#16a34a" strokeDasharray="5 5" />
                       ) : null}
                     </ComposedChart>
                   </ResponsiveContainer>

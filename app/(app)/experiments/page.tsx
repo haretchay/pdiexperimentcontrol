@@ -21,6 +21,8 @@ export type UIExperiment = {
   progressActivePct: number
   testTypes?: string[]
   units?: string[]
+  status: string
+  canceledAt?: string | null
 }
 
 type TestStatus = "Pendente" | "Inserir Fotos" | "Em andamento" | "Concluído"
@@ -223,6 +225,8 @@ function mapDbToUI(exp: ExperimentWithTests): UIExperiment {
     progressActivePct: Math.min(100, progressCompletedPct + progressInProgressPct),
     testTypes: [],
     units: getExperimentUnits(exp.tests ?? []),
+    status: exp.status ?? "active",
+    canceledAt: exp.canceledAt ?? null,
   }
 }
 
@@ -236,7 +240,25 @@ export default async function ExperimentsPage() {
     console.error("[v0] Error loading experiments:", error)
   }
 
+  let isAdmin = false
+  try {
+    const supabase = await createClient()
+    const { data: auth } = await supabase.auth.getUser()
+
+    if (auth.user) {
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("role, status")
+        .eq("user_id", auth.user.id)
+        .maybeSingle()
+
+      isAdmin = profile?.role === "admin" && profile?.status === "active"
+    }
+  } catch (error) {
+    console.error("[v0] Error loading user role:", error)
+  }
+
   const uiExperiments = (experiments ?? []).map(mapDbToUI)
 
-  return <ExperimentsPageClient initialExperiments={uiExperiments} />
+  return <ExperimentsPageClient initialExperiments={uiExperiments} isAdmin={isAdmin} />
 }

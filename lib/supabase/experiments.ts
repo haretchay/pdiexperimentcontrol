@@ -11,6 +11,9 @@ type DbExperimentRow = {
   strain_acronym?: string | null
   strain_variable?: string | null
   strain_observation?: string | null
+  status?: string | null
+  canceled_at?: string | null
+  canceled_by?: string | null
   start_date: string // date => string (YYYY-MM-DD)
   test_count: number
   repetition_count: number
@@ -107,6 +110,9 @@ export type Experiment = {
   strainAcronym: string | null
   strainVariable: string | null
   strainObservation: string | null
+  status: string
+  canceledAt: string | null
+  canceledBy: string | null
   startDate: string
   testCount: number
   repetitionCount: number
@@ -203,6 +209,9 @@ function mapExperiment(row: DbExperimentRow): Experiment {
     strainAcronym: row.strain_acronym ?? null,
     strainVariable: row.strain_variable ?? null,
     strainObservation: row.strain_observation ?? null,
+    status: row.status ?? "active",
+    canceledAt: row.canceled_at ?? null,
+    canceledBy: row.canceled_by ?? null,
     startDate: row.start_date,
     testCount: row.test_count,
     repetitionCount: row.repetition_count,
@@ -376,22 +385,50 @@ export async function createExperiment(
 }
 
 /**
- * Deleta experimento (admin-only no seu RLS)
+ * Cancela/inativa experimento sem remover registros do banco.
  */
-export async function deleteExperiment(supabase: SupabaseClient, experimentId: string) {
-  // No browser, usamos uma rota API que também remove as mídias do Storage.
+export async function cancelExperiment(supabase: SupabaseClient, experimentId: string) {
   if (typeof window !== "undefined") {
-    const res = await fetch(`/api/experiments/${experimentId}/delete`, { method: "POST" })
+    const res = await fetch(`/api/experiments/${experimentId}/cancel`, { method: "POST" })
     if (!res.ok) {
       const msg = await res.text().catch(() => "")
-      throw new Error(msg || `Falha ao excluir experimento (${res.status})`)
+      throw new Error(msg || `Falha ao cancelar experimento (${res.status})`)
     }
     return
   }
 
-  // Fallback (server): apenas remove a linha do experimento.
-  const { error } = await supabase.from("experiments").delete().eq("id", experimentId)
+  const { error } = await supabase
+    .from("experiments")
+    .update({ status: "canceled", canceled_at: new Date().toISOString() })
+    .eq("id", experimentId)
   if (error) throw error
+}
+
+/**
+ * Reativa experimento cancelado.
+ */
+export async function restoreExperiment(supabase: SupabaseClient, experimentId: string) {
+  if (typeof window !== "undefined") {
+    const res = await fetch(`/api/experiments/${experimentId}/restore`, { method: "POST" })
+    if (!res.ok) {
+      const msg = await res.text().catch(() => "")
+      throw new Error(msg || `Falha ao reativar experimento (${res.status})`)
+    }
+    return
+  }
+
+  const { error } = await supabase
+    .from("experiments")
+    .update({ status: "active", canceled_at: null, canceled_by: null })
+    .eq("id", experimentId)
+  if (error) throw error
+}
+
+/**
+ * Mantém compatibilidade com chamadas antigas: agora a lixeira apenas cancela/inativa.
+ */
+export async function deleteExperiment(supabase: SupabaseClient, experimentId: string) {
+  return cancelExperiment(supabase, experimentId)
 }
 
 /**
@@ -410,6 +447,9 @@ export async function getExperimentsWithTests(supabase: SupabaseClient): Promise
         strain_acronym,
         strain_variable,
         strain_observation,
+        status,
+        canceled_at,
+        canceled_by,
         start_date,
         test_count,
         repetition_count,

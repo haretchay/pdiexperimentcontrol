@@ -15,6 +15,7 @@ import {
   Search,
   Sparkles,
   TestTube,
+  RotateCcw,
   Trash,
 } from "lucide-react"
 
@@ -26,11 +27,11 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { useToast } from "@/hooks/use-toast"
 import { createClient } from "@/lib/supabase/client"
-import { deleteExperiment, getTestsByExperiment, type Test as DbTest } from "@/lib/supabase/experiments"
+import { cancelExperiment, getTestsByExperiment, restoreExperiment, type Test as DbTest } from "@/lib/supabase/experiments"
 import type { ExperimentUnitFilter, UIExperiment } from "@/app/(app)/experiments/page"
 
 type PeriodMode = "week" | "month"
-type ExperimentStatusFilter = "all" | "Pendente" | "Inserir Fotos" | "Em andamento" | "Concluído"
+type ExperimentStatusFilter = "all" | "Pendente" | "Inserir Fotos" | "Em andamento" | "Concluído" | "Cancelado"
 type ExperimentStatus = Exclude<ExperimentStatusFilter, "all">
 
 type TestDataMap = Record<
@@ -77,6 +78,7 @@ const STATUS_FILTERS: Array<{ value: ExperimentStatusFilter; label: string }> = 
   { value: "Inserir Fotos", label: "Inserir fotos" },
   { value: "Em andamento", label: "Em andamento" },
   { value: "Concluído", label: "Concluídos" },
+  { value: "Cancelado", label: "Cancelados" },
 ]
 
 function parseDate(value: string | null | undefined): Date | null {
@@ -176,6 +178,7 @@ function normalizeUnit(value: string | undefined): ExperimentUnitFilter | null {
 }
 
 function getExperimentStatus(experiment: UIExperiment): ExperimentStatus {
+  if (experiment.status === "canceled") return "Cancelado"
   if (experiment.totalTests > 0 && experiment.completedTests === experiment.totalTests) return "Concluído"
   if (experiment.inProgressTests > 0) return "Em andamento"
   if (experiment.needsPhotosTests > 0) return "Inserir Fotos"
@@ -186,6 +189,7 @@ function statusClasses(status: ExperimentStatus) {
   if (status === "Concluído") return "border-emerald-200 bg-emerald-50 text-emerald-700"
   if (status === "Em andamento") return "border-blue-200 bg-blue-50 text-blue-700"
   if (status === "Inserir Fotos") return "border-amber-200 bg-amber-50 text-amber-700"
+  if (status === "Cancelado") return "border-red-200 bg-red-50 text-red-700"
   return "border-slate-200 bg-slate-50 text-slate-700"
 }
 
@@ -193,6 +197,7 @@ function statusDotClasses(status: ExperimentStatus) {
   if (status === "Concluído") return "bg-emerald-500"
   if (status === "Em andamento") return "bg-blue-500"
   if (status === "Inserir Fotos") return "bg-amber-500"
+  if (status === "Cancelado") return "bg-red-500"
   return "bg-slate-400"
 }
 
@@ -232,7 +237,7 @@ function StatCard({ label, value, detail }: { label: string; value: string | num
   )
 }
 
-export function ExperimentsPageClient({ initialExperiments }: { initialExperiments: UIExperiment[] }) {
+export function ExperimentsPageClient({ initialExperiments, isAdmin = false }: { initialExperiments: UIExperiment[]; isAdmin?: boolean }) {
   const router = useRouter()
   const { toast } = useToast()
   const [experiments, setExperiments] = useState<UIExperiment[]>(initialExperiments)
@@ -380,18 +385,45 @@ export function ExperimentsPageClient({ initialExperiments }: { initialExperimen
 
     try {
       const supabase = createClient()
-      await deleteExperiment(supabase, experimentToDelete.id)
-      setExperiments((prev) => prev.filter((experiment) => experiment.id !== experimentToDelete.id))
+      await cancelExperiment(supabase, experimentToDelete.id)
+      setExperiments((prev) =>
+        prev.map((experiment) =>
+          experiment.id === experimentToDelete.id
+            ? { ...experiment, status: "canceled", canceledAt: new Date().toISOString() }
+            : experiment,
+        ),
+      )
       toast({
-        title: "Experimento excluído",
-        description: `O experimento #${experimentToDelete.number} foi excluído com sucesso.`,
+        title: "Experimento cancelado",
+        description: `O experimento #${experimentToDelete.number} foi inativado sem apagar os dados.`,
       })
     } catch (error) {
       console.error(error)
-      toast({ title: "Erro", description: "Ocorreu um erro ao excluir o experimento.", variant: "destructive" })
+      toast({ title: "Erro", description: "Ocorreu um erro ao cancelar o experimento.", variant: "destructive" })
     } finally {
       setShowDeleteDialog(false)
       setExperimentToDelete(null)
+    }
+  }
+
+  async function handleRestoreExperiment(experiment: UIExperiment) {
+    try {
+      const supabase = createClient()
+      await restoreExperiment(supabase, experiment.id)
+      setExperiments((prev) =>
+        prev.map((item) =>
+          item.id === experiment.id
+            ? { ...item, status: "active", canceledAt: null }
+            : item,
+        ),
+      )
+      toast({
+        title: "Experimento reativado",
+        description: `O experimento #${experiment.number} voltou para edição e andamento.`,
+      })
+    } catch (error) {
+      console.error(error)
+      toast({ title: "Erro", description: "Ocorreu um erro ao reativar o experimento.", variant: "destructive" })
     }
   }
 
@@ -538,7 +570,7 @@ export function ExperimentsPageClient({ initialExperiments }: { initialExperimen
                     onKeyDown={(event) => {
                       if (event.key === "Enter" || event.key === " ") router.push(`/experiments/${experiment.id}`)
                     }}
-                    className="group cursor-pointer overflow-hidden border-slate-200 bg-white shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:border-blue-200 hover:shadow-lg"
+                    className={`group cursor-pointer overflow-hidden border-slate-200 bg-white shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:border-blue-200 hover:shadow-lg ${experiment.status === "canceled" ? "opacity-75 grayscale" : ""}`}
                   >
                     <div className="h-1.5 bg-gradient-to-r from-blue-500 via-indigo-500 to-purple-600" />
                     <CardHeader className="space-y-3 p-4 pb-2">
@@ -631,6 +663,12 @@ export function ExperimentsPageClient({ initialExperiments }: { initialExperimen
                         </div>
                       </div>
 
+                      {experiment.status === "canceled" ? (
+                        <div className="rounded-xl border border-red-100 bg-red-50 px-3 py-2 text-xs font-medium text-red-700">
+                          Experimento cancelado{experiment.canceledAt ? ` em ${formatDateBR(experiment.canceledAt)}` : ""}. Edição e andamento pausados.
+                        </div>
+                      ) : null}
+
                       <div className="flex gap-2 pt-1">
                         <Button
                           type="button"
@@ -644,20 +682,37 @@ export function ExperimentsPageClient({ initialExperiments }: { initialExperimen
                           <ImageIcon className="mr-1.5 h-4 w-4" />
                           Abrir
                         </Button>
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant="outline"
-                          className="rounded-xl border-red-200 bg-red-50 px-3 text-red-700 hover:bg-red-100 hover:text-red-800"
-                          onClick={(event) => {
-                            event.stopPropagation()
-                            setExperimentToDelete(experiment)
-                            setShowDeleteDialog(true)
-                          }}
-                          title="Excluir experimento"
-                        >
-                          <Trash className="h-4 w-4" />
-                        </Button>
+                        {experiment.status === "canceled" && isAdmin ? (
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            className="rounded-xl border-emerald-200 bg-emerald-50 px-3 text-emerald-700 hover:bg-emerald-100 hover:text-emerald-800"
+                            onClick={(event) => {
+                              event.stopPropagation()
+                              handleRestoreExperiment(experiment)
+                            }}
+                            title="Reativar experimento"
+                          >
+                            <RotateCcw className="h-4 w-4" />
+                          </Button>
+                        ) : (
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            disabled={experiment.status === "canceled"}
+                            className="rounded-xl border-red-200 bg-red-50 px-3 text-red-700 hover:bg-red-100 hover:text-red-800 disabled:cursor-not-allowed disabled:opacity-50"
+                            onClick={(event) => {
+                              event.stopPropagation()
+                              setExperimentToDelete(experiment)
+                              setShowDeleteDialog(true)
+                            }}
+                            title="Cancelar experimento"
+                          >
+                            <Trash className="h-4 w-4" />
+                          </Button>
+                        )}
                       </div>
                     </CardContent>
                   </Card>
@@ -685,9 +740,9 @@ export function ExperimentsPageClient({ initialExperiments }: { initialExperimen
       <Dialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Excluir experimento</DialogTitle>
+            <DialogTitle>Cancelar experimento</DialogTitle>
             <DialogDescription>
-              Tem certeza que deseja excluir o experimento #{experimentToDelete?.number}? Essa ação não pode ser desfeita.
+              Tem certeza que deseja cancelar/inativar o experimento #{experimentToDelete?.number}? Os dados não serão apagados, mas a edição e o andamento dos testes ficarão pausados.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter className="gap-2">
@@ -695,7 +750,7 @@ export function ExperimentsPageClient({ initialExperiments }: { initialExperimen
               Cancelar
             </Button>
             <Button variant="destructive" onClick={handleDeleteExperiment}>
-              Excluir
+              Cancelar experimento
             </Button>
           </DialogFooter>
         </DialogContent>

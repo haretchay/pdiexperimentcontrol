@@ -16,7 +16,7 @@ import { Input } from "@/components/ui/input"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { PhotoCaptureWorkflow } from "@/components/camera/photo-capture-workflow"
-import { Camera, Check, Images, Thermometer } from "lucide-react"
+import { AlertTriangle, ArrowLeft, Camera, Check, Images, Thermometer } from "lucide-react"
 
 type Annotation = { x: number; y: number; size: string; caption: string; color?: string }
 type AnnotationsByPhotoIndex = Record<number, Annotation[]>
@@ -501,6 +501,7 @@ export default function TestEditPage() {
 
   const date7FromExperiment = useMemo(() => getExperimentDayDate(experiment?.start_date, 7), [experiment?.start_date])
   const date14FromExperiment = useMemo(() => getExperimentDayDate(experiment?.start_date, 14), [experiment?.start_date])
+  const isExperimentCanceled = experiment?.status === "canceled"
 
   const watchedTemperatureValues = form.watch() as unknown as Partial<Record<TemperatureFieldName, unknown>>
   const activeDiscardOptions = useMemo(
@@ -528,13 +529,17 @@ export default function TestEditPage() {
 
         const { data: exp, error: expErr } = await supabase
           .from("experiments")
-          .select("id, number, strain, start_date, test_count, repetition_count")
+          .select("id, number, strain, start_date, test_count, repetition_count, status, canceled_at")
           .eq("id", experimentId)
           .single()
 
         if (expErr) throw expErr
         if (cancelled) return
         setExperiment(exp)
+
+        if ((exp as any)?.status === "canceled") {
+          return
+        }
 
         const { data, error } = await supabase
           .from("tests")
@@ -656,6 +661,11 @@ export default function TestEditPage() {
   }, [supabase, experimentId, repetitionNumber, testNumber, form, router])
 
   async function onSubmit(values: FormValues) {
+    if (isExperimentCanceled) {
+      alert("Este experimento está cancelado/inativo. Reative o experimento antes de editar os testes.")
+      return
+    }
+
     setSaving(true)
     try {
       const {
@@ -926,6 +936,33 @@ export default function TestEditPage() {
 
   if (loading) {
     return <div className="container mx-auto p-4">Carregando formulário...</div>
+  }
+
+  if (isExperimentCanceled) {
+    return (
+      <div className="container mx-auto flex min-h-[70vh] max-w-3xl items-center justify-center px-4 py-8">
+        <Card className="w-full border-red-200 bg-red-50/80 shadow-lg dark:border-red-950 dark:bg-red-950/20">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-red-800 dark:text-red-200">
+              <AlertTriangle className="h-5 w-5" />
+              Experimento cancelado/inativo
+            </CardTitle>
+            <CardDescription>
+              A edição dos testes está pausada. Um usuário admin pode reativar o experimento pela página de experimentos.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="text-sm text-red-800 dark:text-red-200">
+              Experimento #{experiment?.number ?? experimentId} • Repetição {repetitionId} • Teste {testId}
+            </div>
+            <Button type="button" variant="outline" onClick={() => router.push(`/experiments/${experimentId}`)}>
+              <ArrowLeft className="mr-2 h-4 w-4" />
+              Voltar ao experimento
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
+    )
   }
 
   if (isCapturing7Day) {

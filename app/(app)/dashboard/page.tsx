@@ -177,8 +177,9 @@ export default async function DashboardPage() {
   }))
 
   const fungiById = new Map(fungi.map((fungus) => [fungus.id, fungus]))
+  const activeRows = rows.filter((row) => row.status !== "canceled")
 
-  const experimentData: ExperimentData[] = rows.map((row) => {
+  const experimentData: ExperimentData[] = activeRows.map((row) => {
     const fungus = row.fungusId ? fungiById.get(row.fungusId) : undefined
 
     const testsWithStatus = (row.tests ?? []).map((test) => ({ test, status: getTestStatus(test) }))
@@ -222,7 +223,7 @@ export default async function DashboardPage() {
     }
   })
 
-  const experiments: UIExperiment[] = rows.map((row) => {
+  const experiments: UIExperiment[] = activeRows.map((row) => {
     const matchingData = experimentData.find((item) => item.id === row.id)
     const fungus = row.fungusId ? fungiById.get(row.fungusId) : undefined
 

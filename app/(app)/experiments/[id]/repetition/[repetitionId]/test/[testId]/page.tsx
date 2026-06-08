@@ -330,24 +330,28 @@ function toStoredDateIso(dateString?: string | null) {
 }
 
 async function createMosaicBlob(imageDataUrls: string[]) {
-  // Mosaico 3x2 (6 fotos): mantém zoom normal ao abrir a imagem final
+  // Mosaico 3x2 (6 fotos): carrega as imagens uma por vez para reduzir uso de memória em celulares.
   const cols = 3
   const rows = 2
   const cellW = 1000
   const cellH = 750
   const gutter = 6
-  const quality = 0.9
+  const quality = 0.88
 
-  const load = (src: string) =>
+  const load = (src: string, index: number) =>
     new Promise<HTMLImageElement>((resolve, reject) => {
       const img = new Image()
-      img.crossOrigin = "anonymous"
+      img.decoding = "async"
       img.onload = () => resolve(img)
-      img.onerror = () => reject(new Error("Falha ao carregar imagem para mosaico"))
+      img.onerror = () => reject(new Error(`Falha ao carregar a foto ${index + 1} para montar o mosaico. Tente reenviar esta foto em JPG/PNG.`))
       img.src = src
     })
 
-  const imgs = await Promise.all(imageDataUrls.slice(0, 6).map((u) => load(u)))
+  const sourceImages = imageDataUrls.slice(0, 6)
+  const imgs: HTMLImageElement[] = []
+  for (let i = 0; i < sourceImages.length; i++) {
+    imgs.push(await load(sourceImages[i], i))
+  }
 
   const canvas = document.createElement("canvas")
   canvas.width = cols * cellW

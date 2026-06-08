@@ -42,6 +42,87 @@ const FLUORESCENT_COLORS = [
   "#66FF00", // Lima fluorescente
 ]
 
+const MAX_PHOTO_EDGE = 1600
+const UPLOAD_JPEG_QUALITY = 0.84
+const CAPTION_JPEG_QUALITY = 0.86
+
+const isLikelyHeicFile = (file: File) => {
+  const mime = String(file.type || "").toLowerCase()
+  const name = String(file.name || "").toLowerCase()
+  return mime.includes("heic") || mime.includes("heif") || /\.(heic|heif)$/i.test(name)
+}
+
+const getImageDimensions = (img: HTMLImageElement, maxEdge = MAX_PHOTO_EDGE) => {
+  const sourceWidth = img.naturalWidth || img.width
+  const sourceHeight = img.naturalHeight || img.height
+
+  if (!sourceWidth || !sourceHeight) {
+    throw new Error("Não foi possível identificar o tamanho da imagem selecionada.")
+  }
+
+  const scale = Math.min(1, maxEdge / Math.max(sourceWidth, sourceHeight))
+  return {
+    width: Math.max(1, Math.round(sourceWidth * scale)),
+    height: Math.max(1, Math.round(sourceHeight * scale)),
+  }
+}
+
+const loadImageElement = (src: string, errorMessage = "Não foi possível abrir a imagem selecionada.") => {
+  return new Promise<HTMLImageElement>((resolve, reject) => {
+    const img = new Image()
+    img.decoding = "async"
+    img.onload = () => resolve(img)
+    img.onerror = () => reject(new Error(errorMessage))
+    img.src = src
+  })
+}
+
+const canvasToJpegDataUrl = (canvas: HTMLCanvasElement, quality = UPLOAD_JPEG_QUALITY) => {
+  try {
+    const dataUrl = canvas.toDataURL("image/jpeg", quality)
+    if (typeof dataUrl === "string" && dataUrl.startsWith("data:image/jpeg")) {
+      return dataUrl
+    }
+  } catch (error) {
+    console.error("Erro ao converter canvas para JPG:", error)
+  }
+
+  throw new Error("Não foi possível converter a foto para JPG. Tente selecionar outra imagem.")
+}
+
+const normalizeImageFileToJpegDataUrl = async (file: File) => {
+  if (isLikelyHeicFile(file)) {
+    throw new Error(
+      "A imagem selecionada parece estar em HEIC/HEIF. Esse formato falha em alguns navegadores ao montar o mosaico. Selecione uma foto JPG/PNG ou configure a câmera do celular para salvar em JPG/mais compatível.",
+    )
+  }
+
+  if (file.type && !file.type.startsWith("image/")) {
+    throw new Error("Selecione um arquivo de imagem válido.")
+  }
+
+  const objectUrl = URL.createObjectURL(file)
+
+  try {
+    const img = await loadImageElement(
+      objectUrl,
+      "Não foi possível abrir a imagem selecionada. Tente selecionar uma foto em JPG ou PNG.",
+    )
+    const { width, height } = getImageDimensions(img)
+    const canvas = document.createElement("canvas")
+    canvas.width = width
+    canvas.height = height
+
+    const ctx = canvas.getContext("2d")
+    if (!ctx) throw new Error("Canvas 2D indisponível para processar a imagem.")
+
+    ctx.drawImage(img, 0, 0, width, height)
+    return canvasToJpegDataUrl(canvas)
+  } finally {
+    URL.revokeObjectURL(objectUrl)
+  }
+}
+
 export function PhotoCaptureWorkflow({ onComplete, onCancel, testInfo }: PhotoCaptureWorkflowProps) {
   const [photos, setPhotos] = useState<string[]>([])
   const [processedPhotos, setProcessedPhotos] = useState<string[]>([])
@@ -54,127 +135,95 @@ export function PhotoCaptureWorkflow({ onComplete, onCancel, testInfo }: PhotoCa
   const [currentAnnotatingPhoto, setCurrentAnnotatingPhoto] = useState<string | null>(null)
   const [currentAnnotatingIndex, setCurrentAnnotatingIndex] = useState<number | null>(null)
   const [isProcessing, setIsProcessing] = useState(false)
+  const [uploadingIndex, setUploadingIndex] = useState<number | null>(null)
   const totalPhotos = 6
 
   // Modificar a função addCaptionToPhoto para aumentar o tamanho da fonte e sobrepor a legenda
-  const addCaptionToPhoto = (
+  const addCaptionToPhoto = async (
     photoSrc: string,
     index: number,
     annotations?: Array<{ x: number; y: number; size: string; caption: string; color?: string }>,
   ): Promise<string> => {
-    return new Promise((resolve, reject) => {
-      try {
-        const img = new Image()
-        img.crossOrigin = "anonymous"
-        img.onload = () => {
-          // Criar um canvas com as dimensões da imagem original
-          const canvas = document.createElement("canvas")
-          canvas.width = img.width
-          canvas.height = img.height
+    const img = await loadImageElement(photoSrc, "Não foi possível carregar a foto para inserir a legenda.")
+    const { width, height } = getImageDimensions(img)
 
-          const ctx = canvas.getContext("2d")
-          if (!ctx) {
-            reject(new Error("Não foi possível obter o contexto do canvas"))
-            return
-          }
+    const canvas = document.createElement("canvas")
+    canvas.width = width
+    canvas.height = height
 
-          // Desenhar a imagem original
-          ctx.drawImage(img, 0, 0, img.width, img.height)
+    const ctx = canvas.getContext("2d")
+    if (!ctx) {
+      throw new Error("Não foi possível obter o contexto do canvas")
+    }
 
-          // Calcular altura da área de legenda (30% da altura da imagem)
-          const captionHeight = Math.min(Math.max(img.height * 0.3, 200), 300) // Entre 200 e 300px, ou 30% da altura
+    ctx.drawImage(img, 0, 0, width, height)
 
-          // Criar gradiente para o fundo da legenda (transparente no topo, preto sólido embaixo)
-          const gradient = ctx.createLinearGradient(0, img.height - captionHeight, 0, img.height)
-          gradient.addColorStop(0, "rgba(0, 0, 0, 0.5)")
-          gradient.addColorStop(0.7, "rgba(0, 0, 0, 0.9)")
-          gradient.addColorStop(1, "rgba(0, 0, 0, 1)")
+    const captionHeight = Math.min(Math.max(height * 0.3, 150), 280)
+    const gradient = ctx.createLinearGradient(0, height - captionHeight, 0, height)
+    gradient.addColorStop(0, "rgba(0, 0, 0, 0.5)")
+    gradient.addColorStop(0.7, "rgba(0, 0, 0, 0.9)")
+    gradient.addColorStop(1, "rgba(0, 0, 0, 1)")
+    ctx.fillStyle = gradient
+    ctx.fillRect(0, height - captionHeight, width, captionHeight)
 
-          // Desenhar o fundo da legenda
-          ctx.fillStyle = gradient
-          ctx.fillRect(0, img.height - captionHeight, img.width, captionHeight)
+    const padding = Math.max(14, Math.round(width * 0.018))
+    const mainFontSize = Math.max(18, Math.min(28, Math.round(width * 0.022)))
+    const annotationFontSize = Math.max(16, Math.min(24, Math.round(width * 0.018)))
+    const lineHeight = Math.round(mainFontSize * 1.25)
 
-          // Configurar estilo do texto
+    ctx.fillStyle = "#FFFFFF"
+    ctx.font = `bold ${mainFontSize}px Arial`
+
+    let y = height - captionHeight + lineHeight
+    ctx.fillText(
+      `Exp #${testInfo.experimentNumber} - Rep #${testInfo.repetitionNumber} - Teste #${testInfo.testNumber}`,
+      padding,
+      y,
+    )
+    y += lineHeight
+
+    ctx.fillText(`Dia: ${testInfo.day}º - Cepa: ${testInfo.strain} - Foto ${index + 1}`, padding, y)
+    y += lineHeight
+
+    if (testInfo.unit || testInfo.testLot) {
+      ctx.fillText(
+        `${testInfo.unit ? (testInfo.unit === "americana" ? "Americana" : "Salto") : ""} ${testInfo.testLot ? `- Lote: ${testInfo.testLot}` : ""}`,
+        padding,
+        y,
+      )
+      y += lineHeight
+    }
+
+    const hasAnnotations = annotations && annotations.length > 0
+    if (hasAnnotations) {
+      y += Math.round(lineHeight * 0.25)
+      ctx.fillText("Anotações:", padding, y)
+      y += lineHeight
+
+      annotations.forEach((annotation, idx) => {
+        if (annotation.caption) {
+          const annotationColor = annotation.color || FLUORESCENT_COLORS[idx % FLUORESCENT_COLORS.length]
+          const markerRadius = Math.max(8, Math.round(annotationFontSize * 0.5))
+
+          ctx.fillStyle = annotationColor
+          ctx.beginPath()
+          ctx.arc(padding + markerRadius, y - markerRadius / 2, markerRadius, 0, Math.PI * 2)
+          ctx.fill()
+
           ctx.fillStyle = "#FFFFFF"
-          ctx.font = "bold 28px Arial" // Fonte muito maior
+          ctx.font = `bold ${Math.max(12, Math.round(annotationFontSize * 0.7))}px Arial`
+          ctx.textAlign = "center"
+          ctx.fillText(`${idx + 1}`, padding + markerRadius, y - 1)
 
-          // Desenhar a legenda
-          const padding = 20
-          let y = img.height - captionHeight + 40 // Começar do topo da área de legenda
-
-          // Primeira linha da legenda
-          ctx.fillText(
-            `Exp #${testInfo.experimentNumber} - Rep #${testInfo.repetitionNumber} - Teste #${testInfo.testNumber}`,
-            padding,
-            y,
-          )
-          y += 35 // Espaçamento maior entre linhas
-
-          // Segunda linha da legenda
-          ctx.fillText(`Dia: ${testInfo.day}º - Cepa: ${testInfo.strain} - Foto ${index + 1}`, padding, y)
-          y += 35
-
-          // Terceira linha da legenda (se disponível)
-          if (testInfo.unit || testInfo.testLot) {
-            ctx.fillText(
-              `${testInfo.unit ? (testInfo.unit === "americana" ? "Americana" : "Salto") : ""} ${testInfo.testLot ? `- Lote: ${testInfo.testLot}` : ""}`,
-              padding,
-              y,
-            )
-            y += 35
-          }
-
-          // Adicionar legendas das anotações se existirem
-          const hasAnnotations = annotations && annotations.length > 0
-          if (hasAnnotations) {
-            y += 10 // Espaço adicional antes das anotações
-            ctx.fillText("Anotações:", padding, y)
-            y += 35
-
-            // Adicionar cada anotação
-            annotations.forEach((annotation, idx) => {
-              if (annotation.caption) {
-                // Usar a cor da anotação se disponível, ou uma cor padrão
-                const annotationColor = annotation.color || FLUORESCENT_COLORS[idx % FLUORESCENT_COLORS.length]
-
-                // Desenhar um círculo colorido antes do texto
-                ctx.fillStyle = annotationColor
-                ctx.beginPath()
-                ctx.arc(padding + 15, y - 10, 12, 0, Math.PI * 2)
-                ctx.fill()
-
-                // Número da anotação
-                ctx.fillStyle = "#FFFFFF"
-                ctx.font = "bold 16px Arial"
-                ctx.textAlign = "center"
-                ctx.fillText(`${idx + 1}`, padding + 15, y - 5)
-
-                // Resetar alinhamento e fonte
-                ctx.textAlign = "left"
-                ctx.font = "bold 24px Arial"
-
-                // Texto da anotação
-                ctx.fillStyle = "#FFFFFF"
-                ctx.fillText(`${annotation.caption}`, padding + 35, y)
-                y += 30
-              }
-            })
-          }
-
-          // Converter o canvas para data URL
-          const dataUrl = canvas.toDataURL("image/jpeg", 0.95)
-          resolve(dataUrl)
+          ctx.textAlign = "left"
+          ctx.font = `bold ${annotationFontSize}px Arial`
+          ctx.fillText(`${annotation.caption}`, padding + markerRadius * 2 + 8, y)
+          y += Math.round(annotationFontSize * 1.35)
         }
+      })
+    }
 
-        img.onerror = () => {
-          reject(new Error("Erro ao carregar a imagem"))
-        }
-
-        img.src = photoSrc
-      } catch (error) {
-        reject(error)
-      }
-    })
+    return canvasToJpegDataUrl(canvas, CAPTION_JPEG_QUALITY)
   }
 
   // Modificar a função handlePhotoCaptureComplete para passar as anotações para a função addCaptionToPhoto
@@ -204,21 +253,9 @@ export function PhotoCaptureWorkflow({ onComplete, onCancel, testInfo }: PhotoCa
     }
   }
 
-  const readImageFileAsDataUrl = (file: File): Promise<string> => {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader()
-      reader.onload = () => {
-        const result = reader.result
-        if (typeof result === "string" && result.startsWith("data:image/")) {
-          resolve(result)
-          return
-        }
-        reject(new Error("Arquivo de imagem inválido."))
-      }
-      reader.onerror = () => reject(reader.error ?? new Error("Não foi possível ler a imagem."))
-      reader.readAsDataURL(file)
-    })
-  }
+  // Uploads são normalizados para JPG e reduzidos antes de entrar no mosaico.
+  // Isso evita falhas em celulares com fotos muito grandes ou formatos pouco compatíveis.
+
 
   const setPhotoAtIndex = (index: number, imageSrc: string) => {
     const newPhotos = [...photos]
@@ -256,16 +293,15 @@ export function PhotoCaptureWorkflow({ onComplete, onCancel, testInfo }: PhotoCa
       event.target.value = ""
 
       if (!file) return
-      if (!file.type.startsWith("image/")) {
-        alert("Selecione um arquivo de imagem válido.")
-        return
-      }
 
-      const imageSrc = await readImageFileAsDataUrl(file)
+      setUploadingIndex(index)
+      const imageSrc = await normalizeImageFileToJpegDataUrl(file)
       setPhotoAtIndex(index, imageSrc)
     } catch (error) {
       console.error("Erro ao carregar foto:", error)
       alert(error instanceof Error ? error.message : "Não foi possível carregar a foto selecionada.")
+    } finally {
+      setUploadingIndex((current) => (current === index ? null : current))
     }
   }
 
@@ -416,6 +452,7 @@ export function PhotoCaptureWorkflow({ onComplete, onCancel, testInfo }: PhotoCa
                     accept="image/*"
                     className="hidden"
                     onChange={(event) => handleUpload(index, event)}
+                    disabled={uploadingIndex !== null}
                   />
                   {photos[index] ? (
                     <>
@@ -458,9 +495,14 @@ export function PhotoCaptureWorkflow({ onComplete, onCancel, testInfo }: PhotoCa
                             size="sm"
                             className="bg-black/70 text-white border-white"
                             onClick={() => document.getElementById(`photo-upload-${testInfo.day}-${index}`)?.click()}
+                            disabled={uploadingIndex !== null}
                           >
-                            <Upload className="h-4 w-4 mr-1" />
-                            Upload
+                            {uploadingIndex === index ? (
+                              <div className="h-4 w-4 mr-1 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                            ) : (
+                              <Upload className="h-4 w-4 mr-1" />
+                            )}
+                            {uploadingIndex === index ? "Carregando" : "Upload"}
                           </Button>
                         </div>
                       </div>
@@ -487,9 +529,14 @@ export function PhotoCaptureWorkflow({ onComplete, onCancel, testInfo }: PhotoCa
                         size="sm"
                         className="bg-white/90"
                         onClick={() => document.getElementById(`photo-upload-${testInfo.day}-${index}`)?.click()}
+                        disabled={uploadingIndex !== null}
                       >
-                        <Upload className="h-4 w-4 mr-1" />
-                        Upload
+                        {uploadingIndex === index ? (
+                          <div className="h-4 w-4 mr-1 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                        ) : (
+                          <Upload className="h-4 w-4 mr-1" />
+                        )}
+                        {uploadingIndex === index ? "Carregando" : "Upload"}
                       </Button>
                     </div>
                   )}

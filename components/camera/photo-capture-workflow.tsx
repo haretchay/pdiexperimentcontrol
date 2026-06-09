@@ -8,6 +8,18 @@ import { Button } from "@/components/ui/button"
 import { Camera, RefreshCw, Check, X, Edit2, Upload } from "lucide-react"
 import { cn } from "@/lib/utils"
 
+declare global {
+  interface Window {
+    HeicTo?: HeicToGlobal
+    __pdieHeicToLoader?: Promise<HeicToGlobal>
+  }
+}
+
+type HeicToGlobal = {
+  (options: { blob: Blob; type: "image/jpeg" | "image/png"; quality?: number }): Promise<Blob | Blob[]>
+  isHeic?: (blob: Blob) => Promise<boolean>
+}
+
 interface PhotoCaptureWorkflowProps {
   onComplete: (
     photos: string[],
@@ -45,11 +57,17 @@ const FLUORESCENT_COLORS = [
 const MAX_PHOTO_EDGE = 1600
 const UPLOAD_JPEG_QUALITY = 0.84
 const CAPTION_JPEG_QUALITY = 0.86
+const HEIC_TO_CDN_URL = "https://cdn.jsdelivr.net/npm/heic-to@1.5.2/dist/iife/heic-to.js"
 
 const isLikelyHeicFile = (file: File) => {
   const mime = String(file.type || "").toLowerCase()
   const name = String(file.name || "").toLowerCase()
   return mime.includes("heic") || mime.includes("heif") || /\.(heic|heif)$/i.test(name)
+}
+
+const isLikelyRegularImageFile = (file: File) => {
+  if (file.type && file.type.startsWith("image/")) return true
+  return /\.(jpg|jpeg|png|webp|gif|bmp|heic|heif)$/i.test(file.name || "")
 }
 
 const getImageDimensions = (img: HTMLImageElement, maxEdge = MAX_PHOTO_EDGE) => {
@@ -90,25 +108,78 @@ const canvasToJpegDataUrl = (canvas: HTMLCanvasElement, quality = UPLOAD_JPEG_QU
   throw new Error("Não foi possível converter a foto para JPG. Tente selecionar outra imagem.")
 }
 
-const normalizeImageFileToJpegDataUrl = async (file: File) => {
-  if (isLikelyHeicFile(file)) {
-    throw new Error(
-      "A imagem selecionada parece estar em HEIC/HEIF. Esse formato falha em alguns navegadores ao montar o mosaico. Selecione uma foto JPG/PNG ou configure a câmera do celular para salvar em JPG/mais compatível.",
-    )
+const blobToDataUrl = (blob: Blob): Promise<string> => {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => {
+      const result = reader.result
+      if (typeof result === "string" && result.startsWith("data:image/")) {
+        resolve(result)
+        return
+      }
+      reject(new Error("Não foi possível converter a imagem carregada."))
+    }
+    reader.onerror = () => reject(reader.error ?? new Error("Não foi possível ler a imagem carregada."))
+    reader.readAsDataURL(blob)
+  })
+}
+
+const ensureHeicToLoaded = async (): Promise<HeicToGlobal> => {
+  if (typeof window === "undefined") {
+    throw new Error("Conversão HEIC indisponível fora do navegador.")
   }
 
-  if (file.type && !file.type.startsWith("image/")) {
-    throw new Error("Selecione um arquivo de imagem válido.")
-  }
+  if (window.HeicTo) return window.HeicTo
+  if (window.__pdieHeicToLoader) return window.__pdieHeicToLoader
 
-  const objectUrl = URL.createObjectURL(file)
+  window.__pdieHeicToLoader = new Promise<HeicToGlobal>((resolve, reject) => {
+    const existingScript = document.querySelector<HTMLScriptElement>(`script[src="${HEIC_TO_CDN_URL}"]`)
+
+    const finish = () => {
+      if (window.HeicTo) {
+        resolve(window.HeicTo)
+        return
+      }
+      reject(new Error("O conversor HEIC foi carregado, mas não ficou disponível no navegador."))
+    }
+
+    if (existingScript) {
+      existingScript.addEventListener("load", finish, { once: true })
+      existingScript.addEventListener(
+        "error",
+        () => reject(new Error("Não foi possível carregar o conversor HEIC.")),
+        { once: true },
+      )
+      return
+    }
+
+    const script = document.createElement("script")
+    script.src = HEIC_TO_CDN_URL
+    script.async = true
+    script.onload = finish
+    script.onerror = () => {
+      window.__pdieHeicToLoader = undefined
+      reject(
+        new Error(
+          "Não foi possível carregar o conversor HEIC. Verifique a internet do aparelho e tente novamente.",
+        ),
+      )
+    }
+    document.head.appendChild(script)
+  })
+
+  return window.__pdieHeicToLoader
+}
+
+const normalizeBlobToJpegDataUrl = async (blob: Blob, maxEdge = MAX_PHOTO_EDGE) => {
+  const objectUrl = URL.createObjectURL(blob)
 
   try {
     const img = await loadImageElement(
       objectUrl,
-      "Não foi possível abrir a imagem selecionada. Tente selecionar uma foto em JPG ou PNG.",
+      "Não foi possível abrir a imagem selecionada depois da conversão.",
     )
-    const { width, height } = getImageDimensions(img)
+    const { width, height } = getImageDimensions(img, maxEdge)
     const canvas = document.createElement("canvas")
     canvas.width = width
     canvas.height = height
@@ -121,6 +192,49 @@ const normalizeImageFileToJpegDataUrl = async (file: File) => {
   } finally {
     URL.revokeObjectURL(objectUrl)
   }
+}
+
+const convertHeicFileToJpegDataUrl = async (file: File) => {
+  const heicTo = await ensureHeicToLoaded()
+
+  if (heicTo.isHeic) {
+    const confirmedHeic = await heicTo.isHeic(file).catch(() => true)
+    if (!confirmedHeic && !isLikelyHeicFile(file)) {
+      return normalizeBlobToJpegDataUrl(file)
+    }
+  }
+
+  const converted = await heicTo({
+    blob: file,
+    type: "image/jpeg",
+    quality: UPLOAD_JPEG_QUALITY,
+  })
+
+  const jpegBlob = Array.isArray(converted) ? converted[0] : converted
+  if (!jpegBlob) {
+    throw new Error("O conversor HEIC não retornou uma imagem JPG válida.")
+  }
+
+  return normalizeBlobToJpegDataUrl(jpegBlob)
+}
+
+const normalizeImageFileToJpegDataUrl = async (file: File) => {
+  if (!isLikelyRegularImageFile(file)) {
+    throw new Error("Selecione um arquivo de imagem válido.")
+  }
+
+  if (isLikelyHeicFile(file)) {
+    try {
+      return await convertHeicFileToJpegDataUrl(file)
+    } catch (error) {
+      console.error("Erro ao converter HEIC/HEIF:", error)
+      throw new Error(
+        "Não foi possível converter a imagem HEIC/HEIF neste aparelho. Tente novamente com internet ativa ou selecione outra foto HEIC válida.",
+      )
+    }
+  }
+
+  return normalizeBlobToJpegDataUrl(file)
 }
 
 export function PhotoCaptureWorkflow({ onComplete, onCancel, testInfo }: PhotoCaptureWorkflowProps) {
@@ -449,7 +563,7 @@ export function PhotoCaptureWorkflow({ onComplete, onCancel, testInfo }: PhotoCa
                   <input
                     id={`photo-upload-${testInfo.day}-${index}`}
                     type="file"
-                    accept="image/*"
+                    accept="image/*,.heic,.heif"
                     className="hidden"
                     onChange={(event) => handleUpload(index, event)}
                     disabled={uploadingIndex !== null}
